@@ -207,7 +207,7 @@ pub struct SimpleAggregate {
 #[must_use]
 pub fn generate_local_alias_for_aggr(kind: &AggregateKind, suffix: &str) -> String {
     format!(
-        "\"{}_{kind}_{suffix}\"",
+        "{}_{kind}_{suffix}",
         uuid::Uuid::new_v4().as_simple().to_string()
     )
 }
@@ -215,7 +215,7 @@ pub fn generate_local_alias_for_aggr(kind: &AggregateKind, suffix: &str) -> Stri
 #[cfg(feature = "mock")]
 #[must_use]
 pub fn generate_local_alias_for_aggr(kind: &AggregateKind, suffix: &str) -> String {
-    format!("\"{kind}_{suffix}\"")
+    format!("{kind}_{suffix}")
 }
 
 impl SimpleAggregate {
@@ -356,6 +356,7 @@ impl SimpleAggregate {
                 children,
                 feature,
                 func_type: RelType::from(final_func),
+                is_system: true,
             };
             let aggr_id = plan.nodes.push(Node::Expression(final_aggr));
             final_aggregates.insert(local_kind, aggr_id);

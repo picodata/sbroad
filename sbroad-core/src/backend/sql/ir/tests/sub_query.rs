@@ -13,10 +13,10 @@ fn sub_query1_latest() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {} {}",
-            r#"SELECT "T1"."product_code" FROM"#,
+            r#"SELECT "t1"."product_code" FROM"#,
             r#"(SELECT "hash_testing"."product_code" FROM "hash_testing""#,
-            r#"WHERE ("hash_testing"."identification_number") = (?)) as "T1""#,
-            r#"WHERE ("T1"."product_code") = (?)"#
+            r#"WHERE ("hash_testing"."identification_number") = (?)) as "t1""#,
+            r#"WHERE ("t1"."product_code") = (?)"#
         ),
         vec![Value::from(1_u64), Value::from("a")],
     );
@@ -28,7 +28,7 @@ fn sub_query1_oldest() {
     let query = r#"SELECT "product_code"
         FROM (SELECT "product_code"
         FROM "hash_testing"
-        WHERE "identification_number" = 1) as t1
+        WHERE "identification_number" = 1) as "T1"
         WHERE "product_code" = 'a'"#;
 
     let expected = PatternWithParams::new(

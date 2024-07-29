@@ -22,6 +22,7 @@ use relation::{Table, Type};
 
 use crate::errors::Entity::Query;
 use crate::errors::{Action, Entity, SbroadError, TypeError};
+use crate::executor::engine::helpers::to_user;
 use crate::executor::engine::TableVersionMap;
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::helpers::RepeatableState;
@@ -670,7 +671,10 @@ impl Plan {
     /// - no relation with given name
     pub fn get_relation_or_error(&self, name: &str) -> Result<&Table, SbroadError> {
         self.relations.get(name).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Table, format_smolstr!("with name {name}"))
+            SbroadError::NotFound(
+                Entity::Table,
+                format_smolstr!("with name {}", to_user(name)),
+            )
         })
     }
 

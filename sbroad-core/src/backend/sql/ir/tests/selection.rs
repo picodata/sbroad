@@ -5,7 +5,7 @@ use crate::ir::value::Value;
 #[test]
 fn selection_column_from_values() {
     let query = r#"
-        SELECT COLUMN_1 FROM (VALUES (1))
+        SELECT "COLUMN_1" FROM (VALUES (1))
     "#;
 
     let expected = PatternWithParams::new(

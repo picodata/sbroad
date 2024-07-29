@@ -106,7 +106,7 @@ fn bool_in5() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE ("FUNC" (("t"."a") = (?) or ("t"."a") = (?))) < (?)"#,
+            r#"WHERE ("func" (("t"."a") = (?) or ("t"."a") = (?))) < (?)"#,
         ),
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(1_u64)],
     );

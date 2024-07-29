@@ -365,7 +365,7 @@ fn global_tbl_join2() {
     // we have an "A" aliased column.
     let query = r#"
         select * from "global_t"
-        inner join (select "a" as a from "global_t")
+        inner join (select "a" as q from "global_t")
         on ("a", "b") in (select "e", "f" from "t2")
     "#;
 

@@ -60,31 +60,32 @@ use super::{Metadata, Router, Vshard};
 pub mod storage;
 pub mod vshard;
 
-#[must_use]
-pub fn normalize_name_from_schema(s: &str) -> SmolStr {
-    format_smolstr!("\"{s}\"")
-}
-
 /// Transform:
-/// * "s" -> "s" (same cased, quoted)
-/// * s   -> "S" (uppercased, quoted)
+///
+/// ```text
+/// * "AbC" -> AbC (same cased, unquoted)
+/// * AbC   -> abc (lowercased, unquoted)
+/// ```
 #[must_use]
 pub fn normalize_name_from_sql(s: &str) -> SmolStr {
     if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
-        return s.to_smolstr();
+        return SmolStr::from(&s[1..s.len() - 1]);
     }
-    format_smolstr!("\"{}\"", s.to_uppercase())
+    SmolStr::new(s.to_lowercase())
 }
 
 /// Transform:
-/// * "s" -> s (same cased, unquoted)
-/// * s   -> S (uppercased, unquoted)
+/// * s -> "s" (same cased, quoted)
+///
+/// This function is used to convert identifiers
+/// to user-friendly format for errors and explain
+/// query.
+///
+/// # Panics
+/// - never
 #[must_use]
-pub fn normalize_name_for_space_api(s: &str) -> SmolStr {
-    if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
-        return SmolStr::from(&s[1..s.len() - 1]);
-    }
-    s.to_uppercase().to_smolstr()
+pub fn to_user<T: std::fmt::Display>(from: T) -> SmolStr {
+    format_smolstr!("\"{from}\"")
 }
 
 /// A helper function to encode the execution plan into a pair of binary data (see `Message`):
@@ -1003,10 +1004,9 @@ pub fn sharding_key_from_tuple<'tuple>(
     space: &str,
     tuple: &'tuple [Value],
 ) -> Result<Vec<&'tuple Value>, SbroadError> {
-    let quoted_space = normalize_name_from_schema(space);
-    let sharding_positions = conf.sharding_positions_by_space(&quoted_space)?;
+    let sharding_positions = conf.sharding_positions_by_space(space)?;
     let mut sharding_tuple = Vec::with_capacity(sharding_positions.len());
-    let table_col_amount = conf.table(&quoted_space)?.columns.len();
+    let table_col_amount = conf.table(space)?.columns.len();
     if table_col_amount == tuple.len() {
         // The tuple contains a "bucket_id" column.
         for position in &sharding_positions {
@@ -1021,7 +1021,7 @@ pub fn sharding_key_from_tuple<'tuple>(
         Ok(sharding_tuple)
     } else if table_col_amount == tuple.len() + 1 {
         // The tuple doesn't contain the "bucket_id" column.
-        let table = conf.table(&quoted_space)?;
+        let table = conf.table(space)?;
         let bucket_position = table.get_bucket_id_position()?.ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::Space,
@@ -1335,7 +1335,7 @@ where
     let plan = optional.exec_plan.get_ir_plan();
     let update_id = plan.get_top()?;
     let update_child_id = plan.dml_child_id(update_id)?;
-    let space_name = normalize_name_for_space_api(plan.dml_node_table(update_id)?.name());
+    let space_name = plan.dml_node_table(update_id)?.name().clone();
     let mut result = ConsumerResult::default();
     let is_sharded = plan.is_sharded_update(update_id)?;
     let build_vtable_locally = optional
@@ -1618,7 +1618,7 @@ where
     let delete_id = plan.get_top()?;
     let delete_child_id = plan.dml_child_id(delete_id)?;
     let builder = init_delete_tuple_builder(plan, delete_id)?;
-    let space_name = normalize_name_for_space_api(plan.dml_node_table(delete_id)?.name());
+    let space_name = plan.dml_node_table(delete_id)?.name().clone();
     let mut result = ConsumerResult::default();
     let build_vtable_locally = optional
         .exec_plan
@@ -1667,7 +1667,7 @@ where
     let plan = optional.exec_plan.get_ir_plan();
     let insert_id = plan.get_top()?;
     let insert_child_id = plan.dml_child_id(insert_id)?;
-    let space_name = normalize_name_for_space_api(plan.dml_node_table(insert_id)?.name());
+    let space_name = plan.dml_node_table(insert_id)?.name().clone();
     let mut result = ConsumerResult::default();
 
     // There are two ways to execute an `INSERT` query:
@@ -1893,11 +1893,10 @@ pub fn sharding_key_from_map<'rec, S: ::std::hash::BuildHasher>(
     space: &str,
     map: &'rec HashMap<SmolStr, Value, S>,
 ) -> Result<Vec<&'rec Value>, SbroadError> {
-    let quoted_space = normalize_name_from_schema(space);
-    let sharding_key = conf.sharding_key_by_space(&quoted_space)?;
+    let sharding_key = conf.sharding_key_by_space(space)?;
     let quoted_map = map
         .iter()
-        .map(|(k, _)| (normalize_name_from_schema(k).to_smolstr(), k.as_str()))
+        .map(|(k, _)| (k.to_smolstr(), k.as_str()))
         .collect::<HashMap<SmolStr, &str>>();
     let mut tuple = Vec::with_capacity(sharding_key.len());
     for quoted_column in &sharding_key {
@@ -1946,11 +1945,7 @@ pub fn try_get_metadata_from_plan(
         let column = ir.get_expression_node(*col_id)?;
         let column_type = column.calculate_type(ir)?.to_string();
         let column_name = if let Expression::Alias { name, .. } = column {
-            let mut chars = name.chars();
-            // remove quotes from the name
-            chars.next();
-            chars.next_back();
-            chars.as_str().to_owned()
+            name.to_string()
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Expression,

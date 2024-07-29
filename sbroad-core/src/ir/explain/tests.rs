@@ -488,7 +488,7 @@ fn select_cast_plan_nested() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("FUNC"(("test_space"."id"::unsigned))::integer::string -> "COL_1")
+        r#"projection ("func"(("test_space"."id"::unsigned))::integer::string -> "COL_1")
     scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -511,7 +511,7 @@ fn select_cast_plan_nested_where() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"projection ("test_space"."id"::unsigned -> "id")
-    selection ROW("FUNC"(("test_space"."id"::unsigned))::integer::string) = ROW(1::unsigned)
+    selection ROW("func"(("test_space"."id"::unsigned))::integer::string) = ROW(1::unsigned)
         scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -534,7 +534,7 @@ fn select_cast_plan_nested_where2() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"projection ("test_space"."id"::unsigned -> "id")
-    selection ROW("FUNC"((42::unsigned::string))::integer) = ROW(1::unsigned)
+    selection ROW("func"((42::unsigned::string))::integer) = ROW(1::unsigned)
         scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000

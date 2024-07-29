@@ -14,19 +14,19 @@ fn milti_join1() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("T1"."identification_number"::integer -> "identification_number", "T1"."product_code"::string -> "product_code", "T2"."id"::unsigned -> "id", "T3"."id"::unsigned -> "id")
-    selection ROW("T1"."identification_number"::integer) = ROW(5::unsigned) and ROW("T1"."product_code"::string) = ROW('123'::string)
-        left join on ROW("T1"."identification_number"::integer) = ROW("T3"."id"::unsigned)
-            join on ROW("T1"."identification_number"::integer) = ROW("T2"."id"::unsigned)
-                scan "T1"
+        r#"projection ("t1"."identification_number"::integer -> "identification_number", "t1"."product_code"::string -> "product_code", "t2"."id"::unsigned -> "id", "t3"."id"::unsigned -> "id")
+    selection ROW("t1"."identification_number"::integer) = ROW(5::unsigned) and ROW("t1"."product_code"::string) = ROW('123'::string)
+        left join on ROW("t1"."identification_number"::integer) = ROW("t3"."id"::unsigned)
+            join on ROW("t1"."identification_number"::integer) = ROW("t2"."id"::unsigned)
+                scan "t1"
                     projection ("hash_testing"."identification_number"::integer -> "identification_number", "hash_testing"."product_code"::string -> "product_code")
                         scan "hash_testing"
                 motion [policy: full]
-                    scan "T2"
+                    scan "t2"
                         projection ("test_space"."id"::unsigned -> "id")
                             scan "test_space"
             motion [policy: full]
-                scan "T3"
+                scan "t3"
                     projection ("test_space"."id"::unsigned -> "id")
                         scan "test_space"
 execution options:

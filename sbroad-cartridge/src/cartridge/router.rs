@@ -6,7 +6,7 @@ use sbroad::executor::engine::helpers::vshard::{
 };
 use sbroad::executor::engine::{QueryCache, Vshard};
 use sbroad::utils::MutexLike;
-use smol_str::{format_smolstr, SmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::fiber::Mutex;
 
 use std::any::Any;
@@ -28,8 +28,8 @@ use sbroad::errors::{Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::{
     helpers::{
-        dispatch_impl, explain_format, materialize_motion, normalize_name_from_schema,
-        sharding_key_from_map, sharding_key_from_tuple,
+        dispatch_impl, explain_format, materialize_motion, sharding_key_from_map,
+        sharding_key_from_tuple,
     },
     Router, Statistics,
 };
@@ -130,7 +130,7 @@ impl ConfigurationProvider for RouterRuntime {
             let mut metadata = RouterConfiguration::new();
             metadata.set_waiting_timeout(timeout);
             metadata.set_cache_capacity(router_capacity);
-            metadata.set_sharding_column(normalize_name_from_schema(column.as_str()));
+            metadata.set_sharding_column(column.to_smolstr());
             // We should always load the schema **after** setting the sharding column.
             metadata.load_schema(&schema)?;
 

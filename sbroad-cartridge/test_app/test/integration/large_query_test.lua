@@ -141,12 +141,12 @@ g.test_schema_invalid = function ()
 "a"."common_text" AS "common_text1", "b1"."common_text2", "a"."date_start" AS "date_sort1",
 "a"."date_end" AS "date_end1", "b1"."date_sort2", "b1"."date_end2", "a"."common_detail" AS "common_detail1",
 "b1"."common_detail2", "a"."typology_type", "a"."typology_id"
-    FROM VSA_PROXY as "a"
+    FROM "VSA_PROXY" as "a"
       INNER JOIN (SELECT "b"."common_id" AS "common_id2", "b"."fid" AS "fid2",
                          "b"."exclude_id" AS "exclude_id2", "b"."common_text" AS "common_text2",
                          "b"."date_start" AS "date_sort2", "b"."date_end" AS "date_end2",
                          "b"."common_detail" AS "common_detail2"
-                  FROM VSA_PROXY as "b") as "b1" ON "a"."common_id" = "b1"."common_id2"
+                  FROM "VSA_PROXY" as "b") as "b1" ON "a"."common_id" = "b1"."common_id2"
     WHERE "a"."fid" IN (6659253, -21, 5933116, 8257405, 3676468, 6580234, 9557717)
       AND "b1"."fid2" IN (6659253, -21, 5933116, 8257405, 3676468, 6580234, 9557717)
       AND "a"."fid" < "b1"."fid2"

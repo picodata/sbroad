@@ -161,8 +161,8 @@ left_join.test_left_join_false_condition = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "A", type = "integer" },
-        { name = "B", type = "decimal" },
+        { name = "a", type = "integer" },
+        { name = "b", type = "decimal" },
     })
     t.assert_items_equals(r.rows, {
         { 1, nil },
@@ -175,12 +175,13 @@ end
 left_join.test_left_join_local_execution = function()
     local api = cluster:server("api-1").net_box
 
+    local query = [[
+        select * from (select "id" as "A" from "arithmetic_space") as "T1"
+        left outer join (select "id" as "B" from "arithmetic_space2") as "T2"
+        on "T1"."A" = "T2"."B"
+    ]]
     local r, err = api:call("sbroad.execute", {
-        [[
-        select * from (select "id" as a from "arithmetic_space") as t1
-        left outer join (select "id" as b from "arithmetic_space2") as t2
-        on t1.a = t2.b
-        ]], {}
+        query, {}
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -196,11 +197,7 @@ left_join.test_left_join_local_execution = function()
 
     -- check there is really no motion for join in plan
     r, err = api:call("sbroad.execute", {
-        [[
-        explain select * from (select "id" as a from "arithmetic_space") as t1
-        left join (select "id" as b from "arithmetic_space2") as t2
-        on t1.a = t2.b
-        ]], {}
+        [[explain ]] .. query, {}
     })
     t.assert_equals(err, nil)
     t.assert_items_equals(r, {
@@ -221,9 +218,9 @@ end
 left_join.test_inner_segment_motion = function()
     local api = cluster:server("api-1").net_box
     local query_str = [[
-        select * from (select "id" as a from "arithmetic_space") as t1
-        left join (select "a" as b from "arithmetic_space2") as t2
-        on t1.a = t2.b
+        select * from (select "id" as "A" from "arithmetic_space") as "T1"
+        left join (select "a" as "B" from "arithmetic_space2") as "T2"
+        on "T1"."A" = "T2"."B"
         ]];
 
     local r, err = api:call("sbroad.execute", { query_str, {} })
@@ -263,9 +260,9 @@ end
 left_join.test_inner_full_motion = function()
     local api = cluster:server("api-1").net_box
     local query_str = [[
-        select * from (select "id" as a from "arithmetic_space") as t1
-        left join (select "a" as b from "arithmetic_space2") as t2
-        on t1.a < t2.b
+        select * from (select "id" as "A" from "arithmetic_space") as "T1"
+        left join (select "a" as "B" from "arithmetic_space2") as "T2"
+        on "T1"."A" < "T2"."B"
         ]];
 
     local r, err = api:call("sbroad.execute", { query_str, {} })
@@ -317,8 +314,8 @@ left_join.test_outer_segment_motion = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "A", type = "decimal" },
-        { name = "B", type = "integer" },
+        { name = "a", type = "decimal" },
+        { name = "b", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 2, 2 },
@@ -338,8 +335,8 @@ left_join.test_single_dist_outer = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "A", type = "decimal" },
-        { name = "B", type = "integer" },
+        { name = "a", type = "decimal" },
+        { name = "b", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 2, 3 },
@@ -358,8 +355,8 @@ left_join.test_single_dist_both = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "A", type = "integer" },
-        { name = "B", type = "integer" },
+        { name = "a", type = "integer" },
+        { name = "b", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 4 },
@@ -377,9 +374,9 @@ left_join.test_sq_with_full_motion = function()
     -- explain test can be found in sbroad explain tests
     local api = cluster:server("api-1").net_box
     local query_str = [[
-        select * from (select "a" as a from "arithmetic_space") as t1
-        left join (select "id" as b from "arithmetic_space2") as t2
-        on t1.a in (select "a" + 1 from "arithmetic_space")
+        select * from (select "a" as "A" from "arithmetic_space") as "T1"
+        left join (select "id" as "B" from "arithmetic_space2") as "T2"
+        on "T1"."A" in (select "a" + 1 from "arithmetic_space")
         ]];
 
     local r, err = api:call("sbroad.execute", { query_str, {} })
@@ -428,9 +425,9 @@ end
 left_join.test_sq_with_segment_motion = function()
     local api = cluster:server("api-1").net_box
     local query_str = [[
-        select * from (select "id" as a from "arithmetic_space") as t1
-        left join (select "id" as b from "arithmetic_space2") as t2
-        on t1.a in (select "c" from "arithmetic_space")
+        select * from (select "id" as "A" from "arithmetic_space") as t1
+        left join (select "id" as "B" from "arithmetic_space2") as t2
+        on t1."A" in (select "c" from "arithmetic_space")
         ]];
 
     local r, err = api:call("sbroad.execute", { query_str, {} })
@@ -453,13 +450,13 @@ left_join.test_sq_with_segment_motion = function()
     r, err = api:call("sbroad.execute", { "explain " .. query_str, {} })
     t.assert_equals(err, nil)
     t.assert_items_equals(r, {
-        "projection (\"T1\".\"A\"::integer -> \"A\", \"T2\".\"B\"::integer -> \"B\")",
-        "    left join on ROW(\"T1\".\"A\"::integer) in ROW($0)",
-        "        scan \"T1\"",
+        "projection (\"t1\".\"A\"::integer -> \"A\", \"t2\".\"B\"::integer -> \"B\")",
+        "    left join on ROW(\"t1\".\"A\"::integer) in ROW($0)",
+        "        scan \"t1\"",
         "            projection (\"arithmetic_space\".\"id\"::integer -> \"A\")",
         "                scan \"arithmetic_space\"",
         "        motion [policy: full]",
-        "            scan \"T2\"",
+        "            scan \"t2\"",
         "                projection (\"arithmetic_space2\".\"id\"::integer -> \"B\")",
         "                    scan \"arithmetic_space2\"",
         "subquery $0:",
@@ -526,8 +523,8 @@ left_join.test_table_with_nulls1 = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "A", type = "integer" },
-        { name = "B", type = "integer" },
+        { name = "a", type = "integer" },
+        { name = "b", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { nil, nil },
@@ -550,8 +547,8 @@ left_join.test_table_with_nulls2 = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "A", type = "integer" },
-        { name = "B", type = "integer" },
+        { name = "a", type = "integer" },
+        { name = "b", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { nil, nil },
@@ -577,8 +574,8 @@ left_join.test_empty_left_table = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "A", type = "integer" },
-        { name = "B", type = "integer" },
+        { name = "a", type = "integer" },
+        { name = "b", type = "integer" },
     })
     t.assert_items_equals(r.rows, {})
 end
@@ -594,8 +591,8 @@ left_join.test_empty_right_table = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "A", type = "integer" },
-        { name = "B", type = "integer" },
+        { name = "a", type = "integer" },
+        { name = "b", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         {nil, nil},
@@ -618,7 +615,7 @@ left_join.test_groupby_after_join = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "A", type = "integer" },
+        { name = "a", type = "integer" },
         { name = "COL_1", type = "decimal" },
     })
     t.assert_items_equals(r.rows, {
@@ -638,8 +635,8 @@ left_join.test_groupby_under_outer_child = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "A", type = "integer" },
-        { name = "B", type = "integer" },
+        { name = "a", type = "integer" },
+        { name = "b", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         {nil, nil},
@@ -666,7 +663,7 @@ SELECT
   sp2."name"
 FROM
   (select "yearquarter", "a_to", "b_to", "d_by_ab", "c_by_ab", "a_from", "b_from"
-  from SPACE1) AS sp1
+  from "SPACE1") AS sp1
   LEFT JOIN (
      SELECT
       sp2_1."id" AS "sp2_id",
@@ -687,7 +684,7 @@ FROM
       sp2_1."count_from",
       sp2_1."count_to"
     FROM
-      SPACE2 AS sp2_1
+      "SPACE2" AS sp2_1
   ) AS sp2 ON sp1."a_to" = sp2."sp2_a" AND sp1."b_to" = sp2."sp2_b" AND sp1."yearquarter" = sp2."sp2_yearquarter"]], {}
     })
     t.assert_equals(err, nil)
@@ -713,13 +710,13 @@ left_join.test_left_multi_join= function()
     local api = cluster:server("api-1").net_box
     local r, err = api:call("sbroad.execute", {
         [[
-        SELECT space1."yearquarter", space2."name" FROM space1
-        LEFT JOIN space2
-        ON space1."a_to" = space2."a" AND space1."b_to" = space2."b"
-        AND space1."yearquarter" = space2."yearquarter"
-        LEFT JOIN space2 as space3
-        ON space1."a_to" = space3."a" AND space1."b_to" = space3."b"
-        WHERE space2."yearquarter" = 4
+        SELECT "SPACE1"."yearquarter", "SPACE2"."name" FROM "SPACE1"
+        LEFT JOIN "SPACE2"
+        ON "SPACE1"."a_to" = "SPACE2"."a" AND "SPACE1"."b_to" = "SPACE2"."b"
+        AND "SPACE1"."yearquarter" = "SPACE2"."yearquarter"
+        LEFT JOIN "SPACE2" as space3
+        ON "SPACE1"."a_to" = space3."a" AND "SPACE1"."b_to" = space3."b"
+        WHERE "SPACE2"."yearquarter" = 4
         ]], {}
     })
     t.assert_equals(err, nil)

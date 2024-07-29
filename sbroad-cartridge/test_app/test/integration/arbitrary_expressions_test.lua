@@ -149,7 +149,7 @@ arbitrary_projection.test_arbitrary_valid = function()
     -- column selection from values
     -- results in type erasing
     local r, err = api:call("sbroad.execute", { [[
-        SELECT COLUMN_1 FROM (VALUES (1))
+        SELECT "COLUMN_1" FROM (VALUES (1))
     ]], {} })
 
     t.assert_equals(err, nil)
@@ -164,7 +164,7 @@ arbitrary_projection.test_arbitrary_valid = function()
 
     -- column selection from values with cast
     r, err = api:call("sbroad.execute", { [[
-        SELECT CAST(COLUMN_1 as int) FROM (VALUES (1))
+        SELECT CAST("COLUMN_1" as int) FROM (VALUES (1))
     ]], {} })
 
     t.assert_equals(err, nil)
@@ -179,7 +179,7 @@ arbitrary_projection.test_arbitrary_valid = function()
 
     -- using cyrillic symbols in identifiers is okay
     local r, err = api:call("sbroad.execute", { [[
-        SELECT COLUMN_1 as "колонка" FROM (VALUES (1))
+        SELECT "COLUMN_1" as "колонка" FROM (VALUES (1))
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r, {

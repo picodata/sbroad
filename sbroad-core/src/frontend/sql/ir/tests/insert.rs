@@ -4,7 +4,7 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn insert1() {
-    let pattern = r#"INSERT INTO "test_space"("id", first_name) VALUES(?, ?)"#;
+    let pattern = r#"INSERT INTO "test_space"("id", "FIRST_NAME") VALUES(?, ?)"#;
     let plan = sql_to_optimized_ir(pattern, vec![Value::from(1_i64), Value::from("test")]);
 
     let expected_explain = String::from(

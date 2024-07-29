@@ -332,7 +332,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
         .unwrap()
         .position(0)
         .unwrap();
-    let mut virtual_table = virtual_table_23(Some("\"t8\""));
+    let mut virtual_table = virtual_table_23(Some("t8"));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -411,7 +411,7 @@ fn join_linker2_test() {
     virtual_table.add_column(column_integer_user_non_null(SmolStr::from("id2")));
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(1_u64)]);
     virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(2_u64)]);
-    virtual_table.set_alias("\"t2\"").unwrap();
+    virtual_table.set_alias("t2").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -475,7 +475,7 @@ fn join_linker3_test() {
     virtual_table.add_column(column_integer_user_non_null(SmolStr::from("FIRST_NAME")));
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(1_u64)]);
     virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(2_u64)]);
-    virtual_table.set_alias("\"t2\"").unwrap();
+    virtual_table.set_alias("t2").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -516,10 +516,10 @@ fn join_linker3_test() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn join_linker4_test() {
-    let sql = r#"SELECT t1."id" FROM "test_space" as t1 JOIN
-    (SELECT "FIRST_NAME" as "r_id" FROM "test_space") as t2
-    on t1."id" = t2."r_id" and
-    t1."FIRST_NAME" = (SELECT "FIRST_NAME" as "fn" FROM "test_space" WHERE "id" = 1)"#;
+    let sql = r#"SELECT "T1"."id" FROM "test_space" as "T1" JOIN
+    (SELECT "FIRST_NAME" as "r_id" FROM "test_space") as "T2"
+    on "T1"."id" = "T2"."r_id" and
+    "T1"."FIRST_NAME" = (SELECT "FIRST_NAME" as "fn" FROM "test_space" WHERE "id" = 1)"#;
 
     let coordinator = RouterRuntimeMock::new();
 
@@ -537,7 +537,7 @@ fn join_linker4_test() {
     virtual_t2.add_column(column_integer_user_non_null(SmolStr::from("r_id")));
     virtual_t2.add_tuple(vec![Value::from(1_u64)]);
     virtual_t2.add_tuple(vec![Value::from(2_u64)]);
-    virtual_t2.set_alias("\"T2\"").unwrap();
+    virtual_t2.set_alias("T2").unwrap();
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
     {
@@ -640,7 +640,7 @@ on q."f" = "t1"."a""#;
         .unwrap();
     let mut virtual_t2 = VirtualTable::new();
     virtual_t2.add_column(column_integer_user_non_null(SmolStr::from("b")));
-    virtual_t2.set_alias("\"t3\"").unwrap();
+    virtual_t2.set_alias("t3").unwrap();
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
     {
@@ -661,7 +661,7 @@ on q."f" = "t1"."a""#;
     let mut virtual_sq = VirtualTable::new();
     virtual_sq.add_column(column_integer_user_non_null(SmolStr::from("f")));
     virtual_sq.add_column(column_integer_user_non_null(SmolStr::from("B")));
-    virtual_sq.set_alias("Q").unwrap();
+    virtual_sq.set_alias("q").unwrap();
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
     {
@@ -684,10 +684,10 @@ on q."f" = "t1"."a""#;
         LuaValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {} {}",
-                r#"SELECT "t1"."a", "t1"."b", "Q"."f", "Q"."B" FROM"#,
+                r#"SELECT "t1"."a", "t1"."b", "q"."f", "q"."b" FROM"#,
                 r#"(SELECT "t1"."a", "t1"."b" FROM "t1") as "t1""#,
                 r#"INNER JOIN (SELECT "f","B" FROM "TMP_test_146")"#,
-                r#"as Q ON ("Q"."f") = ("t1"."a")"#,
+                r#"as "q" ON ("q"."f") = ("t1"."a")"#,
             ),
             vec![],
         ))),

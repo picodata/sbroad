@@ -20,7 +20,7 @@ use tarantool::index::{IndexType, RtreeIndexDistanceType};
 use time::{OffsetDateTime, Time};
 
 use crate::errors::{Action, Entity, SbroadError};
-use crate::executor::engine::{helpers::normalize_name_for_space_api, Metadata};
+use crate::executor::engine::Metadata;
 use crate::frontend::sql::ast::{
     AbstractSyntaxTree, ParseNode, ParseNodes, ParseTree, Rule, StackParseNode,
 };
@@ -44,7 +44,7 @@ use crate::ir::{Node, NodeId, OptionKind, OptionParamValue, OptionSpec, Plan};
 use crate::otm::child_span;
 
 use crate::errors::Entity::AST;
-use crate::executor::engine::helpers::normalize_name_from_sql;
+use crate::executor::engine::helpers::{normalize_name_from_sql, to_user};
 use crate::ir::acl::AlterOption;
 use crate::ir::acl::{Acl, GrantRevokeType, Privilege};
 use crate::ir::aggregates::AggregateKind;
@@ -926,7 +926,8 @@ where
                 return Err(SbroadError::Invalid(
                     Entity::Table,
                     Some(format_smolstr!(
-                        "table with name {scan_name} is already defined as a CTE",
+                        "table with name {} is already defined as a CTE",
+                        to_user(scan_name)
                     )),
                 ));
             }
@@ -937,7 +938,10 @@ where
         Err(SbroadError::NotFound(..)) => {
             // If the table is not found, we try to find a CTE with the given name.
             let cte_id = *ctes.get(&scan_name).ok_or_else(|| {
-                SbroadError::NotFound(Entity::Table, format_smolstr!("with name {scan_name}"))
+                SbroadError::NotFound(
+                    Entity::Table,
+                    format_smolstr!("with name {}", to_user(scan_name)),
+                )
             })?;
             map.add(node_id, cte_id);
         }
@@ -984,7 +988,10 @@ fn parse_cte(
     if ctes.get(&name).is_some() {
         return Err(SbroadError::Invalid(
             Entity::Cte,
-            Some(format_smolstr!("CTE with name {name} is already defined")),
+            Some(format_smolstr!(
+                "CTE with name {} is already defined",
+                to_user(name)
+            )),
         ));
     }
     let cte_id = plan.add_cte(child_id, name.clone(), columns)?;
@@ -996,7 +1003,9 @@ fn parse_cte(
 /// Get String value under node that is considered to be an identifier
 /// (on which rules on name normalization should be applied).
 fn parse_identifier(ast: &AbstractSyntaxTree, node_id: usize) -> Result<SmolStr, SbroadError> {
-    Ok(normalize_name_for_space_api(parse_string_value_node(ast, node_id)?).to_smolstr())
+    Ok(normalize_name_from_sql(parse_string_value_node(
+        ast, node_id,
+    )?))
 }
 
 fn parse_normalized_identifier(
@@ -2799,8 +2808,8 @@ impl AbstractSyntaxTree {
                 Rule::Table => {
                     // The thing is we don't want to normalize name.
                     // Should we fix `parse_identifier` or `table` logic?
-                    let table_name = parse_string_value_node(self, id)?;
-                    let t = metadata.table(table_name)?;
+                    let table_name = parse_identifier(self, id)?;
+                    let t = metadata.table(&table_name)?;
                     plan.add_rel(t);
                 }
                 Rule::SubQuery => {
@@ -3001,17 +3010,15 @@ impl AbstractSyntaxTree {
                                                 .reference_to_name_map
                                                 .get(&expr_plan_node_id)
                                                 .expect("reference must be in a map");
-                                            normalize_name_from_sql(col_name.as_str())
+                                            col_name.clone()
                                         } else {
                                             unnamed_col_pos += 1;
                                             get_unnamed_column_alias(unnamed_col_pos)
                                         }
                                     };
 
-                                let plan_alias_id = plan.nodes.add_alias(
-                                    &normalize_name_from_sql(&alias_name),
-                                    expr_plan_node_id,
-                                )?;
+                                let plan_alias_id =
+                                    plan.nodes.add_alias(&alias_name, expr_plan_node_id)?;
                                 proj_columns.push(plan_alias_id);
                             }
                             Rule::Asterisk => {
@@ -3158,7 +3165,7 @@ impl AbstractSyntaxTree {
                                         Entity::Query,
                                         Some(format_smolstr!(
                                             "it is illegal to update primary key column: {}",
-                                            col_name
+                                            to_user(col_name)
                                         )),
                                     ));
                                 }
@@ -3167,7 +3174,7 @@ impl AbstractSyntaxTree {
                                         Entity::Query,
                                         Some(format_smolstr!(
                                             "The same column is specified twice in update list: {}",
-                                            col_name
+                                            to_user(col_name)
                                         )),
                                     ));
                                 }
@@ -3177,7 +3184,10 @@ impl AbstractSyntaxTree {
                                 return Err(SbroadError::FailedTo(
                                     Action::Update,
                                     Some(Entity::Column),
-                                    format_smolstr!("system column {col_name} cannot be updated"),
+                                    format_smolstr!(
+                                        "system column {} cannot be updated",
+                                        to_user(col_name)
+                                    ),
                                 ))
                             }
                             None => {
@@ -3342,7 +3352,7 @@ impl AbstractSyntaxTree {
                                     Entity::Column,
                                     Some(format_smolstr!(
                                         "NonNull column {} must be specified",
-                                        column.name
+                                        to_user(&column.name)
                                     )),
                                 ));
                             }

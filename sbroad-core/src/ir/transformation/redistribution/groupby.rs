@@ -1,6 +1,7 @@
 use smol_str::{format_smolstr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
+use crate::executor::engine::helpers::to_user;
 use crate::ir::aggregates::{generate_local_alias_for_aggr, AggregateKind, SimpleAggregate};
 use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression::StableFunction;
@@ -327,7 +328,8 @@ impl<'plan> ExpressionMapper<'plan> {
             return Err(SbroadError::Invalid(
                 Entity::Query,
                 Some(format_smolstr!(
-                    "column {column_name} is not found in grouping expressions!"
+                    "column {} is not found in grouping expressions!",
+                    to_user(column_name)
                 )),
             ));
         }
@@ -347,9 +349,9 @@ impl Plan {
     fn generate_local_alias(id: usize) -> String {
         #[cfg(feature = "mock")]
         {
-            return format!("\"column_{id}\"");
+            return format!("column_{id}");
         }
-        format!("\"{}_{id}\"", uuid::Uuid::new_v4().as_simple())
+        format!("{}_{id}", uuid::Uuid::new_v4().as_simple())
     }
 
     #[allow(clippy::too_many_lines)]
@@ -562,17 +564,20 @@ impl Plan {
                         children: children_left,
                         feature: feature_left,
                         func_type: func_type_left,
+                        is_system: is_aggr_left,
                     } => {
                         if let Expression::StableFunction {
                             name: name_right,
                             children: children_right,
                             feature: feature_right,
                             func_type: func_type_right,
+                            is_system: is_aggr_right,
                         } = right
                         {
                             return Ok(name_left == name_right
                                 && feature_left == feature_right
                                 && func_type_left == func_type_right
+                                && is_aggr_left == is_aggr_right
                                 && children_left.iter().zip(children_right.iter()).all(
                                     |(l, r)| {
                                         self.are_aggregate_subtrees_equal(*l, *r).unwrap_or(false)
@@ -929,7 +934,7 @@ impl Plan {
                                         Err(e) => e.to_smolstr(),
                                     };
                                     return Err(SbroadError::Invalid(Entity::Query,
-                                                                    Some(format_smolstr!("found column reference ({alias}) outside aggregate function"))));
+                                                                    Some(format_smolstr!("found column reference ({}) outside aggregate function", to_user(alias)))));
                                 }
                             }
                         }
@@ -1078,6 +1083,7 @@ impl Plan {
             name: kind.to_smolstr(),
             behavior: Behavior::Stable,
             func_type: Type::from(kind),
+            is_system: true,
         };
         // We can reuse aggregate expression between local aggregates, because
         // all local aggregates are located inside the same motion subtree and we

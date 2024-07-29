@@ -14,6 +14,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Bound::Included;
 
 use crate::errors::{Entity, SbroadError};
+use crate::executor::engine::helpers::to_user;
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::Type;
@@ -150,6 +151,11 @@ pub enum Expression {
         feature: Option<FunctionFeature>,
         /// Function return type.
         func_type: Type,
+        /// Whether function is provided by tarantool,
+        /// when referencing these funcs from local
+        /// sql we must not use quotes.
+        /// Examples: aggregates, substr
+        is_system: bool,
     },
     /// Trim expression.
     Trim {
@@ -732,17 +738,20 @@ impl<'plan> Comparator<'plan> {
                         children: children_left,
                         feature: feature_left,
                         func_type: func_type_left,
+                        is_system: is_aggr_left,
                     } => {
                         if let Expression::StableFunction {
                             name: name_right,
                             children: children_right,
                             feature: feature_right,
                             func_type: func_type_right,
+                            is_system: is_aggr_right,
                         } = right
                         {
                             return Ok(name_left == name_right
                                 && feature_left == feature_right
                                 && func_type_left == func_type_right
+                                && is_aggr_left == is_aggr_right
                                 && children_left.iter().zip(children_right.iter()).all(
                                     |(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false),
                                 ));
@@ -872,10 +881,12 @@ impl<'plan> Comparator<'plan> {
                 children,
                 func_type,
                 feature,
+                is_system: is_aggr,
             } => {
                 feature.hash(state);
                 func_type.hash(state);
                 name.hash(state);
+                is_aggr.hash(state);
                 for child in children {
                     self.hash_for_child_expr(*child, depth);
                 }
@@ -998,7 +1009,7 @@ impl ColumnPositionMap {
             }
             _ => Err(SbroadError::NotFound(
                 Entity::Column,
-                format_smolstr!("with name {column}"),
+                format_smolstr!("with name {}", to_user(column)),
             )),
         }
     }
@@ -1021,12 +1032,13 @@ impl ColumnPositionMap {
             // Even given `scan` we can't identify which of these two columns do we need to
             // refer to.
             return Err(SbroadError::DuplicatedValue(format_smolstr!(
-                "column name {column} is ambiguous"
+                "column name {} is ambiguous",
+                to_user(column)
             )));
         }
         Err(SbroadError::NotFound(
             Entity::Column,
-            format_smolstr!("with name {column} and scan {scan:?}"),
+            format_smolstr!("with name {} and scan {scan:?}", to_user(column)),
         ))
     }
 

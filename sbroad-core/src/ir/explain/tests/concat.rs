@@ -22,7 +22,7 @@ fn concat2_test() {
         &format!(
             "{}\n{}\n{}\n{}\n{}\n{}\n",
             r#"projection ("t1"."a"::string -> "a")"#,
-            r#"    selection ROW(ROW(ROW('1'::string::string) || ROW("FUNC"(('hello'::string))::integer)) || ROW('2'::string)) = ROW(42::unsigned)"#,
+            r#"    selection ROW(ROW(ROW('1'::string::string) || ROW("func"(('hello'::string))::integer)) || ROW('2'::string)) = ROW(42::unsigned)"#,
             r#"        scan "t1""#,
             r#"execution options:"#,
             r#"sql_vdbe_max_steps = 45000"#,

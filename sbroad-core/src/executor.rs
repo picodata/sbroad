@@ -29,7 +29,6 @@ use std::rc::Rc;
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::helpers::normalize_name_for_space_api;
 use crate::executor::engine::{helpers::materialize_values, Router, TableVersionMap, Vshard};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::Cache;
@@ -135,9 +134,9 @@ where
                     if tbl.is_system() {
                         continue;
                     }
-                    let normalized = normalize_name_for_space_api(tbl_name);
+                    let normalized = tbl_name;
                     let version = coordinator.get_table_version(normalized.as_str())?;
-                    table_version_map.insert(normalized, version);
+                    table_version_map.insert(normalized.clone(), version);
                 }
                 plan.version_map = table_version_map;
             }

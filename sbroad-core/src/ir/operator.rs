@@ -2,6 +2,7 @@
 //!
 //! Contains operator nodes that transform the tuples in IR tree.
 
+use crate::executor::engine::helpers::to_user;
 use crate::frontend::sql::get_unnamed_column_alias;
 use ahash::RandomState;
 
@@ -1267,7 +1268,7 @@ impl Plan {
                         return Err(SbroadError::FailedTo(
                             Action::Insert,
                             Some(Entity::Column),
-                            format_smolstr!("system column {name} cannot be inserted"),
+                            format_smolstr!("system column {} cannot be inserted", to_user(name)),
                         ))
                     }
                     None => {
@@ -1887,7 +1888,7 @@ impl Plan {
             // Generate a row of aliases for the incoming row.
             *col_idx += 1;
             // The column names are generated according to tarantool naming of anonymous columns
-            let name = format!("\"COLUMN_{col_idx}\"");
+            let name = format!("COLUMN_{col_idx}");
             let alias_id = self.nodes.add_alias(&name, col_id)?;
             aliases.push(alias_id);
         }

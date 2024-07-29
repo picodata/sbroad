@@ -196,7 +196,7 @@ g.test_not_eq2 = function()
     t.assert_items_equals(r, {
         metadata = {
             {name = "id", type = "integer"},
-            {name = "U", type = "integer"}
+            {name = "u", type = "integer"}
         },
         rows = {
             {1, 2}, {1, 3}, {1, 4},
@@ -377,7 +377,7 @@ g.test_not_in_subquery_select_from_values = function()
 
     local r, err = api:call("sbroad.execute", { [[
         SELECT "id" FROM "space_simple_shard_key"
-        WHERE "id" NOT IN (SELECT cast(COLUMN_2 as int) FROM (VALUES (1), (3)))
+        WHERE "id" NOT IN (SELECT cast("COLUMN_2" as int) FROM (VALUES (1), (3)))
     ]], {} })
 
     t.assert_equals(err, nil)
@@ -395,7 +395,7 @@ g.test_in_subquery_select_from_values = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("sbroad.execute", { [[
-        SELECT "id" FROM "space_simple_shard_key_hist" WHERE "id" IN (SELECT cast(COLUMN_1 as int) FROM (VALUES (1)))
+        SELECT "id" FROM "space_simple_shard_key_hist" WHERE "id" IN (SELECT cast("COLUMN_1" as int) FROM (VALUES (1)))
     ]], {1} })
 
     t.assert_equals(err, nil)
@@ -435,7 +435,7 @@ g.test_not_exists_subquery_select_from_values = function()
     -- NotExists condition should return false on each row from t
     -- as soon as it's subquery always returns one row.
     local r, err = api:call("sbroad.execute", { [[
-        SELECT "id" FROM "t" WHERE NOT EXISTS (SELECT cast(COLUMN_1 as int) FROM (VALUES (1)))
+        SELECT "id" FROM "t" WHERE NOT EXISTS (SELECT cast("COLUMN_1" as int) FROM (VALUES (1)))
     ]], {} })
 
     t.assert_equals(err, nil)

@@ -178,7 +178,7 @@ g.test_bucket_id_calculation = function()
     t.assert_equals(r, nil)
     t.assert_equals(
         tostring(err),
-        [[Sbroad Error: sharding key (quoted) column "\"name\"" in the quoted map {"\"id\"": "id"} (original map: {"id": Integer(1)}) not found]]
+        [[Sbroad Error: sharding key (quoted) column "name" in the quoted map {"id": "id"} (original map: {"id": Integer(1)}) not found]]
     )
 
     r, err = api:call("sbroad.calculate_bucket_id", { { id = 1, "123" }, "testing_space" })
@@ -393,7 +393,7 @@ g.test_uppercase1 = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("sbroad.execute", { [[
-        SELECT "id" FROM broken
+        SELECT "id" FROM "BROKEN"
     ]], {} })
 
     t.assert_equals(err, nil)
@@ -409,7 +409,7 @@ g.test_uppercase2 = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("sbroad.execute", { [[
-        SELECT "id" FROM BROKEN
+        SELECT "id" FROM "BROKEN"
     ]], {} })
 
     t.assert_equals(err, nil)
@@ -504,8 +504,8 @@ g.test_datetime_insert = function ()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("sbroad.execute", { [[
-        insert into "datetime_t" select to_date(COLUMN_1, '%c'),
-        cast(COLUMN_2 as int) from
+        insert into "datetime_t" select to_date("COLUMN_1", '%c'),
+        cast("COLUMN_2" as int) from
         (values ('Thu Jan  1 03:44:00 1970', 100))
     ]]})
     t.assert_equals(err, nil)
@@ -577,7 +577,7 @@ g.test_to_char = function ()
     -- second argument is optional
     -- FIXME: https://git.picodata.io/picodata/picodata/sbroad/-/issues/645
     r, err = api:call("sbroad.execute", { [[
-        select to_char(to_date(COLUMN_1, '%Y %d'), null)
+        select to_char(to_date("COLUMN_1", '%Y %d'), null)
         from (values ('2020 20'))
     ]]})
 
@@ -593,7 +593,7 @@ g.test_to_char = function ()
 
     -- check we can use expressions inside to_char
     r, err = api:call("sbroad.execute", { [[
-        select to_char(to_date(COLUMN_1, '%Y %d'), '%Y-%m-%d' || '-%H-%M-%S-%z')
+        select to_char(to_date("COLUMN_1", '%Y %d'), '%Y-%m-%d' || '-%H-%M-%S-%z')
         from (values ('2020 20'))
     ]]})
 
@@ -609,7 +609,7 @@ g.test_to_char = function ()
 
     -- invalid modifier used
     r, err = api:call("sbroad.execute", { [[
-        select to_char(to_date(COLUMN_1, '%Y %d'), '%i-%m-%d')
+        select to_char(to_date("COLUMN_1", '%Y %d'), '%i-%m-%d')
         from (values ('2020 20'))
     ]]})
 
@@ -655,10 +655,10 @@ g.test_current_date = function ()
     })
 
     r, err = api:call("sbroad.execute", { [[
-        select to_char(COL_1, '%Y') from (select to_date(COLUMN_2, '%Y.%m.%d') from (
+        select to_char("COL_1", '%Y') from (select to_date("COLUMN_2", '%Y.%m.%d') from (
           values ('2077.1.1'), ('2000.10.10')
         ))
-        where COL_1 > CURRENT_DATE
+        where "COL_1" > CURRENT_DATE
     ]]})
     t.assert_equals(err, nil)
     t.assert_equals(r, {

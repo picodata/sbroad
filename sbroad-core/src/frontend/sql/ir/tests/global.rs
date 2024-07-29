@@ -92,7 +92,7 @@ scan
 subquery $1:
 motion [policy: full]
             scan
-                projection ("t"."a"::unsigned -> "A1")
+                projection ("t"."a"::unsigned -> "a1")
                     scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -128,7 +128,7 @@ scan
                             scan "t"
 subquery $1:
 scan
-            projection ("t"."a"::unsigned -> "A1", "t"."b"::unsigned -> "B1")
+            projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                 scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -167,7 +167,7 @@ scan
 subquery $1:
 motion [policy: full]
             scan
-                projection ("t"."a"::unsigned -> "A1", "t"."b"::unsigned -> "B1")
+                projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                     scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -193,7 +193,7 @@ fn front_sql_global_tbl_sq2() {
         scan "global_t"
 subquery $0:
 scan
-            projection ("t"."a"::unsigned -> "A1", "t"."b"::unsigned -> "B1")
+            projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                 scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -221,12 +221,12 @@ fn front_sql_global_tbl_sq3() {
 subquery $0:
 motion [policy: full]
             scan
-                projection ("t"."a"::unsigned -> "A1", "t"."b"::unsigned -> "B1")
+                projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                     scan "t"
 subquery $1:
 motion [policy: full]
             scan
-                projection ("t"."a"::unsigned -> "A1", "t"."b"::unsigned -> "B1")
+                projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                     scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -259,7 +259,7 @@ fn front_sql_global_tbl_sq4() {
                     scan "hash_testing"
 subquery $0:
 scan
-            projection ("global_t"."a"::integer -> "A1")
+            projection ("global_t"."a"::integer -> "a1")
                 scan "global_t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -290,7 +290,7 @@ fn front_sql_global_tbl_sq5() {
                 scan "t2"
 subquery $0:
 scan
-            projection ("global_t"."a"::integer -> "A1")
+            projection ("global_t"."a"::integer -> "a1")
                 scan "global_t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -326,16 +326,16 @@ fn front_sql_global_tbl_sq6() {
                         scan "t2"
 subquery $0:
 scan
-                projection ("global_t"."a"::integer -> "A1")
+                projection ("global_t"."a"::integer -> "a1")
                     scan "global_t"
 subquery $1:
 scan
-                projection (ROW("global_t"."a"::integer) * ROW(20::unsigned) -> "A1")
+                projection (ROW("global_t"."a"::integer) * ROW(20::unsigned) -> "a1")
                     selection ROW("global_t"."a"::integer) = ROW(1::unsigned)
                         scan "global_t"
 subquery $2:
 scan
-                projection ("global_t"."a"::integer -> "A1")
+                projection ("global_t"."a"::integer -> "a1")
                     scan "global_t"
 subquery $3:
 scan
@@ -372,11 +372,11 @@ fn front_sql_global_tbl_sq7() {
                     scan "t2"
 subquery $0:
 scan
-            projection ("global_t"."a"::integer -> "A1")
+            projection ("global_t"."a"::integer -> "a1")
                 scan "global_t"
 subquery $1:
 scan
-            projection ("global_t"."a"::integer -> "A1")
+            projection ("global_t"."a"::integer -> "a1")
                 scan "global_t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -493,10 +493,10 @@ fn front_sql_global_join4() {
     check_join_dist(&plan, &[DistMock::Single]);
 
     let expected_explain = String::from(
-        r#"projection ("S"."E"::decimal -> "E")
+        r#"projection ("s"."e"::decimal -> "e")
     left join on true::boolean
-        scan "S"
-            projection (sum(("sum_13"::decimal))::decimal -> "E")
+        scan "s"
+            projection (sum(("sum_13"::decimal))::decimal -> "e")
                 motion [policy: full]
                     scan
                         projection (sum(("t2"."e"::unsigned))::decimal -> "sum_13")
@@ -524,13 +524,13 @@ fn front_sql_global_join5() {
     check_join_dist(&plan, &[DistMock::Single]);
 
     let expected_explain = String::from(
-        r#"projection ("S"."E"::decimal -> "E")
+        r#"projection ("s"."e"::decimal -> "e")
     left join on true::boolean
         scan "global_t"
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                 scan "global_t"
-        scan "S"
-            projection (sum(("sum_19"::decimal))::decimal -> "E")
+        scan "s"
+            projection (sum(("sum_19"::decimal))::decimal -> "e")
                 motion [policy: full]
                     scan
                         projection (sum(("t2"."e"::unsigned))::decimal -> "sum_19")
@@ -555,13 +555,13 @@ fn front_sql_global_join6() {
     check_join_dist(&plan, &[DistMock::Any]);
 
     let expected_explain = String::from(
-        r#"projection ("S"."E"::unsigned -> "E")
+        r#"projection ("s"."e"::unsigned -> "e")
     join on true::boolean
         scan "global_t"
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                 scan "global_t"
-        scan "S"
-            projection (ROW("t2"."e"::unsigned) * ROW("t2"."e"::unsigned) -> "E")
+        scan "s"
+            projection (ROW("t2"."e"::unsigned) * ROW("t2"."e"::unsigned) -> "e")
                 scan "t2"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -583,10 +583,10 @@ fn front_sql_global_join7() {
     check_join_dist(&plan, &[DistMock::Any]);
 
     let expected_explain = String::from(
-        r#"projection ("S"."E"::unsigned -> "E")
+        r#"projection ("s"."e"::unsigned -> "e")
     join on true::boolean
-        scan "S"
-            projection (ROW("t2"."e"::unsigned) * ROW("t2"."e"::unsigned) -> "E")
+        scan "s"
+            projection (ROW("t2"."e"::unsigned) * ROW("t2"."e"::unsigned) -> "e")
                 scan "t2"
         scan "global_t"
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
@@ -611,10 +611,10 @@ fn front_sql_global_join8() {
     check_join_dist(&plan, &[DistMock::Global]);
 
     let expected_explain = String::from(
-        r#"projection ("E"::integer -> "E")
+        r#"projection ("e"::integer -> "e")
     join on true::boolean
         scan
-            projection (ROW("global_t"."a"::integer) * ROW("global_t"."a"::integer) -> "E")
+            projection (ROW("global_t"."a"::integer) * ROW("global_t"."a"::integer) -> "e")
                 scan "global_t"
         scan "global_t"
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
@@ -639,10 +639,10 @@ fn front_sql_global_join9() {
     check_join_dist(&plan, &[DistMock::Any]);
 
     let expected_explain = String::from(
-        r#"projection ("E"::unsigned -> "E")
+        r#"projection ("e"::unsigned -> "e")
     left join on true::boolean
         scan
-            projection (ROW("t2"."e"::unsigned) * ROW("t2"."e"::unsigned) -> "E")
+            projection (ROW("t2"."e"::unsigned) * ROW("t2"."e"::unsigned) -> "e")
                 scan "t2"
         scan "global_t"
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
@@ -667,10 +667,10 @@ fn front_sql_global_join10() {
     check_join_dist(&plan, &[DistMock::Global]);
 
     let expected_explain = String::from(
-        r#"projection ("E"::integer -> "E")
-    join on ROW("E"::integer) in ROW($0)
+        r#"projection ("e"::integer -> "e")
+    join on ROW("e"::integer) in ROW($0)
         scan
-            projection (ROW("global_t"."a"::integer) * ROW("global_t"."a"::integer) -> "E")
+            projection (ROW("global_t"."a"::integer) * ROW("global_t"."a"::integer) -> "e")
                 scan "global_t"
         scan "global_t"
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
@@ -700,10 +700,10 @@ fn front_sql_global_join11() {
     check_join_dist(&plan, &[DistMock::Any]);
 
     let expected_explain = String::from(
-        r#"projection ("E"::integer -> "E")
-    join on ROW("E"::integer, "E"::integer) in ROW($0, $0)
+        r#"projection ("e"::integer -> "e")
+    join on ROW("e"::integer, "e"::integer) in ROW($0, $0)
         scan
-            projection (ROW("global_t"."a"::integer) * ROW("global_t"."a"::integer) -> "E")
+            projection (ROW("global_t"."a"::integer) * ROW("global_t"."a"::integer) -> "e")
                 scan "global_t"
         scan "global_t"
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
@@ -812,14 +812,15 @@ fn front_sql_global_aggregate5() {
     "#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
+    println!("{}", plan.as_explain().unwrap());
 
     let expected_explain = String::from(
         r#"projection ("column_44"::integer -> "COL_1", sum(("sum_70"::decimal))::decimal -> "COL_2")
     having ROW(sum(("sum_53"::decimal::double))::decimal / sum(("count_53"::decimal::double))::decimal) > ROW(3::unsigned)
-        group by ("column_44"::integer) output: ("column_44"::integer -> "column_44", "sum_53"::decimal -> "sum_53", "sum_70"::decimal -> "sum_70", "count_53"::integer -> "count_53")
+        group by ("column_44"::integer) output: ("column_44"::integer -> "column_44", "sum_70"::decimal -> "sum_70", "sum_53"::decimal -> "sum_53", "count_53"::integer -> "count_53")
             motion [policy: segment([ref("column_44")])]
                 scan
-                    projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "column_44", sum(("global_t"."b"::integer))::decimal -> "sum_53", sum(("global_t"."a"::integer))::decimal -> "sum_70", count(("global_t"."b"::integer))::integer -> "count_53")
+                    projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "column_44", sum(("global_t"."a"::integer))::decimal -> "sum_70", sum(("global_t"."b"::integer))::decimal -> "sum_53", count(("global_t"."b"::integer))::integer -> "count_53")
                         group by (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer)) output: ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                             selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($0, $0)
                                 scan "global_t"
@@ -1425,8 +1426,8 @@ fn check_plan_except_non_trivial_global_subtree_vs_any() {
     // a global table
     let input = r#"
     select "b" from "global_t"
-    left join (select "b" as b from "global_t")
-    on "a" = b
+    left join (select "b" as "B" from "global_t")
+    on "a" = "B"
     where "a" = 1
     except
     select "e" from "t2"

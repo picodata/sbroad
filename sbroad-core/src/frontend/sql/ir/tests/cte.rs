@@ -7,15 +7,15 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn cte() {
-    let sql = r#"WITH cte (a) AS (SELECT first_name FROM "test_space") SELECT * FROM cte"#;
+    let sql = r#"WITH cte (a) AS (SELECT "FIRST_NAME" FROM "test_space") SELECT * FROM cte"#;
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("CTE"."A"::string -> "A")
-    scan cte "CTE"($0)
+        r#"projection ("cte"."a"::string -> "a")
+    scan cte cte($0)
 subquery $0:
 motion [policy: full]
-            projection ("test_space"."FIRST_NAME"::string -> "A")
+            projection ("test_space"."FIRST_NAME"::string -> "a")
                 scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -31,10 +31,10 @@ fn global_cte() {
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("CTE"."A"::integer -> "A")
-    scan cte "CTE"($0)
+        r#"projection ("cte"."a"::integer -> "a")
+    scan cte cte($0)
 subquery $0:
-projection ("global_t"."a"::integer -> "A")
+projection ("global_t"."a"::integer -> "a")
             scan "global_t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -47,22 +47,22 @@ vtable_max_rows = 5000
 #[test]
 fn nested_cte() {
     let sql = r#"
-        WITH cte1 (a) AS (SELECT first_name FROM "test_space"),
+        WITH cte1 (a) AS (SELECT "FIRST_NAME" FROM "test_space"),
         cte2 AS (SELECT * FROM cte1)
         SELECT * FROM cte2
     "#;
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("CTE2"."A"::string -> "A")
-    scan cte "CTE2"($1)
+        r#"projection ("cte2"."a"::string -> "a")
+    scan cte cte2($1)
 subquery $0:
 motion [policy: full]
-                    projection ("test_space"."FIRST_NAME"::string -> "A")
+                    projection ("test_space"."FIRST_NAME"::string -> "a")
                         scan "test_space"
 subquery $1:
-projection ("CTE1"."A"::string -> "A")
-            scan cte "CTE1"($0)
+projection ("cte1"."a"::string -> "a")
+            scan cte cte1($0)
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -74,7 +74,7 @@ vtable_max_rows = 5000
 #[test]
 fn reuse_cte_union_all() {
     let sql = r#"
-        WITH cte (a) AS (SELECT first_name FROM "test_space")
+        WITH cte (a) AS (SELECT "FIRST_NAME" FROM "test_space")
         SELECT * FROM cte
         UNION ALL
         SELECT * FROM cte
@@ -83,13 +83,13 @@ fn reuse_cte_union_all() {
 
     let expected_explain = String::from(
         r#"union all
-    projection ("CTE"."A"::string -> "A")
-        scan cte "CTE"($0)
-    projection ("CTE"."A"::string -> "A")
-        scan cte "CTE"($0)
+    projection ("cte"."a"::string -> "a")
+        scan cte cte($0)
+    projection ("cte"."a"::string -> "a")
+        scan cte cte($0)
 subquery $0:
 motion [policy: full]
-                projection ("test_space"."FIRST_NAME"::string -> "A")
+                projection ("test_space"."FIRST_NAME"::string -> "a")
                     scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -103,9 +103,9 @@ vtable_max_rows = 5000
 fn reuse_union_in_cte() {
     let sql = r#"
         WITH cte (a) AS (
-            SELECT first_name FROM "test_space"
+            SELECT "FIRST_NAME" FROM "test_space"
             UNION
-            SELECT first_name FROM "test_space"
+            SELECT "FIRST_NAME" FROM "test_space"
         )
         SELECT * FROM cte
         UNION
@@ -116,13 +116,13 @@ fn reuse_union_in_cte() {
     let expected_explain = String::from(
         r#"motion [policy: full]
     union
-        projection ("CTE"."A"::string -> "A")
-            scan cte "CTE"($0)
-        projection ("CTE"."A"::string -> "A")
-            scan cte "CTE"($0)
+        projection ("cte"."a"::string -> "a")
+            scan cte cte($0)
+        projection ("cte"."a"::string -> "a")
+            scan cte cte($0)
 subquery $0:
-projection ("CTE"."FIRST_NAME"::string -> "A")
-                    scan "CTE"
+projection ("cte"."FIRST_NAME"::string -> "a")
+                    scan "cte"
                         motion [policy: full]
                             union
                                 projection ("test_space"."FIRST_NAME"::string -> "FIRST_NAME")
@@ -147,18 +147,18 @@ fn reuse_cte_values() {
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("T"."C"::integer -> "C")
+        r#"projection ("t"."c"::integer -> "c")
     join on true::boolean
-        scan "T"
-            projection (count((*::integer))::integer -> "C")
+        scan "t"
+            projection (count((*::integer))::integer -> "c")
                 join on true::boolean
-                    scan cte "C1"($0)
-                    scan cte "C2"($0)
-        scan cte "CTE"($0)
+                    scan cte c1($0)
+                    scan cte c2($0)
+        scan cte cte($0)
 subquery $0:
 motion [policy: full]
-                            projection ("CTE"."COLUMN_1"::unsigned -> "B")
-                                scan "CTE"
+                            projection ("cte"."COLUMN_1"::unsigned -> "b")
+                                scan "cte"
                                     values
                                         value row (data=ROW(1::unsigned))
 execution options:
@@ -172,22 +172,22 @@ vtable_max_rows = 5000
 #[test]
 fn join_cte() {
     let sql = r#"
-        WITH cte (a) AS (SELECT first_name FROM "test_space")
-        SELECT t.first_name FROM "test_space" t
-        JOIN cte ON t.first_name = cte.a
+        WITH cte (a) AS (SELECT "FIRST_NAME" FROM "test_space")
+        SELECT t."FIRST_NAME" FROM "test_space" t
+        JOIN cte ON t."FIRST_NAME" = cte.a
     "#;
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("T"."FIRST_NAME"::string -> "FIRST_NAME")
-    join on ROW("T"."FIRST_NAME"::string) = ROW("CTE"."A"::string)
-        scan "T"
-            projection ("T"."id"::unsigned -> "id", "T"."sysFrom"::unsigned -> "sysFrom", "T"."FIRST_NAME"::string -> "FIRST_NAME", "T"."sys_op"::unsigned -> "sys_op")
-                scan "test_space" -> "T"
-        scan cte "CTE"($0)
+        r#"projection ("t"."FIRST_NAME"::string -> "FIRST_NAME")
+    join on ROW("t"."FIRST_NAME"::string) = ROW("cte"."a"::string)
+        scan "t"
+            projection ("t"."id"::unsigned -> "id", "t"."sysFrom"::unsigned -> "sysFrom", "t"."FIRST_NAME"::string -> "FIRST_NAME", "t"."sys_op"::unsigned -> "sys_op")
+                scan "test_space" -> "t"
+        scan cte cte($0)
 subquery $0:
 motion [policy: full]
-                projection ("test_space"."FIRST_NAME"::string -> "A")
+                projection ("test_space"."FIRST_NAME"::string -> "a")
                     scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -200,17 +200,17 @@ vtable_max_rows = 5000
 #[test]
 fn agg_cte() {
     let sql = r#"
-        WITH cte (a) AS (SELECT first_name FROM "test_space")
+        WITH cte (a) AS (SELECT "FIRST_NAME" FROM "test_space")
         SELECT count(a) FROM cte
     "#;
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection (count(("CTE"."A"::string))::integer -> "COL_1")
-    scan cte "CTE"($0)
+        r#"projection (count(("cte"."a"::string))::integer -> "COL_1")
+    scan cte cte($0)
 subquery $0:
 motion [policy: full]
-            projection ("test_space"."FIRST_NAME"::string -> "A")
+            projection ("test_space"."FIRST_NAME"::string -> "a")
                 scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -223,8 +223,8 @@ vtable_max_rows = 5000
 #[test]
 fn sq_cte() {
     let sql = r#"
-        WITH cte (a) AS (SELECT first_name FROM "test_space" WHERE first_name = 'hi')
-        SELECT first_name FROM "test_space" WHERE first_name IN (SELECT a FROM cte)
+        WITH cte (a) AS (SELECT "FIRST_NAME" FROM "test_space" WHERE "FIRST_NAME" = 'hi')
+        SELECT "FIRST_NAME" FROM "test_space" WHERE "FIRST_NAME" IN (SELECT a FROM cte)
     "#;
     let plan = sql_to_optimized_ir(sql, vec![]);
 
@@ -234,13 +234,13 @@ fn sq_cte() {
         scan "test_space"
 subquery $0:
 motion [policy: full]
-                        projection ("test_space"."FIRST_NAME"::string -> "A")
+                        projection ("test_space"."FIRST_NAME"::string -> "a")
                             selection ROW("test_space"."FIRST_NAME"::string) = ROW('hi'::string)
                                 scan "test_space"
 subquery $1:
 scan
-            projection ("CTE"."A"::string -> "A")
-                scan cte "CTE"($0)
+            projection ("cte"."a"::string -> "a")
+                scan cte cte($0)
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -258,12 +258,12 @@ fn values_in_cte() {
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("CTE"."A"::string -> "A")
-    scan cte "CTE"($0)
+        r#"projection ("cte"."a"::string -> "a")
+    scan cte cte($0)
 subquery $0:
 motion [policy: full]
-            projection ("CTE"."COLUMN_1"::string -> "A")
-                scan "CTE"
+            projection ("cte"."COLUMN_1"::string -> "a")
+                scan "cte"
                     values
                         value row (data=ROW('a'::string))
 execution options:
@@ -284,21 +284,21 @@ fn union_all_in_cte() {
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("CTE2"."A"::string -> "A")
-    scan cte "CTE2"($1)
+        r#"projection ("cte2"."a"::string -> "a")
+    scan cte cte2($1)
 subquery $0:
 motion [policy: full]
-                            projection ("CTE1"."COLUMN_1"::string -> "A")
-                                scan "CTE1"
+                            projection ("cte1"."COLUMN_1"::string -> "a")
+                                scan "cte1"
                                     values
                                         value row (data=ROW('a'::string))
 subquery $1:
 motion [policy: full]
             union all
-                projection ("CTE1"."A"::string -> "A")
-                    scan cte "CTE1"($0)
-                projection ("CTE1"."A"::string -> "A")
-                    scan cte "CTE1"($0)
+                projection ("cte1"."a"::string -> "a")
+                    scan cte cte1($0)
+                projection ("cte1"."a"::string -> "a")
+                    scan cte cte1($0)
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -311,27 +311,27 @@ vtable_max_rows = 5000
 fn join_in_cte() {
     let sql = r#"
         WITH cte AS (
-            SELECT t1.first_name FROM "test_space" t1
-            JOIN "test_space" t2 ON t1.first_name = t2."id"
+            SELECT t1."FIRST_NAME" FROM "test_space" t1
+            JOIN "test_space" t2 ON t1."FIRST_NAME" = t2."id"
         )
         SELECT * FROM cte
     "#;
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("CTE"."FIRST_NAME"::string -> "FIRST_NAME")
-    scan cte "CTE"($0)
+        r#"projection ("cte"."FIRST_NAME"::string -> "FIRST_NAME")
+    scan cte cte($0)
 subquery $0:
 motion [policy: full]
-            projection ("T1"."FIRST_NAME"::string -> "FIRST_NAME")
-                join on ROW("T1"."FIRST_NAME"::string) = ROW("T2"."id"::unsigned)
-                    scan "T1"
-                        projection ("T1"."id"::unsigned -> "id", "T1"."sysFrom"::unsigned -> "sysFrom", "T1"."FIRST_NAME"::string -> "FIRST_NAME", "T1"."sys_op"::unsigned -> "sys_op")
-                            scan "test_space" -> "T1"
+            projection ("t1"."FIRST_NAME"::string -> "FIRST_NAME")
+                join on ROW("t1"."FIRST_NAME"::string) = ROW("t2"."id"::unsigned)
+                    scan "t1"
+                        projection ("t1"."id"::unsigned -> "id", "t1"."sysFrom"::unsigned -> "sysFrom", "t1"."FIRST_NAME"::string -> "FIRST_NAME", "t1"."sys_op"::unsigned -> "sys_op")
+                            scan "test_space" -> "t1"
                     motion [policy: full]
-                        scan "T2"
-                            projection ("T2"."id"::unsigned -> "id", "T2"."sysFrom"::unsigned -> "sysFrom", "T2"."FIRST_NAME"::string -> "FIRST_NAME", "T2"."sys_op"::unsigned -> "sys_op")
-                                scan "test_space" -> "T2"
+                        scan "t2"
+                            projection ("t2"."id"::unsigned -> "id", "t2"."sysFrom"::unsigned -> "sysFrom", "t2"."FIRST_NAME"::string -> "FIRST_NAME", "t2"."sys_op"::unsigned -> "sys_op")
+                                scan "test_space" -> "t2"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -344,7 +344,7 @@ vtable_max_rows = 5000
 fn order_by_in_cte() {
     let sql = r#"
         WITH cte AS (
-            SELECT first_name FROM "test_space"
+            SELECT "FIRST_NAME" FROM "test_space"
             ORDER BY 1
         )
         SELECT * FROM cte
@@ -352,8 +352,8 @@ fn order_by_in_cte() {
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("CTE"."FIRST_NAME"::string -> "FIRST_NAME")
-    scan cte "CTE"($0)
+        r#"projection ("cte"."FIRST_NAME"::string -> "FIRST_NAME")
+    scan cte cte($0)
 subquery $0:
 projection ("FIRST_NAME"::string -> "FIRST_NAME")
             order by (1)
@@ -372,7 +372,7 @@ vtable_max_rows = 5000
 #[test]
 fn table_name_conflict() {
     let sql = r#"
-        WITH "test_space" AS (SELECT first_name FROM "test_space")
+        WITH "test_space" AS (SELECT "FIRST_NAME" FROM "test_space")
         SELECT * FROM "test_space"
     "#;
     let metadata = &RouterConfigurationMock::new();
@@ -389,7 +389,7 @@ fn table_name_conflict() {
 #[test]
 fn cte_name_conflict() {
     let sql = r#"
-        WITH cte AS (SELECT first_name FROM "test_space"),
+        WITH cte AS (SELECT "FIRST_NAME" FROM "test_space"),
         cte as (SELECT 'a' as a from "test_space")
         SELECT * FROM cte
     "#;
@@ -399,7 +399,7 @@ fn cte_name_conflict() {
         plan_error,
         Err(SbroadError::Invalid(
             Entity::Cte,
-            Some(r#"CTE with name "CTE" is already defined"#.into())
+            Some(r#"CTE with name "cte" is already defined"#.into())
         ))
     );
 }
@@ -407,7 +407,7 @@ fn cte_name_conflict() {
 #[test]
 fn cte_column_mismatch() {
     let sql = r#"
-        WITH cte(a) AS (SELECT first_name, first_name FROM "test_space")
+        WITH cte(a) AS (SELECT "FIRST_NAME", "FIRST_NAME" FROM "test_space")
         SELECT * FROM cte
     "#;
     let metadata = &RouterConfigurationMock::new();
@@ -423,8 +423,8 @@ fn cte_column_mismatch() {
 #[test]
 fn cte_with_left_join() {
     let sql = r#"
-        with cte as (select "e" as e from "t2")
-        select e from cte left join "t2"
+        with cte as (select "e" as "E" from "t2")
+        select "E" from cte left join "t2"
         on true
     "#;
 
@@ -434,9 +434,9 @@ fn cte_with_left_join() {
         r#"projection ("E"::unsigned -> "E")
     motion [policy: full]
         scan
-            projection ("CTE"."E"::unsigned -> "E", "t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+            projection ("cte"."E"::unsigned -> "E", "t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
                 join on true::boolean
-                    scan cte "CTE"($0)
+                    scan cte cte($0)
                     scan "t2"
                         projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
                             scan "t2"

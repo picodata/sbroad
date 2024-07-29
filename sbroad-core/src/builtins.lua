@@ -46,7 +46,7 @@ local function init()
   -- name, so for each func we provide a body.
   local body = string.format("function(...) return %s.builtins.TO_DATE(...) end",
   module)
-  box.schema.func.create("TO_DATE", {
+  box.schema.func.create("to_date", {
       language = 'LUA',
       returns = 'datetime',
       body = body,
@@ -58,7 +58,7 @@ local function init()
 
   body = string.format("function(...) return %s.builtins.TO_CHAR(...) end",
   module)
-  box.schema.func.create("TO_CHAR", {
+  box.schema.func.create("to_char", {
       language = 'LUA',
       returns = 'string',
       body = body,

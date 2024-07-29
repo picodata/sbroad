@@ -6,6 +6,7 @@
 use crate::cbo::histogram::Scalar;
 use crate::cbo::{ColumnStats, TableColumnPair, TableStats};
 use crate::errors::{Entity, SbroadError};
+use crate::executor::engine::helpers::to_user;
 use crate::executor::engine::{Metadata, Router, Statistics};
 use crate::ir::operator::Bool;
 use crate::ir::relation::{Column, Type};
@@ -249,7 +250,8 @@ pub fn calculate_filter_selectivity(
         SbroadError::Invalid(
             Entity::Statistics,
             Some(format_smolstr!(
-                "Column with name {table_name} is not found in metadata",
+                "Column with name {} is not found in metadata",
+                to_user(table_name)
             )),
         )
     })?;
@@ -373,7 +375,8 @@ pub fn calculate_condition_selectivity(
         SbroadError::Invalid(
             Entity::Statistics,
             Some(format_smolstr!(
-                "Column with name {left_table_name} is not found in metadata",
+                "Column with name {} is not found in metadata",
+                to_user(left_table_name)
             )),
         )
     })?;
@@ -395,7 +398,8 @@ pub fn calculate_condition_selectivity(
         SbroadError::Invalid(
             Entity::Statistics,
             Some(format_smolstr!(
-                "Column with name {right_table_name} is not found in metadata",
+                "Column with name {} is not found in metadata",
+                to_user(right_table_name),
             )),
         )
     })?;

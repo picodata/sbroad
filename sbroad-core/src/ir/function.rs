@@ -1,4 +1,5 @@
 use crate::errors::{Entity, SbroadError};
+use crate::executor::engine::helpers::to_user;
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::expression::Expression;
 use crate::ir::relation::Type;
@@ -23,21 +24,26 @@ pub struct Function {
     pub name: SmolStr,
     pub behavior: Behavior,
     pub func_type: Type,
+    /// True if this function is provided by tarantool,
+    /// when referencing this func in local sql, we must
+    /// not use quotes
+    pub is_system: bool,
 }
 
 impl Function {
     #[must_use]
-    pub fn new(name: SmolStr, behavior: Behavior, func_type: Type) -> Self {
+    pub fn new(name: SmolStr, behavior: Behavior, func_type: Type, is_system: bool) -> Self {
         Self {
             name,
             behavior,
             func_type,
+            is_system,
         }
     }
 
     #[must_use]
-    pub fn new_stable(name: SmolStr, func_type: Type) -> Self {
-        Self::new(name, Behavior::Stable, func_type)
+    pub fn new_stable(name: SmolStr, func_type: Type, is_system: bool) -> Self {
+        Self::new(name, Behavior::Stable, func_type, is_system)
     }
 
     #[must_use]
@@ -69,6 +75,7 @@ impl Plan {
             children,
             feature,
             func_type: function.func_type.clone(),
+            is_system: function.is_system,
         };
         let func_id = self.nodes.push(Node::Expression(func_expr));
         Ok(func_id)
@@ -112,7 +119,8 @@ impl Plan {
                     return Err(SbroadError::Invalid(
                         Entity::Query,
                         Some(format_smolstr!(
-                            "Expected one argument for aggregate: {function}."
+                            "Expected one argument for aggregate: {}.",
+                            to_user(function)
                         )),
                     ));
                 }
@@ -129,6 +137,7 @@ impl Plan {
             children,
             feature,
             func_type: Type::from(kind),
+            is_system: true,
         };
         let id = self.nodes.push(Node::Expression(func_expr));
         Ok(id)

@@ -57,7 +57,7 @@ g.test_limit = function()
         SELECT b FROM cte
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "B", type = "number"} })
+    t.assert_items_equals(r["metadata"], { {name = "b", type = "number"} })
     t.assert_items_equals(r["rows"], { {1}, {2}, {1}, {2} })
 
     -- cte with limit
@@ -69,7 +69,7 @@ g.test_limit = function()
         LIMIT 1
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "B", type = "number"} })
+    t.assert_items_equals(r["metadata"], { {name = "b", type = "number"} })
     t.assert_equals(#r["rows"], 1)
 
     -- limit in a subquery

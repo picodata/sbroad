@@ -16,8 +16,10 @@ use sbroad_proc::otm_child_span;
 /// Payload of the syntax tree node.
 #[derive(Clone, Deserialize, Debug, PartialEq, Eq, Serialize)]
 pub enum SyntaxData {
-    /// "as alias_name"
+    /// "as \"alias_name\""
     Alias(SmolStr),
+    /// "as alias_name"
+    UnquotedAlias(SmolStr),
     /// "cast"
     Cast,
     // "case"
@@ -109,6 +111,14 @@ impl SyntaxNode {
     fn new_alias(name: SmolStr) -> Self {
         SyntaxNode {
             data: SyntaxData::Alias(name),
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_unquoted_alias(name: SmolStr) -> Self {
+        SyntaxNode {
+            data: SyntaxData::UnquotedAlias(name),
             left: None,
             right: Vec::new(),
         }
@@ -1199,7 +1209,7 @@ impl<'p> SyntaxPlan<'p> {
         let children = vec![
             arena.push_sn_non_plan(SyntaxNode::new_open()),
             child_sn_id,
-            arena.push_sn_non_plan(SyntaxNode::new_alias(to_alias)),
+            arena.push_sn_non_plan(SyntaxNode::new_unquoted_alias(to_alias)),
             arena.push_sn_non_plan(SyntaxNode::new_close()),
         ];
         let cast_sn_id = arena.push_sn_non_plan(SyntaxNode::new_cast());

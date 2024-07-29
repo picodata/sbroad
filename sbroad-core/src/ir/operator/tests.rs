@@ -114,7 +114,7 @@ fn projection() {
 
     // Invalid alias names in the output
     assert_eq!(
-        SbroadError::NotFound(Entity::Column, r#"with name e"#.into()),
+        SbroadError::NotFound(Entity::Column, r#"with name "e""#.into()),
         plan.add_proj(scan_id, &["a", "e"], false, false)
             .unwrap_err()
     );
@@ -299,7 +299,7 @@ fn insert() {
         SbroadError::FailedTo(
             Action::Insert,
             Some(Entity::Column),
-            "system column c cannot be inserted".into(),
+            "system column \"c\" cannot be inserted".into(),
         ),
         plan.add_insert(
             "t2",

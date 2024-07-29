@@ -19,7 +19,7 @@ fn empty_motion1_test() {
         EXCEPT
         SELECT "t"."a", "t"."b" FROM "t" INNER JOIN "t2" ON "t"."a" = "t2"."g" and "t"."b" = "t2"."h"
         WHERE "t"."a" = 1
-    ) as q"#;
+    ) as "Q""#;
 
     let coordinator = RouterRuntimeMock::new();
 
@@ -94,7 +94,7 @@ fn t2_empty() -> VirtualTable {
 
     virtual_table.add_column(column_integer_user_non_null(SmolStr::from("h")));
 
-    virtual_table.set_alias("\"t2\"").unwrap();
+    virtual_table.set_alias("t2").unwrap();
 
     virtual_table
 }

@@ -243,7 +243,7 @@ fn front_sql_join_single_left_2() {
         on (o.a, o.b) = (i.c, i.d)
     "#;
 
-    check_join_motions(input, Policy::new_seg(&["A", "B"]), Policy::None, None);
+    check_join_motions(input, Policy::new_seg(&["a", "b"]), Policy::None, None);
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn front_sql_join_single_left_4() {
 
     check_join_motions(
         input,
-        Policy::new_seg(&["A", "B"]),
+        Policy::new_seg(&["a", "b"]),
         Policy::None,
         Some(vec![Policy::Full]),
     );
@@ -280,7 +280,7 @@ fn front_sql_join_single_left_5() {
         on o.a = i."id" and (i."sysFrom" = i."sys_op" and o.a = cast(o.a as number) + 1)
     "#;
 
-    check_join_motions(input, Policy::new_seg(&["A"]), Policy::None, None);
+    check_join_motions(input, Policy::new_seg(&["a"]), Policy::None, None);
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn front_sql_join_single_left_6() {
 
     check_join_motions(
         input,
-        Policy::new_seg(&["A"]),
+        Policy::new_seg(&["a"]),
         Policy::None,
         Some(vec![Policy::Full]),
     );

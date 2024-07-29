@@ -30,14 +30,14 @@ fn infer_not_null_on_pk1() {
     };
 
     let def = ColumnDef {
-        name: "A".into(),
+        name: "a".into(),
         data_type: Type::Integer,
         is_nullable: false,
     };
 
     assert_eq!(format, &vec![def]);
 
-    let expected_pk: Vec<SmolStr> = vec!["A".into()];
+    let expected_pk: Vec<SmolStr> = vec!["a".into()];
     assert_eq!(primary_key, &expected_pk);
 }
 
@@ -61,26 +61,26 @@ fn infer_not_null_on_pk2() {
     };
 
     let def_a = ColumnDef {
-        name: "A".into(),
+        name: "a".into(),
         data_type: Type::Integer,
         is_nullable: false,
     };
 
     let def_b = ColumnDef {
-        name: "B".into(),
+        name: "b".into(),
         data_type: Type::Integer,
         is_nullable: false,
     };
 
     let def_c = ColumnDef {
-        name: "C".into(),
+        name: "c".into(),
         data_type: Type::Integer,
         is_nullable: true,
     };
 
     assert_eq!(format, &vec![def_a, def_b, def_c]);
 
-    let expected_pk: Vec<SmolStr> = vec!["A".into(), "B".into()];
+    let expected_pk: Vec<SmolStr> = vec!["a".into(), "b".into()];
     assert_eq!(primary_key, &expected_pk);
 }
 

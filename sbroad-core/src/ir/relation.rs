@@ -569,7 +569,7 @@ pub struct Table {
 
 impl Table {
     #[must_use]
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &SmolStr {
         &self.name
     }
 
@@ -857,7 +857,7 @@ impl Relations {
     }
 
     pub fn insert(&mut self, table: Table) {
-        self.tables.insert(table.name().into(), table);
+        self.tables.insert(table.name().clone(), table);
     }
 
     #[must_use]

@@ -122,7 +122,7 @@ fn cast13_test() {
 fn cast14_test() {
     broadcast_check(
         r#"SELECT CAST(func("a") as varchar(100)) FROM "t1""#,
-        r#"SELECT CAST ("FUNC" ("t1"."a") as varchar(100)) as "COL_1" FROM "t1""#,
+        r#"SELECT CAST ("func" ("t1"."a") as varchar(100)) as "COL_1" FROM "t1""#,
         vec![],
     );
 }

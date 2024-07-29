@@ -887,8 +887,8 @@ g1.test_arithmetic_in_parens = function()
     t.assert_items_equals(
             without_parens.metadata,
             {
-                {name = "A1", type = "integer"},
-                {name = "A2", type = "integer"},
+                {name = "a1", type = "integer"},
+                {name = "a2", type = "integer"},
             }
     )
 
@@ -901,8 +901,8 @@ g1.test_arithmetic_in_parens = function()
     t.assert_items_equals(
             with_parens.metadata,
             {
-                {name = "A1", type = "integer"},
-                {name = "A2", type = "integer"},
+                {name = "a1", type = "integer"},
+                {name = "a2", type = "integer"},
             }
     )
 

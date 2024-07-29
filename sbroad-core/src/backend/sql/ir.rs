@@ -238,6 +238,15 @@ impl ExecutionPlan {
         let vtable_engine = self.vtable_engine()?;
         let capacity = self.get_vtables().map_or(1, HashMap::len);
         let mut tmp_spaces = TmpSpaceMap::with_capacity(capacity);
+        // In our data structures, we store plan identifiers without
+        // quotes in normalized form, but tarantool local sql has
+        // different normalizing rules (to uppercase), so we need
+        // to wrap all names in quotes.
+        let push_identifier = |sql: &mut String, identifier: &str| {
+            sql.push('\"');
+            sql.push_str(identifier);
+            sql.push('\"');
+        };
         let (sql, params) = child_span("\"syntax.ordered.sql\"", || {
             let mut params: Vec<Value> = Vec::new();
 
@@ -278,6 +287,10 @@ impl ExecutionPlan {
                     // TODO: should we care about plans without projections?
                     // Or they should be treated as invalid?
                     SyntaxData::Alias(s) => {
+                        sql.push_str("as ");
+                        push_identifier(&mut sql, s);
+                    }
+                    SyntaxData::UnquotedAlias(s) => {
                         sql.push_str("as ");
                         sql.push_str(s);
                     }
@@ -355,14 +368,14 @@ impl ExecutionPlan {
                                 }
                                 Relational::Insert { relation, .. } => {
                                     sql.push_str("INSERT INTO ");
-                                    sql.push_str(relation.as_str());
+                                    push_identifier(&mut sql, relation);
                                 }
                                 Relational::Join { kind, .. } => sql.push_str(
                                     format!("{} JOIN", kind.to_string().to_uppercase()).as_str(),
                                 ),
                                 Relational::Projection { .. } => sql.push_str("SELECT"),
                                 Relational::ScanRelation { relation, .. } => {
-                                    sql.push_str(relation);
+                                    push_identifier(&mut sql, relation);
                                 }
                                 Relational::ScanSubQuery { .. }
                                 | Relational::ScanCte { .. }
@@ -416,9 +429,9 @@ impl ExecutionPlan {
                                                         )
                                                     })?;
                                                 if let Some(name) = (*vt).get_alias() {
-                                                    sql.push_str(name);
+                                                    push_identifier(&mut sql, name);
                                                     sql.push('.');
-                                                    sql.push_str(alias);
+                                                    push_identifier(&mut sql, alias);
                                                     continue;
                                                 }
                                             }
@@ -428,21 +441,28 @@ impl ExecutionPlan {
                                         if rel_node.is_insert() {
                                             // We expect `INSERT INTO t(a, b) VALUES(1, 2)`
                                             // rather then `INSERT INTO t(t.a, t.b) VALUES(1, 2)`.
-                                            sql.push_str(alias);
+                                            push_identifier(&mut sql, alias);
                                             continue;
                                         }
                                         if let Some(name) =
                                             rel_node.scan_name(ir_plan, *position)?
                                         {
-                                            sql.push_str(name);
+                                            push_identifier(&mut sql, name);
                                             sql.push('.');
-                                            sql.push_str(alias);
+                                            push_identifier(&mut sql, alias);
+
                                             continue;
                                         }
-                                        sql.push_str(alias);
+                                        push_identifier(&mut sql, alias);
                                     }
-                                    Expression::StableFunction { name, .. } => {
-                                        sql.push_str(name.as_str());
+                                    Expression::StableFunction {
+                                        name, is_system, ..
+                                    } => {
+                                        if *is_system {
+                                            sql.push_str(name);
+                                        } else {
+                                            push_identifier(&mut sql, name);
+                                        }
                                     }
                                     Expression::CountAsterisk => {
                                         sql.push('*');
@@ -466,20 +486,18 @@ impl ExecutionPlan {
                     SyntaxData::VTable(motion_id) => {
                         let name = TmpSpace::generate_space_name(name_base, *motion_id);
                         let vtable = self.get_motion_vtable(*motion_id)?;
-                        let col_names = vtable
-                            .get_columns()
-                            .iter()
-                            .map(|c| {
-                                if let (Some('"'), Some('"')) =
-                                    (c.name.chars().next(), c.name.chars().last())
-                                {
-                                    c.name.clone()
-                                } else {
-                                    format_smolstr!("\"{}\"", c.name)
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                            .join(",");
+
+                        // for each name we wrap it in quotes and add a comma (except last name): 2 + 1
+                        let cp: usize = vtable.get_columns().iter().map(|c| c.name.len() + 3).sum();
+                        let mut col_names = String::with_capacity(cp.saturating_sub(1));
+                        if let Some((last, other)) = vtable.get_columns().split_last() {
+                            for col in other {
+                                push_identifier(&mut col_names, &col.name);
+                                col_names.push(',');
+                            }
+                            push_identifier(&mut col_names, &last.name);
+                        }
+
                         write!(sql, "SELECT {col_names} FROM \"{name}\"").map_err(|e| {
                             SbroadError::FailedTo(
                                 Action::Serialize,

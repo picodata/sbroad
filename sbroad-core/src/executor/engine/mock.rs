@@ -55,8 +55,7 @@ pub struct RouterConfigurationMock {
 
 impl Metadata for RouterConfigurationMock {
     fn table(&self, table_name: &str) -> Result<Table, SbroadError> {
-        let name = normalize_name_from_sql(table_name);
-        match self.tables.get(&name) {
+        match self.tables.get(table_name) {
             Some(v) => Ok(v.clone()),
             None => Err(SbroadError::NotFound(
                 Entity::Space,
@@ -107,9 +106,9 @@ impl RouterConfigurationMock {
     #[must_use]
     pub fn new() -> Self {
         let name_func = normalize_name_from_sql("func");
-        let fn_func = Function::new_stable(name_func.clone(), Type::Integer);
+        let fn_func = Function::new_stable(name_func.clone(), Type::Integer, false);
         let name_trim = normalize_name_from_sql("trim");
-        let trim_func = Function::new_stable(name_trim.clone(), Type::String);
+        let trim_func = Function::new_stable(name_trim.clone(), Type::String, false);
         let mut functions = HashMap::new();
         functions.insert(name_func, fn_func);
         functions.insert(name_trim, trim_func);
@@ -121,22 +120,22 @@ impl RouterConfigurationMock {
 
         let columns = vec![
             Column::new(
-                "\"identification_number\"",
+                "identification_number",
                 Type::Integer,
                 ColumnRole::User,
                 false,
             ),
-            Column::new("\"product_code\"", Type::String, ColumnRole::User, false),
-            Column::new("\"product_units\"", Type::Boolean, ColumnRole::User, true),
-            Column::new("\"sys_op\"", Type::Unsigned, ColumnRole::User, true),
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
+            Column::new("product_code", Type::String, ColumnRole::User, false),
+            Column::new("product_units", Type::Boolean, ColumnRole::User, true),
+            Column::new("sys_op", Type::Unsigned, ColumnRole::User, true),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, true),
         ];
-        let sharding_key = &["\"identification_number\"", "\"product_code\""];
-        let primary_key = &["\"product_code\"", "\"identification_number\""];
+        let sharding_key = &["identification_number", "product_code"];
+        let primary_key = &["product_code", "identification_number"];
         tables.insert(
-            "\"hash_testing\"".to_smolstr(),
+            "hash_testing".to_smolstr(),
             Table::new_sharded(
-                "\"hash_testing\"",
+                "hash_testing",
                 columns.clone(),
                 sharding_key,
                 primary_key,
@@ -146,9 +145,9 @@ impl RouterConfigurationMock {
         );
 
         tables.insert(
-            "\"hash_testing_hist\"".to_smolstr(),
+            "hash_testing_hist".to_smolstr(),
             Table::new_sharded(
-                "\"hash_testing_hist\"",
+                "hash_testing_hist",
                 columns.clone(),
                 sharding_key,
                 primary_key,
@@ -157,45 +156,11 @@ impl RouterConfigurationMock {
             .unwrap(),
         );
 
-        let sharding_key = &["\"identification_number\""];
+        let sharding_key = &["identification_number"];
         tables.insert(
-            "\"hash_single_testing\"".to_smolstr(),
+            "hash_single_testing".to_smolstr(),
             Table::new_sharded(
-                "\"hash_single_testing\"",
-                columns.clone(),
-                sharding_key,
-                primary_key,
-                SpaceEngine::Memtx,
-            )
-            .unwrap(),
-        );
-
-        tables.insert(
-            "\"hash_single_testing_hist\"".to_smolstr(),
-            Table::new_sharded(
-                "\"hash_single_testing_hist\"",
-                columns,
-                sharding_key,
-                primary_key,
-                SpaceEngine::Memtx,
-            )
-            .unwrap(),
-        );
-
-        let columns = vec![
-            Column::new("\"id\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"sysFrom\"", Type::Unsigned, ColumnRole::User, true),
-            Column::new("\"FIRST_NAME\"", Type::String, ColumnRole::User, true),
-            Column::new("\"sys_op\"", Type::Unsigned, ColumnRole::User, true),
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
-        ];
-        let sharding_key = &["\"id\""];
-        let primary_key = &["\"id\""];
-
-        tables.insert(
-            "\"test_space\"".to_smolstr(),
-            Table::new_sharded(
-                "\"test_space\"",
+                "hash_single_testing",
                 columns.clone(),
                 sharding_key,
                 primary_key,
@@ -205,9 +170,9 @@ impl RouterConfigurationMock {
         );
 
         tables.insert(
-            "\"test_space_hist\"".to_smolstr(),
+            "hash_single_testing_hist".to_smolstr(),
             Table::new_sharded(
-                "\"test_space_hist\"",
+                "hash_single_testing_hist",
                 columns,
                 sharding_key,
                 primary_key,
@@ -217,15 +182,31 @@ impl RouterConfigurationMock {
         );
 
         let columns = vec![
-            Column::new("\"id\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
+            Column::new("id", Type::Unsigned, ColumnRole::User, false),
+            Column::new("sysFrom", Type::Unsigned, ColumnRole::User, true),
+            Column::new("FIRST_NAME", Type::String, ColumnRole::User, true),
+            Column::new("sys_op", Type::Unsigned, ColumnRole::User, true),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, true),
         ];
-        let sharding_key: &[&str] = &["\"id\""];
-        let primary_key: &[&str] = &["\"id\""];
+        let sharding_key = &["id"];
+        let primary_key = &["id"];
+
         tables.insert(
-            "\"history\"".to_smolstr(),
+            "test_space".to_smolstr(),
             Table::new_sharded(
-                "\"history\"",
+                "test_space",
+                columns.clone(),
+                sharding_key,
+                primary_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
+        );
+
+        tables.insert(
+            "test_space_hist".to_smolstr(),
+            Table::new_sharded(
+                "test_space_hist",
                 columns,
                 sharding_key,
                 primary_key,
@@ -235,16 +216,15 @@ impl RouterConfigurationMock {
         );
 
         let columns = vec![
-            Column::new("\"A\"", Type::Unsigned, ColumnRole::User, true),
-            Column::new("\"B\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
+            Column::new("id", Type::Unsigned, ColumnRole::User, false),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, true),
         ];
-        let sharding_key: &[&str] = &["\"A\"", "\"B\""];
-        let primary_key: &[&str] = &["\"B\""];
+        let sharding_key: &[&str] = &["id"];
+        let primary_key: &[&str] = &["id"];
         tables.insert(
-            "\"TBL\"".to_smolstr(),
+            "history".to_smolstr(),
             Table::new_sharded(
-                "\"TBL\"",
+                "history",
                 columns,
                 sharding_key,
                 primary_key,
@@ -254,18 +234,16 @@ impl RouterConfigurationMock {
         );
 
         let columns = vec![
-            Column::new("\"a\"", Type::Unsigned, ColumnRole::User, true),
-            Column::new("\"b\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"c\"", Type::Unsigned, ColumnRole::User, true),
-            Column::new("\"d\"", Type::Unsigned, ColumnRole::User, true),
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
+            Column::new("A", Type::Unsigned, ColumnRole::User, true),
+            Column::new("B", Type::Unsigned, ColumnRole::User, false),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, true),
         ];
-        let sharding_key: &[&str] = &["\"a\"", "\"b\""];
-        let primary_key: &[&str] = &["\"b\""];
+        let sharding_key: &[&str] = &["A", "B"];
+        let primary_key: &[&str] = &["B"];
         tables.insert(
-            "\"t\"".to_smolstr(),
+            "TBL".to_smolstr(),
             Table::new_sharded(
-                "\"t\"",
+                "TBL",
                 columns,
                 sharding_key,
                 primary_key,
@@ -275,601 +253,452 @@ impl RouterConfigurationMock {
         );
 
         let columns = vec![
-            Column::new("\"a\"", Type::String, ColumnRole::User, false),
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
-            Column::new("\"b\"", Type::Integer, ColumnRole::User, false),
+            Column::new("a", Type::Unsigned, ColumnRole::User, true),
+            Column::new("b", Type::Unsigned, ColumnRole::User, false),
+            Column::new("c", Type::Unsigned, ColumnRole::User, true),
+            Column::new("d", Type::Unsigned, ColumnRole::User, true),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, true),
         ];
-        let sharding_key: &[&str] = &["\"a\"", "\"b\""];
-        let primary_key: &[&str] = &["\"a\"", "\"b\""];
+        let sharding_key: &[&str] = &["a", "b"];
+        let primary_key: &[&str] = &["b"];
         tables.insert(
-            "\"t1\"".to_smolstr(),
-            Table::new_sharded(
-                "\"t1\"",
-                columns,
-                sharding_key,
-                primary_key,
-                SpaceEngine::Memtx,
-            )
-            .unwrap(),
+            "t".to_smolstr(),
+            Table::new_sharded("t", columns, sharding_key, primary_key, SpaceEngine::Memtx)
+                .unwrap(),
         );
 
         let columns = vec![
-            Column::new("\"e\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"f\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"g\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"h\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
+            Column::new("a", Type::String, ColumnRole::User, false),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, true),
+            Column::new("b", Type::Integer, ColumnRole::User, false),
         ];
-        let sharding_key: &[&str] = &["\"e\"", "\"f\""];
-        let primary_key: &[&str] = &["\"g\"", "\"h\""];
+        let sharding_key: &[&str] = &["a", "b"];
+        let primary_key: &[&str] = &["a", "b"];
         tables.insert(
-            "\"t2\"".to_smolstr(),
-            Table::new_sharded(
-                "\"t2\"",
-                columns,
-                sharding_key,
-                primary_key,
-                SpaceEngine::Memtx,
-            )
-            .unwrap(),
+            "t1".to_smolstr(),
+            Table::new_sharded("t1", columns, sharding_key, primary_key, SpaceEngine::Memtx)
+                .unwrap(),
         );
 
         let columns = vec![
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
-            Column::new("\"a\"", Type::String, ColumnRole::User, false),
-            Column::new("\"b\"", Type::Integer, ColumnRole::User, false),
+            Column::new("e", Type::Unsigned, ColumnRole::User, false),
+            Column::new("f", Type::Unsigned, ColumnRole::User, false),
+            Column::new("g", Type::Unsigned, ColumnRole::User, false),
+            Column::new("h", Type::Unsigned, ColumnRole::User, false),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, true),
         ];
-        let sharding_key: &[&str] = &["\"a\""];
-        let primary_key: &[&str] = &["\"a\""];
+        let sharding_key: &[&str] = &["e", "f"];
+        let primary_key: &[&str] = &["g", "h"];
         tables.insert(
-            "\"t3\"".to_smolstr(),
-            Table::new_sharded(
-                "\"t3\"",
-                columns,
-                sharding_key,
-                primary_key,
-                SpaceEngine::Memtx,
-            )
-            .unwrap(),
+            "t2".to_smolstr(),
+            Table::new_sharded("t2", columns, sharding_key, primary_key, SpaceEngine::Memtx)
+                .unwrap(),
         );
 
         let columns = vec![
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
-            Column::new("\"c\"", Type::String, ColumnRole::User, false),
-            Column::new("\"d\"", Type::Integer, ColumnRole::User, false),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, true),
+            Column::new("a", Type::String, ColumnRole::User, false),
+            Column::new("b", Type::Integer, ColumnRole::User, false),
         ];
-        let sharding_key: &[&str] = &["\"c\""];
-        let primary_key: &[&str] = &["\"d\""];
+        let sharding_key: &[&str] = &["a"];
+        let primary_key: &[&str] = &["a"];
         tables.insert(
-            "\"t4\"".to_smolstr(),
-            Table::new_sharded(
-                "\"t4\"",
-                columns,
-                sharding_key,
-                primary_key,
-                SpaceEngine::Memtx,
-            )
-            .unwrap(),
+            "t3".to_smolstr(),
+            Table::new_sharded("t3", columns, sharding_key, primary_key, SpaceEngine::Memtx)
+                .unwrap(),
         );
 
         let columns = vec![
-            Column::new("\"a\"", Type::Integer, ColumnRole::User, false),
-            Column::new("\"b\"", Type::Integer, ColumnRole::User, false),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, true),
+            Column::new("c", Type::String, ColumnRole::User, false),
+            Column::new("d", Type::Integer, ColumnRole::User, false),
         ];
-        let primary_key: &[&str] = &["\"a\""];
+        let sharding_key: &[&str] = &["c"];
+        let primary_key: &[&str] = &["d"];
         tables.insert(
-            "\"global_t\"".to_smolstr(),
-            Table::new_global("\"global_t\"", columns, primary_key).unwrap(),
+            "t4".to_smolstr(),
+            Table::new_sharded("t4", columns, sharding_key, primary_key, SpaceEngine::Memtx)
+                .unwrap(),
+        );
+
+        let columns = vec![
+            Column::new("a", Type::Integer, ColumnRole::User, false),
+            Column::new("b", Type::Integer, ColumnRole::User, false),
+        ];
+        let primary_key: &[&str] = &["a"];
+        tables.insert(
+            "global_t".to_smolstr(),
+            Table::new_global("global_t", columns, primary_key).unwrap(),
         );
 
         // Table for sbroad-benches
         let columns = vec![
-            Column::new("\"vehicleguid\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"reestrid\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"reestrstatus\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"vehicleregno\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"vehiclevin\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"vehiclevin2\"", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehicleguid", Type::Unsigned, ColumnRole::User, false),
+            Column::new("reestrid", Type::Unsigned, ColumnRole::User, false),
+            Column::new("reestrstatus", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehicleregno", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclevin", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclevin2", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclechassisnum", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehiclechassisnum\"",
+                "vehiclereleaseyear",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"vehiclereleaseyear\"",
+                "operationregdoctypename",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("operationregdoc", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"operationregdoctypename\"",
+                "operationregdocissuedate",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"operationregdoc\"",
+                "operationregdoccomments",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"operationregdocissuedate\"",
+                "vehicleptstypename",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("vehicleptsnum", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"operationregdoccomments\"",
+                "vehicleptsissuedate",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("vehicleptsissuer", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehicleptstypename\"",
+                "vehicleptscomments",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
-            Column::new("\"vehicleptsnum\"", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclebodycolor", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclebrand", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclemodel", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclebrandmodel", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclebodynum", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclecost", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclegasequip", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehicleptsissuedate\"",
+                "vehicleproducername",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("vehiclegrossmass", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclemass", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehicleptsissuer\"",
+                "vehiclesteeringwheeltypeid",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("vehiclekpptype", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehicleptscomments\"",
+                "vehicletransmissiontype",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("vehicletypename", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehiclecategory", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehicletypeunit", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehicleecoclass", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehiclebodycolor\"",
+                "vehiclespecfuncname",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
-            Column::new("\"vehiclebrand\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"vehiclemodel\"", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehiclebrandmodel\"",
+                "vehicleenclosedvolume",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"vehiclebodynum\"",
+                "vehicleenginemodel",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
-            Column::new("\"vehiclecost\"", Type::Unsigned, ColumnRole::User, false),
+            Column::new("vehicleenginenum", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehiclegasequip\"",
+                "vehicleenginepower",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"vehicleproducername\"",
+                "vehicleenginepowerkw",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("vehicleenginetype", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehiclegrossmass\"",
+                "holdrestrictiondate",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
-            Column::new("\"vehiclemass\"", Type::Unsigned, ColumnRole::User, false),
+            Column::new("approvalnum", Type::Unsigned, ColumnRole::User, false),
+            Column::new("approvaldate", Type::Unsigned, ColumnRole::User, false),
+            Column::new("approvaltype", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehiclesteeringwheeltypeid\"",
+                "utilizationfeename",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("customsdoc", Type::Unsigned, ColumnRole::User, false),
+            Column::new("customsdocdate", Type::Unsigned, ColumnRole::User, false),
+            Column::new("customsdocissue", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehiclekpptype\"",
+                "customsdocrestriction",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"vehicletransmissiontype\"",
+                "customscountryremovalid",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"vehicletypename\"",
+                "customscountryremovalname",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("ownerorgname", Type::Unsigned, ColumnRole::User, false),
+            Column::new("ownerinn", Type::Unsigned, ColumnRole::User, false),
+            Column::new("ownerogrn", Type::Unsigned, ColumnRole::User, false),
+            Column::new("ownerkpp", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehiclecategory\"",
+                "ownerpersonlastname",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"vehicletypeunit\"",
+                "ownerpersonfirstname",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"vehicleecoclass\"",
+                "ownerpersonmiddlename",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"vehiclespecfuncname\"",
+                "ownerpersonbirthdate",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("ownerbirthplace", Type::Unsigned, ColumnRole::User, false),
+            Column::new("ownerpersonogrnip", Type::Unsigned, ColumnRole::User, false),
+            Column::new("owneraddressindex", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehicleenclosedvolume\"",
+                "owneraddressmundistrict",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"vehicleenginemodel\"",
+                "owneraddresssettlement",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"vehicleenginenum\"",
+                "owneraddressstreet",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("ownerpersoninn", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehicleenginepower\"",
+                "ownerpersondoccode",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("ownerpersondocnum", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehicleenginepowerkw\"",
+                "ownerpersondocdate",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("operationname", Type::Unsigned, ColumnRole::User, false),
+            Column::new("operationdate", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"vehicleenginetype\"",
+                "operationdepartmentname",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("operationattorney", Type::Unsigned, ColumnRole::User, false),
+            Column::new("operationlising", Type::Unsigned, ColumnRole::User, false),
+            Column::new("holdertypeid", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"holdrestrictiondate\"",
+                "holderpersondoccode",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
-            Column::new("\"approvalnum\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"approvaldate\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"approvaltype\"", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"utilizationfeename\"",
+                "holderpersondocnum",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
-            Column::new("\"customsdoc\"", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"customsdocdate\"",
+                "holderpersondocdate",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"customsdocissue\"",
+                "holderpersondocissuer",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"customsdocrestriction\"",
+                "holderpersonlastname",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"customscountryremovalid\"",
+                "holderpersonfirstname",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"customscountryremovalname\"",
+                "holderpersonmiddlename",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
-            Column::new("\"ownerorgname\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"ownerinn\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"ownerogrn\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"ownerkpp\"", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"ownerpersonlastname\"",
+                "holderpersonbirthdate",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"ownerpersonfirstname\"",
+                "holderpersonbirthregionid",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("holderpersonsex", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"ownerpersonmiddlename\"",
+                "holderpersonbirthplace",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("holderpersoninn", Type::Unsigned, ColumnRole::User, false),
+            Column::new("holderpersonsnils", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"ownerpersonbirthdate\"",
+                "holderpersonogrnip",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
+            Column::new("holderaddressguid", Type::Unsigned, ColumnRole::User, false),
             Column::new(
-                "\"ownerbirthplace\"",
+                "holderaddressregionid",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"ownerpersonogrnip\"",
+                "holderaddressregionname",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"owneraddressindex\"",
+                "holderaddressdistrict",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"owneraddressmundistrict\"",
+                "holderaddressmundistrict",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"owneraddresssettlement\"",
+                "holderaddresssettlement",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"owneraddressstreet\"",
+                "holderaddressstreet",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"ownerpersoninn\"",
+                "holderaddressbuilding",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"ownerpersondoccode\"",
+                "holderaddressstructureid",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"ownerpersondocnum\"",
+                "holderaddressstructurename",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
             Column::new(
-                "\"ownerpersondocdate\"",
+                "holderaddressstructure",
                 Type::Unsigned,
                 ColumnRole::User,
                 false,
             ),
-            Column::new("\"operationname\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"operationdate\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new(
-                "\"operationdepartmentname\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"operationattorney\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"operationlising\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new("\"holdertypeid\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new(
-                "\"holderpersondoccode\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersondocnum\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersondocdate\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersondocissuer\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersonlastname\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersonfirstname\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersonmiddlename\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersonbirthdate\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersonbirthregionid\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersonsex\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersonbirthplace\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersoninn\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersonsnils\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderpersonogrnip\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddressguid\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddressregionid\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddressregionname\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddressdistrict\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddressmundistrict\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddresssettlement\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddressstreet\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddressbuilding\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddressstructureid\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddressstructurename\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new(
-                "\"holderaddressstructure\"",
-                Type::Unsigned,
-                ColumnRole::User,
-                false,
-            ),
-            Column::new("\"sys_from\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"sys_to\"", Type::Unsigned, ColumnRole::User, false),
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
+            Column::new("sys_from", Type::Unsigned, ColumnRole::User, false),
+            Column::new("sys_to", Type::Unsigned, ColumnRole::User, false),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, true),
         ];
-        let sharding_key: &[&str] = &["\"reestrid\""];
-        let primary_key: &[&str] = &["\"reestrid\""];
+        let sharding_key: &[&str] = &["reestrid"];
+        let primary_key: &[&str] = &["reestrid"];
         tables.insert(
-            "\"test__gibdd_db__vehicle_reg_and_res100_actual\"".to_smolstr(),
+            "test__gibdd_db__vehicle_reg_and_res100_actual".to_smolstr(),
             Table::new_sharded(
-                "\"test__gibdd_db__vehicle_reg_and_res100_actual\"",
+                "test__gibdd_db__vehicle_reg_and_res100_actual",
                 columns.clone(),
                 sharding_key,
                 primary_key,
@@ -878,9 +707,9 @@ impl RouterConfigurationMock {
             .unwrap(),
         );
         tables.insert(
-            "\"test__gibdd_db__vehicle_reg_and_res100_history\"".to_smolstr(),
+            "test__gibdd_db__vehicle_reg_and_res100_history".to_smolstr(),
             Table::new_sharded(
-                "\"test__gibdd_db__vehicle_reg_and_res100_history\"",
+                "test__gibdd_db__vehicle_reg_and_res100_history",
                 columns,
                 sharding_key,
                 primary_key,
@@ -893,7 +722,7 @@ impl RouterConfigurationMock {
             functions,
             tables,
             bucket_count: 10000,
-            sharding_column: "\"bucket_id\"".into(),
+            sharding_column: "bucket_id".into(),
         }
     }
 }
@@ -1183,17 +1012,17 @@ impl RouterRuntimeMock {
         let mut table_statistics_cache = HashMap::new();
         let hash_testing_hist_rows_number = 1000.0;
         table_statistics_cache.insert(
-            "\"hash_testing_hist\"".to_smolstr(),
+            "hash_testing_hist".to_smolstr(),
             Rc::new(TableStats::new(hash_testing_hist_rows_number as u64)),
         );
         let hash_testing_rows_number = 10000.0;
         table_statistics_cache.insert(
-            "\"hash_testing\"".to_smolstr(),
+            "hash_testing".to_smolstr(),
             Rc::new(TableStats::new(hash_testing_rows_number as u64)),
         );
         let test_space_rows_number = 25000.0;
         table_statistics_cache.insert(
-            "\"test_space\"".to_smolstr(),
+            "test_space".to_smolstr(),
             Rc::new(TableStats::new(test_space_rows_number as u64)),
         );
 
@@ -1224,7 +1053,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"hash_testing_hist\"".to_smolstr(), 0),
+            TableColumnPair::new("hash_testing_hist".to_smolstr(), 0),
             Rc::new(boxed_column_stats),
         );
 
@@ -1287,7 +1116,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"hash_testing\"".to_smolstr(), 0),
+            TableColumnPair::new("hash_testing".to_smolstr(), 0),
             Rc::new(boxed_column_stats),
         );
 
@@ -1320,7 +1149,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"hash_testing\"".to_smolstr(), 3),
+            TableColumnPair::new("hash_testing".to_smolstr(), 3),
             Rc::new(boxed_column_stats),
         );
 
@@ -1379,7 +1208,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"test_space\"".to_smolstr(), 0),
+            TableColumnPair::new("test_space".to_smolstr(), 0),
             Rc::new(boxed_column_stats),
         );
 
@@ -1410,7 +1239,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"test_space\"".to_smolstr(), 1),
+            TableColumnPair::new("test_space".to_smolstr(), 1),
             Rc::new(boxed_column_stats),
         );
 
@@ -1469,7 +1298,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"test_space\"".to_smolstr(), 2),
+            TableColumnPair::new("test_space".to_smolstr(), 2),
             Rc::new(boxed_column_stats),
         );
 

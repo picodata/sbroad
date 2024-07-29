@@ -10,7 +10,7 @@ use tarantool::decimal;
 #[test]
 fn numeric_filter_eq_selectivity() {
     let runtime = RouterRuntimeMock::new();
-    let table_name = SmolStr::from("\"test_space\"");
+    let table_name = SmolStr::from("test_space");
     let column_index = 0;
 
     let constant = Value::from(4u64);

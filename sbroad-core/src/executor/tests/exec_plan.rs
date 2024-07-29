@@ -15,6 +15,15 @@ use crate::ir::{Node, Slice};
 
 use super::*;
 
+// Helper function to format back sql.
+// The local sql we produce doesn't contain line breaks,
+// but in code it's hard to read such long string, so
+// we insert line breaks and remove them back for
+// string comparison with expected pattern.
+fn f_sql(s: &str) -> String {
+    s.replace("\n", " ")
+}
+
 /// Helper function to generate sql from `exec_plan` from given `top_id` node.
 /// Used for testing.
 fn get_sql_from_execution_plan(
@@ -89,7 +98,7 @@ fn exec_plan_subtree_test() {
 
 #[test]
 fn exec_plan_subtree_two_stage_groupby_test() {
-    let sql = r#"SELECT t1."FIRST_NAME" FROM "test_space" as t1 group by t1."FIRST_NAME""#;
+    let sql = r#"SELECT "T1"."FIRST_NAME" FROM "test_space" as "T1" group by "T1"."FIRST_NAME""#;
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
@@ -155,7 +164,7 @@ fn exec_plan_subtree_two_stage_groupby_test() {
 
 #[test]
 fn exec_plan_subtree_two_stage_groupby_test_2() {
-    let sql = r#"SELECT t1."FIRST_NAME", t1."sys_op", t1."sysFrom" FROM "test_space" as t1 GROUP BY t1."FIRST_NAME", t1."sys_op", t1."sysFrom""#;
+    let sql = r#"SELECT "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom" FROM "test_space" as "T1" GROUP BY "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom""#;
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
@@ -208,11 +217,12 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{} {} {}",
-                r#"SELECT "T1"."FIRST_NAME" as "column_12", "T1"."sysFrom" as "column_14","#,
-                r#""T1"."sys_op" as "column_13" FROM "test_space" as "T1""#,
-                r#"GROUP BY "T1"."sys_op", "T1"."FIRST_NAME", "T1"."sysFrom""#,
+            f_sql(
+                r#"SELECT "T1"."FIRST_NAME" as "column_12",
+"T1"."sysFrom" as "column_14",
+"T1"."sys_op" as "column_13"
+FROM "test_space" as "T1"
+GROUP BY "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom""#
             ),
             vec![]
         )
@@ -224,12 +234,11 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{} {} {} {}",
-                r#"SELECT "column_12" as "FIRST_NAME", "column_13" as "sys_op","#,
-                r#""column_14" as "sysFrom" FROM"#,
-                r#"(SELECT "column_12","column_13","column_14" FROM "TMP_test_14")"#,
-                r#"GROUP BY "column_13", "column_12", "column_14""#,
+            f_sql(
+                r#"SELECT "column_12" as "FIRST_NAME",
+"column_13" as "sys_op", "column_14" as "sysFrom"
+FROM (SELECT "column_12","column_13","column_14" FROM "TMP_test_14")
+GROUP BY "column_12", "column_13", "column_14""#
             ),
             vec![]
         )
@@ -238,10 +247,10 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
 
 #[test]
 fn exec_plan_subtree_aggregates() {
-    let sql = r#"SELECT t1."sys_op" || t1."sys_op", t1."sys_op"*2 + count(t1."sysFrom"),
-                      sum(t1."id"), sum(distinct t1."id"*t1."sys_op") / count(distinct "id"),
-                      group_concat(t1."FIRST_NAME", 'o'), avg(t1."id"), total(t1."id"), min(t1."id"), max(t1."id")
-                      FROM "test_space" as t1 group by t1."sys_op""#;
+    let sql = r#"SELECT "T1"."sys_op" || "T1"."sys_op", "T1"."sys_op"*2 + count("T1"."sysFrom"),
+                      sum("T1"."id"), sum(distinct "T1"."id"*"T1"."sys_op") / count(distinct "id"),
+                      group_concat("T1"."FIRST_NAME", 'o'), avg("T1"."id"), total("T1"."id"), min("T1"."id"), max("T1"."id")
+                      FROM "test_space" as "T1" group by "T1"."sys_op""#;
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
@@ -295,14 +304,16 @@ fn exec_plan_subtree_aggregates() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{} {} {} {} {} {}",
-                r#"SELECT "T1"."sys_op" as "column_12", ("T1"."id") * ("T1"."sys_op") as "column_49","#,
-                r#""T1"."id" as "column_46", count ("T1"."sysFrom") as "count_37","#,
-                r#"sum ("T1"."id") as "sum_42", count ("T1"."id") as "count_61", total ("T1"."id") as "total_64","#,
-                r#"min ("T1"."id") as "min_67", max ("T1"."id") as "max_70", group_concat ("T1"."FIRST_NAME", ?) as "group_concat_58""#,
-                r#"FROM "test_space" as "T1""#,
-                r#"GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#,
+            f_sql(
+                r#"SELECT "T1"."sys_op" as "column_12",
+("T1"."id") * ("T1"."sys_op") as "column_49",
+"T1"."id" as "column_46",
+group_concat ("T1"."FIRST_NAME", ?) as "group_concat_58",
+count ("T1"."sysFrom") as "count_37", total ("T1"."id") as "total_64",
+min ("T1"."id") as "min_67", count ("T1"."id") as "count_61",
+max ("T1"."id") as "max_70", sum ("T1"."id") as "sum_42"
+FROM "test_space" as "T1"
+GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#
             ),
             vec![Value::from("o")]
         )
@@ -332,7 +343,7 @@ fn exec_plan_subtree_aggregates() {
 
 #[test]
 fn exec_plan_subtree_aggregates_no_groupby() {
-    let sql = r#"SELECT count(t1."sysFrom"), sum(distinct t1."id" + t1."sysFrom") FROM "test_space" as t1"#;
+    let sql = r#"SELECT count("T1"."sysFrom"), sum(distinct "T1"."id" + "T1"."sysFrom") FROM "test_space" as "T1""#;
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
@@ -452,7 +463,7 @@ fn exec_plan_subquery_under_motion_with_alias() {
         .unwrap()
         .position(0)
         .unwrap();
-    let mut virtual_table = virtual_table_23(Some("\"hti\""));
+    let mut virtual_table = virtual_table_23(Some("hti"));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -617,9 +628,9 @@ fn exec_plan_subtree_count_asterisk() {
 fn exec_plan_subtree_having() {
     let sql = format!(
         "{} {} {}",
-        r#"SELECT t1."sys_op" || t1."sys_op", count(t1."sys_op"*2) + count(distinct t1."sys_op"*2)"#,
-        r#"FROM "test_space" as t1 group by t1."sys_op""#,
-        r#"HAVING sum(distinct t1."sys_op"*2) > 1"#
+        r#"SELECT "T1"."sys_op" || "T1"."sys_op", count("T1"."sys_op"*2) + count(distinct "T1"."sys_op"*2)"#,
+        r#"FROM "test_space" as "T1" group by "T1"."sys_op""#,
+        r#"HAVING sum(distinct "T1"."sys_op"*2) > 1"#
     );
     let coordinator = RouterRuntimeMock::new();
 
@@ -699,9 +710,9 @@ fn exec_plan_subtree_having() {
 fn exec_plan_subtree_having_without_groupby() {
     let sql = format!(
         "{} {} {}",
-        r#"SELECT count(t1."sys_op"*2) + count(distinct t1."sys_op"*2)"#,
-        r#"FROM "test_space" as t1"#,
-        r#"HAVING sum(distinct t1."sys_op"*2) > 1"#
+        r#"SELECT count("T1"."sys_op"*2) + count(distinct "T1"."sys_op"*2)"#,
+        r#"FROM "test_space" as "T1""#,
+        r#"HAVING sum(distinct "T1"."sys_op"*2) > 1"#
     );
     let coordinator = RouterRuntimeMock::new();
 
@@ -929,7 +940,7 @@ fn global_union_all3() {
     let sql = r#"
     select "a" from "global_t" where "b"
     in (select "e" from "t2")
-    union all 
+    union all
     select "f" from "t2"
     group by "f""#;
     let mut coordinator = RouterRuntimeMock::new();
@@ -1050,10 +1061,10 @@ fn global_union_all3() {
 fn global_union_all4() {
     let sql = r#"
     select "b" from "global_t"
-    union all 
+    union all
     select * from (
         select "a" from "global_t"
-        union all 
+        union all
         select "f" from "t2"
     )
     "#;

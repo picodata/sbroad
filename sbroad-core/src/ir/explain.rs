@@ -7,6 +7,7 @@ use serde::Serialize;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
+use crate::executor::engine::helpers::to_user;
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::{Expression, TrimKind};
 use crate::ir::operator::{
@@ -38,7 +39,7 @@ enum ColExpr {
         Option<Box<ColExpr>>,
     ),
     Concat(Box<ColExpr>, Box<ColExpr>),
-    StableFunction(SmolStr, Vec<ColExpr>, Option<FunctionFeature>, Type),
+    StableFunction(SmolStr, Vec<ColExpr>, Option<FunctionFeature>, Type, bool),
     Trim(Option<TrimKind>, Option<Box<ColExpr>>, Box<ColExpr>),
     Row(Row),
     None,
@@ -48,7 +49,7 @@ impl Display for ColExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
             ColExpr::Parentheses(child_expr) => format!("({child_expr})"),
-            ColExpr::Alias(expr, name) => format!("{expr} -> {name}"),
+            ColExpr::Alias(expr, name) => format!("{expr} -> \"{name}\""),
             ColExpr::Arithmetic(left, op, right) => format!("{left} {op} {right}"),
             ColExpr::Bool(left, op, right) => format!("{left} {op} {right}"),
             ColExpr::Unary(op, expr) => match op {
@@ -80,7 +81,11 @@ impl Display for ColExpr {
                 res
             }
             ColExpr::Concat(l, r) => format!("{l} || {r}"),
-            ColExpr::StableFunction(name, args, feature, func_type) => {
+            ColExpr::StableFunction(name, args, feature, func_type, is_aggr) => {
+                let mut name = name.clone();
+                if !is_aggr {
+                    name = to_user(name);
+                }
                 let is_distinct = matches!(feature, Some(FunctionFeature::Distinct));
                 let formatted_args = format!("({})", args.iter().format(", "));
                 format!(
@@ -191,12 +196,16 @@ impl ColExpr {
                     let rel_node = plan.get_relation_node(rel_id)?;
 
                     if let Some(name) = rel_node.scan_name(plan, *position)? {
+                        col_name.push('"');
                         col_name.push_str(name);
+                        col_name.push('"');
                         col_name.push('.');
                     }
 
                     let alias = plan.get_alias_from_reference_node(current_node)?;
+                    col_name.push('"');
                     col_name.push_str(alias);
+                    col_name.push('"');
 
                     let ref_expr = ColExpr::Column(col_name, current_node.calculate_type(plan)?);
                     stack.push((ref_expr, id));
@@ -233,6 +242,8 @@ impl ColExpr {
                     children,
                     feature,
                     func_type,
+                    is_system: is_aggr,
+                    ..
                 } => {
                     let mut len = children.len();
                     let mut args: Vec<ColExpr> = Vec::with_capacity(len);
@@ -251,6 +262,7 @@ impl ColExpr {
                         args,
                         feature.clone(),
                         func_type.clone(),
+                        *is_aggr,
                     );
                     stack.push((func_expr, id));
                 }
@@ -556,7 +568,7 @@ impl Update {
                 let col_name = table
                     .columns
                     .get(*col_idx)
-                    .map(|c| c.name.clone())
+                    .map(|c| to_user(&c.name))
                     .ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Node,
@@ -576,7 +588,7 @@ impl Update {
                     })?;
                     let node = plan.get_expression_node(alias_id)?;
                     if let Expression::Alias { name, .. } = node {
-                        name.clone()
+                        to_user(name)
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Node,
@@ -607,7 +619,7 @@ impl Display for Update {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut s = "update ".to_string();
 
-        write!(s, "{}", &self.table)?;
+        write!(s, "\"{}\"", &self.table)?;
         let update_statements = self
             .update_statements
             .iter()
@@ -638,10 +650,10 @@ impl Display for Scan {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut s = String::from("scan ");
 
-        s.push_str(&self.table);
+        write!(s, "\"{}\"", &self.table)?;
 
         if let Some(a) = &self.alias {
-            write!(s, " -> {a}")?;
+            write!(s, " -> \"{a}\"")?;
         }
 
         write!(f, "{s}")
@@ -778,7 +790,7 @@ impl Display for SubQuery {
         let mut s = String::from("scan");
 
         if let Some(a) = &self.alias {
-            write!(s, " {a}")?;
+            write!(s, " \"{a}\"")?;
         }
         write!(f, "{s}")
     }
@@ -849,7 +861,7 @@ enum Target {
 impl Display for Target {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Target::Reference(s) => write!(f, "ref({s})"),
+            Target::Reference(s) => write!(f, "ref(\"{s}\")"),
             Target::Value(v) => write!(f, "value({v})"),
         }
     }
@@ -904,13 +916,13 @@ impl Display for ExplainNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
             ExplainNode::Cte(s, r) => format_smolstr!("scan cte {s}({r})"),
-            ExplainNode::Delete(s) => format_smolstr!("delete {s}"),
+            ExplainNode::Delete(s) => format_smolstr!("delete \"{s}\""),
             ExplainNode::Except => "except".to_smolstr(),
             ExplainNode::InnerJoin(i) => i.to_smolstr(),
             ExplainNode::ValueRow(r) => format_smolstr!("value row (data={r})"),
             ExplainNode::Value => "values".to_smolstr(),
             ExplainNode::Insert(s, conflict) => {
-                format_smolstr!("insert {s} on conflict: {conflict}")
+                format_smolstr!("insert \"{s}\" on conflict: {conflict}")
             }
             ExplainNode::Projection(e) => e.to_smolstr(),
             ExplainNode::GroupBy(p) => p.to_smolstr(),

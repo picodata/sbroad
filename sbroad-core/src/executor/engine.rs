@@ -33,7 +33,7 @@ pub mod mock;
 
 /// A metadata trait of the cluster (getters for tables, functions, etc.).
 pub trait Metadata: Sized {
-    /// Get a table by name that contains:
+    /// Get a table by normalized name that contains:
     /// * list of the columns,
     /// * distribution key of the output tuples (column positions),
     /// * table name.
@@ -75,9 +75,9 @@ pub fn get_builtin_functions() -> &'static [Function] {
     unsafe {
         BUILTINS.get_or_init(|| {
             vec![
-                Function::new_stable("\"TO_DATE\"".into(), Type::Datetime),
-                Function::new_stable("\"TO_CHAR\"".into(), Type::String),
-                Function::new_stable("\"SUBSTR\"".into(), Type::String),
+                Function::new_stable("to_date".into(), Type::Datetime, false),
+                Function::new_stable("to_char".into(), Type::String, false),
+                Function::new_stable("substr".into(), Type::String, true),
             ]
         })
     }

@@ -13,7 +13,7 @@ fn stats_merge() {
     let coordinator = RouterRuntimeMock::new();
 
     let (table_stats, sys_from_stats_wrapped) =
-        get_table_column_stats_downcasted::<i64>(&coordinator, &String::from("\"test_space\""), 1);
+        get_table_column_stats_downcasted::<i64>(&coordinator, &String::from("test_space"), 1);
     let test_space_rows_count = 25000.0;
     let column_stats_unwrapped = ColumnStatsUnwrapped::from_column_stats(&sys_from_stats_wrapped);
 

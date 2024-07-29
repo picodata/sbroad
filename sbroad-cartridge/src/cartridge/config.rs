@@ -2,12 +2,12 @@
 
 extern crate yaml_rust;
 
-use smol_str::{format_smolstr, SmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::collections::HashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
 use sbroad::errors::{Entity, SbroadError};
-use sbroad::executor::engine::helpers::{normalize_name_from_schema, normalize_name_from_sql};
+use sbroad::executor::engine::helpers::normalize_name_from_sql;
 use sbroad::executor::engine::{get_builtin_functions, Metadata};
 use sbroad::executor::lru::DEFAULT_CAPACITY;
 use sbroad::ir::function::Function;
@@ -131,19 +131,12 @@ impl RouterConfiguration {
                                 ))
                             }
                         };
-                        let qualified_name = normalize_name_from_schema(name);
-                        debug!(
-                            Option::from("configuration parsing"),
-                            &format!(
-                                "Column's original name: {name}, qualified name {qualified_name}"
-                            ),
-                        );
-                        let role = if self.sharding_column().eq(&qualified_name) {
+                        let role = if self.sharding_column().eq(name) {
                             ColumnRole::Sharding
                         } else {
                             ColumnRole::User
                         };
-                        let col = Column::new(&qualified_name, t, role, is_nullable);
+                        let col = Column::new(name, t, role, is_nullable);
                         result.push(col);
                     }
                     result
@@ -171,7 +164,7 @@ impl RouterConfiguration {
                             );
                             continue;
                         };
-                        result.push(normalize_name_from_schema(key));
+                        result.push(key.to_smolstr());
                     }
                     result
                 } else {
@@ -203,7 +196,7 @@ impl RouterConfiguration {
                            Entity::PrimaryKey,
                            Some(format_smolstr!("for space {current_space_name}: failed to get index part field")))
                         )?;
-                        Ok(normalize_name_from_schema(name))
+                        Ok(name.to_smolstr())
                     }).collect::<Result<Vec<SmolStr>, SbroadError>>()?
                 } else {
                     warn!(
@@ -231,7 +224,7 @@ impl RouterConfiguration {
                     continue;
                 };
 
-                let table_name: SmolStr = normalize_name_from_schema(current_space_name);
+                let table_name: SmolStr = current_space_name.to_smolstr();
                 debug!(
                     Option::from("configuration parsing"),
                     &format!(
@@ -289,7 +282,7 @@ impl Metadata for RouterConfiguration {
     /// Returns `SbroadError` when table was not found.
     #[allow(dead_code)]
     fn table(&self, table_name: &str) -> Result<Table, SbroadError> {
-        let name = normalize_name_from_sql(table_name);
+        let name = table_name.to_smolstr();
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
             None => Err(SbroadError::NotFound(Entity::Space, name)),

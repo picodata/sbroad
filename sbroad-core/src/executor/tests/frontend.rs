@@ -27,7 +27,7 @@ fn front_invalid_sql2() {
 
     assert_eq!(
         SbroadError::UnexpectedNumberOfValues(
-            r#"invalid number of values: 4. Table "t" expects 3 column(s)."#.into()
+            r#"invalid number of values: 4. Table t expects 3 column(s)."#.into()
         ),
         plan_err
     );
@@ -42,7 +42,7 @@ fn front_invalid_sql3() {
 
     assert_eq!(
         SbroadError::UnexpectedNumberOfValues(
-            r#"invalid number of values: 2. Table "t" expects 4 column(s)."#.into()
+            r#"invalid number of values: 2. Table t expects 4 column(s)."#.into()
         ),
         plan_err
     );
@@ -57,7 +57,7 @@ fn front_invalid_sql4() {
 
     assert_eq!(
         SbroadError::UnexpectedNumberOfValues(
-            r#"invalid number of values: 2. Table "t" expects 4 column(s)."#.into()
+            r#"invalid number of values: 2. Table t expects 4 column(s)."#.into()
         ),
         plan_err
     );
