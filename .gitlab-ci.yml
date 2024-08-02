@@ -48,6 +48,13 @@ default:
   image:
     name: $BASE_IMAGE_NAME:$BASE_IMAGE_TAG
     pull_policy: [always]
+  retry:
+    max: 1
+    when:
+      - scheduler_failure
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - api_failure
 
 build-lib:
   stage: build
@@ -128,6 +135,10 @@ unit:
 
 integration:
   extends: [.test]
+  variables:
+    # k8s runner config
+    KUBERNETES_CPU_REQUEST: 6
+    KUBERNETES_MEMORY_REQUEST: "6Gi"
   script:
     - make test_integration
   artifacts:
