@@ -36,6 +36,7 @@ impl TryFrom<&Rule> for Type {
         match ast_type {
             Rule::TypeAny => Ok(Type::Any),
             Rule::TypeBool => Ok(Type::Boolean),
+            Rule::TypeDatetime => Ok(Type::Datetime),
             Rule::TypeDecimal => Ok(Type::Decimal),
             Rule::TypeDouble => Ok(Type::Double),
             Rule::TypeInt => Ok(Type::Integer),
