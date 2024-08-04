@@ -60,7 +60,7 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
     CreateTable = {
         ^"create" ~ ^"table" ~ NewTable ~
         "(" ~ Columns ~ ("," ~ PrimaryKey)? ~ ")" ~
-        Engine? ~ Distribution ~ TimeoutOption?
+        Engine? ~ Distribution? ~ TimeoutOption?
     }
         NewTable = @{Table}
         Columns = { ColumnDef ~ ("," ~ ColumnDef)* }

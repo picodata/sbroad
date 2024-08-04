@@ -147,7 +147,7 @@ create_table   ::= 'CREATE' 'TABLE' table
                        (',' 'PRIMARY' 'KEY' '(' column (',' column)* ')')?
                    ')'
                    ('USING' ('MEMTX' | 'VINYL'))?
-                   ('DISTRIBUTED' (('BY' '(' column (',' column)*  ')' ('IN' 'TIER' tier)?) | 'GLOBALLY'))
+                   ('DISTRIBUTED' (('BY' '(' column (',' column)*  ')' ('IN' 'TIER' tier)?) | 'GLOBALLY'))?
 create_user    ::= 'CREATE' 'USER' user 'WITH'? 'PASSWORD' "'" password "'"
                    ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))?
 alter_user     ::= 'ALTER' 'USER' user

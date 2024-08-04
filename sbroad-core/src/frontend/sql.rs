@@ -507,6 +507,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     let mut explicit_null_columns: AHashSet<SmolStr> = AHashSet::new();
     let mut timeout = get_default_timeout();
     let mut tier = None;
+    let mut is_global = false;
 
     let nullable_primary_key_column_error = Err(SbroadError::Invalid(
         Entity::Column,
@@ -680,7 +681,9 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                 ) {
                     let distribution_type_node = ast.nodes.get_node(*distribution_type_id)?;
                     match distribution_type_node.rule {
-                        Rule::Global => {}
+                        Rule::Global => {
+                            is_global = true;
+                        }
                         Rule::Sharding => {
                             let sharding_node = ast.nodes.get_node(*distribution_type_id)?;
                             for sharding_node_child in &sharding_node.children {
@@ -759,6 +762,10 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
             Some(format_smolstr!("Primary key must be declared.")),
         ));
     }
+    // infer sharding key from primary key
+    if shard_key.is_empty() && !is_global {
+        shard_key = pk_keys.clone();
+    }
     let create_sharded_table = if shard_key.is_empty() {
         if engine_type != SpaceEngineType::Memtx {
             return Err(SbroadError::Unsupported(
@@ -766,6 +773,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                 Some("global spaces can use only memtx engine".into()),
             ));
         }
+
         Ddl::CreateTable {
             name: table_name,
             format: columns,
