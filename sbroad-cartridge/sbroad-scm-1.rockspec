@@ -14,7 +14,7 @@ dependencies = {
     'tarantool',
     'lua >= 5.1',
     'cartridge == 2.10.0-1',
-    'checks'
+    'checks == 3.3.0-1',
 }
 
 build = {

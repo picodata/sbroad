@@ -1,7 +1,7 @@
 # build from project dir ex: 
 #    docker build -f ci/Dockerfile.stress .
 
-FROM docker-public.binary.picodata.io/sbroad-builder:__BASE_IMAGE_TAG__
+FROM docker-public.binary.picodata.io/sbroad-builder:0.11.0
 
 ENV STRESS_TEST=""
 

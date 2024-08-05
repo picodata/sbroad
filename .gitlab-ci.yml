@@ -3,7 +3,7 @@ variables:
   GIT_SUBMODULE_STRATEGY: none
   GIT_DEPTH: 1
   BASE_IMAGE_NAME: docker-public.binary.picodata.io/sbroad-builder
-  BASE_IMAGE_TAG: latest
+  BASE_IMAGE_TAG: 0.11.0
   DOCKER_AUTH_CONFIG: $DOCKER_AUTH_RW
   FF_NETWORK_PER_BUILD: 1
   RAW_REGISTRY: $RAW_PRIVATE_REGISTRY

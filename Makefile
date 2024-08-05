@@ -32,7 +32,7 @@ clean:
 lint:
 	cargo fmt --all -- --check
 	cargo clippy -- --deny clippy::all
-	RUSTDOCFLAGS="-D warnings" cargo doc
+	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 	cargo audit -f audit.toml
 	./deps.sh
 	./.rocks/bin/luacheck .
