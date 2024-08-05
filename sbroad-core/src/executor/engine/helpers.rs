@@ -687,6 +687,21 @@ pub fn explain_format(explain: &str) -> Result<Box<dyn Any>, SbroadError> {
     }
 }
 
+/// Check if the plan has a LIMIT 0 clause.
+/// For instance, it returns true for a query `SELECT * FROM T LIMIT 0`
+/// and false for `SELECT * FROM T LIMIT 1`.
+///
+/// # Errors
+/// - Invalid plan.
+fn has_zero_limit_clause(plan: &ExecutionPlan) -> Result<bool, SbroadError> {
+    let ir = plan.get_ir_plan();
+    let top_id = ir.get_top()?;
+    if let Relational::Limit { limit, .. } = ir.get_relation_node(top_id)? {
+        return Ok(*limit == 0);
+    }
+    Ok(false)
+}
+
 /// A helper function to dispatch the execution plan from the router to the storages.
 ///
 /// # Errors
@@ -703,6 +718,11 @@ pub fn dispatch_impl(
     );
     let sub_plan = plan.take_subtree(top_id)?;
     debug!(Option::from("dispatch"), &format!("sub plan: {sub_plan:?}"));
+    if has_zero_limit_clause(&sub_plan)? {
+        if let Some(result) = empty_query_result(&sub_plan)? {
+            return Ok(result);
+        }
+    }
     dispatch_by_buckets(sub_plan, buckets, runtime)
 }
 
