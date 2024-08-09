@@ -180,6 +180,7 @@ where
         };
 
         let map = &mut self.map;
+        let mut evict_result = None;
         if let Some(evict_fn) = &self.evict_fn {
             let head_prev = map.get_mut(&head_prev_id).ok_or_else(|| {
                 SbroadError::NotFound(
@@ -187,13 +188,17 @@ where
                     format_smolstr!("(mutable LRU) with key {:?}", &head_prev_id),
                 )
             })?;
-            evict_fn(key, &mut head_prev.value)?;
+            // If eviction function failed, we still need to remove the node.
+            evict_result = Some(evict_fn(key, &mut head_prev.value));
         }
 
         self.unlink_node(&head_prev_id)?;
         if let Some(last_key) = &head_prev_id {
             self.map.remove(&Some(last_key.clone()));
             self.size -= 1;
+        }
+        if let Some(evict_result) = evict_result {
+            evict_result?;
         }
         Ok(())
     }
