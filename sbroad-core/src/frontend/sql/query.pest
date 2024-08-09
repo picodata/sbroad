@@ -267,8 +267,9 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
             LtEq  = { "<=" }
             NotEq = { "<>" | "!=" }
             In    = { NotFlag? ~ ^"in" }
-    ExprAtomValue = _{ CastExpr | (UnaryNot* ~ AtomicExpr ~ IsNullPostfix?) }
+    ExprAtomValue = _{ UnaryNot* ~ AtomicExpr ~ CastPostfix* ~ IsNullPostfix? }
         UnaryNot   = @{ NotFlag }
+        CastPostfix = { "::" ~ ColumnDefType }
         IsNullPostfix = { ^"is" ~ NotFlag? ~ ^"null" }
         AtomicExpr = _{ Literal | Parameter | CastOp | Trim | CurrentDate | IdentifierWithOptionalContinuation | ExpressionInParentheses | UnaryOperator | Case | SubQuery | Row }
             Literal = { True | False | Null | Double | Decimal | Unsigned | Integer | SingleQuotedString }
@@ -330,10 +331,6 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
             UnaryOperator = _{ Exists }
                 Exists = { NotFlag? ~ ^"exists" ~ SubQuery }
             Row = { "(" ~ Expr ~ ("," ~ Expr)* ~ ")" }
-        CastExpr = { AtomicExprWrapped ~ ("::" ~ ColumnDefType)+ }
-            // In CastOp rule, AtomicExpr is stored as a child of Expr, so we try to imitate
-            // this in order parse CastExpr and CastOp rules in the same way.
-            AtomicExprWrapped = { AtomicExpr }
 
 Distinct = { ^"distinct" }
 NotFlag = { ^"not" }

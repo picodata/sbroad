@@ -8,7 +8,7 @@ use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub enum Type {
     Any,
     Map,
@@ -136,6 +136,12 @@ impl Plan {
             to: to_type,
         };
         let cast_id = self.nodes.push(Node::Expression(cast_expr));
+
+        let child_plan_node = self.get_mut_node(expr_id)?;
+        if let Node::Parameter(ref mut ty) = child_plan_node {
+            *ty = Some(to_type.as_relation_type());
+        }
+
         Ok(cast_id)
     }
 }

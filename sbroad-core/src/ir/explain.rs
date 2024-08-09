@@ -135,7 +135,7 @@ impl ColExpr {
                             "stack is empty while processing CAST expression".to_smolstr(),
                         )
                     })?;
-                    let cast_expr = ColExpr::Cast(Box::new(expr), to.clone());
+                    let cast_expr = ColExpr::Cast(Box::new(expr), *to);
                     stack.push((cast_expr, id));
                 }
                 Expression::Case {
