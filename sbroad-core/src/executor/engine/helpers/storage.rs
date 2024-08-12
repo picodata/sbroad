@@ -6,21 +6,19 @@ use std::collections::HashMap;
 use std::io::Read;
 use tarantool::session::with_su;
 use tarantool::space::Space;
-use tarantool::sql::{
-    prepare as tnt_prepare, prepare_and_execute_raw, unprepare as tnt_unprepare, Statement,
-};
+use tarantool::sql::{prepare_and_execute_raw, Statement};
 use tarantool::tuple::{Tuple, TupleBuffer};
 
 use crate::backend::sql::space::ADMIN_ID;
 use crate::error;
 use crate::errors::SbroadError;
+use crate::executor::engine::helpers::proxy::sql_cache_proxy;
+use crate::executor::engine::helpers::table_name;
 use crate::executor::lru::DEFAULT_CAPACITY;
 use crate::ir::value::{EncodedValue, Value};
 use crate::ir::NodeId;
 use crate::otm::child_span;
 use crate::utils::ByteCounter;
-
-use super::table_name;
 
 const IPROTO_DATA: u8 = 0x30;
 const IPROTO_META: u8 = 0x32;
@@ -59,7 +57,8 @@ impl StorageMetadata {
 
 #[otm_child_span("tarantool.statement.prepare")]
 pub fn prepare(pattern: String) -> Result<Statement, SbroadError> {
-    let stmt = tnt_prepare(pattern).map_err(|e| {
+    let proxy = sql_cache_proxy();
+    let stmt = proxy.prepare(pattern).map_err(|e| {
         error!(Option::from("prepare"), &format!("{e:?}"));
         SbroadError::from(e)
     })?;
@@ -74,7 +73,11 @@ pub fn unprepare(
     let (stmt, table_ids) = std::mem::take(entry);
 
     // Remove the statement from the instance cache.
-    tnt_unprepare(stmt);
+    let proxy = sql_cache_proxy();
+    proxy.unprepare(stmt).map_err(|e| {
+        error!(Option::from("unprepare"), &format!("{e:?}"));
+        SbroadError::from(e)
+    })?;
 
     // Remove temporary tables from the instance.
     for node_id in table_ids {

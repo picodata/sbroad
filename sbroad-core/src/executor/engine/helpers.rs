@@ -60,6 +60,7 @@ use tarantool::tuple::Tuple;
 
 use super::{Metadata, Router, Vshard};
 
+pub mod proxy;
 pub mod storage;
 pub mod vshard;
 
