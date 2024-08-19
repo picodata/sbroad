@@ -1,6 +1,6 @@
 use crate::errors::SbroadError;
-use crate::ir::expression::Expression;
-use crate::ir::{Node, Plan};
+use crate::ir::node::Concat;
+use crate::ir::Plan;
 
 use super::NodeId;
 
@@ -14,10 +14,13 @@ impl Plan {
         for child_id in &[left_id, right_id] {
             self.get_expression_node(*child_id)?;
         }
-        let concat_id = self.nodes.push(Node::Expression(Expression::Concat {
-            left: left_id,
-            right: right_id,
-        }));
+        let concat_id = self.nodes.push(
+            Concat {
+                left: left_id,
+                right: right_id,
+            }
+            .into(),
+        );
         Ok(concat_id)
     }
 }

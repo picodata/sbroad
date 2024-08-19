@@ -4,12 +4,20 @@ use std::mem::take;
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
-use crate::ir::expression::{Expression, FunctionFeature, NodeId, TrimKind};
-use crate::ir::operator::{Bool, OrderByElement, OrderByEntity, OrderByType, Relational, Unary};
+use crate::ir::expression::{FunctionFeature, TrimKind};
+use crate::ir::node::expression::Expression;
+use crate::ir::node::relational::Relational;
+use crate::ir::node::{
+    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Except, ExprInParentheses, GroupBy,
+    Having, Intersect, Join, Limit, Motion, Node, NodeId, OrderBy, Projection, Reference, Row,
+    ScanCte, ScanRelation, ScanSubQuery, Selection, StableFunction, Trim, UnaryExpr, Union,
+    UnionAll, Values, ValuesRow,
+};
+use crate::ir::operator::{Bool, OrderByElement, OrderByEntity, OrderByType, Unary};
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::{LevelNode, PostOrder};
 use crate::ir::tree::Snapshot;
-use crate::ir::{Node, Plan};
+use crate::ir::Plan;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
@@ -479,7 +487,7 @@ impl Select {
         id: usize,
     ) -> Result<Option<Select>, SbroadError> {
         let sn = sp.nodes.get_sn(id);
-        if let Some(Node::Relational(Relational::Projection { .. })) = sp.get_plan_node(&sn.data)? {
+        if let Some(Node::Relational(Relational::Projection(_))) = sp.get_plan_node(&sn.data)? {
             let mut select = Select {
                 parent,
                 branch,
@@ -495,10 +503,10 @@ impl Select {
                 let sn_left = sp.nodes.get_sn(left_id);
                 let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
                 if let Node::Relational(
-                    Relational::ScanRelation { .. }
-                    | Relational::ScanCte { .. }
-                    | Relational::ScanSubQuery { .. }
-                    | Relational::Motion { .. },
+                    Relational::ScanRelation(_)
+                    | Relational::ScanCte(_)
+                    | Relational::ScanSubQuery(_)
+                    | Relational::Motion(_),
                 ) = plan_node_left
                 {
                     select.scan = left_id;
@@ -564,13 +572,13 @@ impl<'p> SyntaxPlan<'p> {
             let plan = self.plan.get_ir_plan();
             let node = plan.get_node(plan_id).expect("node in the plan must exist");
             match node {
-                Node::Relational(Relational::Motion { children, .. }) => {
+                Node::Relational(Relational::Motion(Motion { children, .. })) => {
                     let child_id = *children.first().expect("MOTION child must exist");
                     if *id == child_id {
                         return;
                     }
                 }
-                Node::Expression(Expression::Row { .. }) => {
+                Node::Expression(Expression::Row(_)) => {
                     let rel_ids = plan
                         .get_relational_nodes_from_row(plan_id)
                         .expect("row relational nodes");
@@ -618,11 +626,11 @@ impl<'p> SyntaxPlan<'p> {
             Node::Ddl(..) => panic!("DDL node {node:?} is not supported in the syntax plan"),
             Node::Acl(..) => panic!("ACL node {node:?} is not supported in the syntax plan"),
             Node::Block(..) => panic!("Block node {node:?} is not supported in the syntax plan"),
-            Node::Parameter(..) => {
+            Node::Invalid(..) | Node::Parameter(..) => {
                 let sn = SyntaxNode::new_parameter(id);
                 self.nodes.push_sn_plan(sn);
             }
-            Node::Relational(rel) => match rel {
+            Node::Relational(ref rel) => match rel {
                 Relational::Insert { .. }
                 | Relational::Delete { .. }
                 | Relational::Update { .. } => {
@@ -654,7 +662,7 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_parameter(id);
                     self.nodes.push_sn_plan(sn);
                 }
-                Expression::Reference { .. } | Expression::CountAsterisk => {
+                Expression::Reference { .. } | Expression::CountAsterisk { .. } => {
                     let sn = SyntaxNode::new_pointer(id, None, vec![]);
                     self.nodes.push_sn_plan(sn);
                 }
@@ -668,7 +676,7 @@ impl<'p> SyntaxPlan<'p> {
         }
     }
 
-    fn prologue_rel(&self, id: NodeId) -> (&Plan, &Relational) {
+    fn prologue_rel(&self, id: NodeId) -> (&Plan, Relational) {
         let plan = self.plan.get_ir_plan();
         let rel = plan
             .get_relation_node(id)
@@ -676,7 +684,7 @@ impl<'p> SyntaxPlan<'p> {
         (plan, rel)
     }
 
-    fn prologue_expr(&self, id: NodeId) -> (&Plan, &Expression) {
+    fn prologue_expr(&self, id: NodeId) -> (&Plan, Expression) {
         let plan = self.plan.get_ir_plan();
         let expr = plan
             .get_expression_node(id)
@@ -688,7 +696,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_cte(&mut self, id: NodeId) {
         let (_, cte) = self.prologue_rel(id);
-        let Relational::ScanCte { alias, child, .. } = cte else {
+        let Relational::ScanCte(ScanCte { alias, child, .. }) = cte else {
             panic!("expected CTE node");
         };
         let (child, alias) = (*child, alias.clone());
@@ -706,12 +714,12 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_filter(&mut self, id: NodeId) {
         let (plan, rel) = self.prologue_rel(id);
-        let (Relational::Selection {
+        let (Relational::Selection(Selection {
             children, filter, ..
-        }
-        | Relational::Having {
+        })
+        | Relational::Having(Having {
             children, filter, ..
-        }) = rel
+        })) = rel
         else {
             panic!("Expected FILTER node");
         };
@@ -728,9 +736,9 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_group_by(&mut self, id: NodeId) {
         let (_, gb) = self.prologue_rel(id);
-        let Relational::GroupBy {
+        let Relational::GroupBy(GroupBy {
             children, gr_cols, ..
-        } = gb
+        }) = gb
         else {
             panic!("Expected GROUP BY node");
         };
@@ -759,11 +767,11 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_join(&mut self, id: NodeId) {
         let (plan, join) = self.prologue_rel(id);
-        let Relational::Join {
+        let Relational::Join(Join {
             children,
             condition,
             ..
-        } = join
+        }) = join
         else {
             panic!("Expected JOIN node");
         };
@@ -794,14 +802,14 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_motion(&mut self, id: NodeId) {
         let (plan, motion) = self.prologue_rel(id);
-        let Relational::Motion {
+        let Relational::Motion(Motion {
             policy,
             children,
             is_child_subquery,
             program,
             output,
             ..
-        } = motion
+        }) = motion
         else {
             panic!("Expected MOTION node");
         };
@@ -841,7 +849,7 @@ impl<'p> SyntaxPlan<'p> {
                         .get_child_under_alias(*col)
                         .expect("motion output must be a row of aliases!");
                     let ref_expr = plan.get_expression_node(ref_id).expect("reference node");
-                    let Expression::Reference { col_type, .. } = ref_expr else {
+                    let Expression::Reference(Reference { col_type, .. }) = ref_expr else {
                         panic!("expected Reference under Alias in Motion output");
                     };
                     select_columns.push(format_smolstr!("cast(null as {col_type})"));
@@ -899,11 +907,11 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_order_by(&mut self, id: NodeId) {
         let (_, order_by) = self.prologue_rel(id);
-        let Relational::OrderBy {
+        let Relational::OrderBy(OrderBy {
             order_by_elements,
             child,
             ..
-        } = order_by
+        }) = order_by
         else {
             panic!("expect ORDER BY node");
         };
@@ -955,9 +963,9 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_proj(&mut self, id: NodeId) {
         let (_, proj) = self.prologue_rel(id);
-        let Relational::Projection {
+        let Relational::Projection(Projection {
             children, output, ..
-        } = proj
+        }) = proj
         else {
             panic!("Expected PROJECTION node");
         };
@@ -988,7 +996,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_scan_relation(&mut self, id: NodeId) {
         let (_, scan) = self.prologue_rel(id);
-        let Relational::ScanRelation { alias, .. } = scan else {
+        let Relational::ScanRelation(ScanRelation { alias, .. }) = scan else {
             panic!("Expected SCAN node");
         };
         let scan_alias = alias.clone();
@@ -1004,10 +1012,10 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_set(&mut self, id: NodeId) {
         let (_, set) = self.prologue_rel(id);
-        let (Relational::Except { left, right, .. }
-        | Relational::Union { left, right, .. }
-        | Relational::UnionAll { left, right, .. }
-        | Relational::Intersect { left, right, .. }) = set
+        let (Relational::Except(Except { left, right, .. })
+        | Relational::Union(Union { left, right, .. })
+        | Relational::UnionAll(UnionAll { left, right, .. })
+        | Relational::Intersect(Intersect { left, right, .. })) = set
         else {
             panic!("Expected SET node");
         };
@@ -1020,9 +1028,9 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_sq(&mut self, id: NodeId) {
         let (_, sq) = self.prologue_rel(id);
-        let Relational::ScanSubQuery {
+        let Relational::ScanSubQuery(ScanSubQuery {
             children, alias, ..
-        } = sq
+        }) = sq
         else {
             panic!("Expected SUBQUERY node");
         };
@@ -1045,7 +1053,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_values_row(&mut self, id: NodeId) {
         let (_, row) = self.prologue_rel(id);
-        let Relational::ValuesRow { data, .. } = row else {
+        let Relational::ValuesRow(ValuesRow { data, .. }) = row else {
             panic!("Expected VALUES ROW node");
         };
         let data_sn_id = self.pop_from_stack(*data);
@@ -1055,9 +1063,9 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_values(&mut self, id: NodeId) {
         let (_, values) = self.prologue_rel(id);
-        let Relational::Values {
+        let Relational::Values(Values {
             children, output, ..
-        } = values
+        }) = values
         else {
             panic!("Expected VALUES node");
         };
@@ -1091,7 +1099,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_limit(&mut self, id: NodeId) {
         let (_, limit) = self.prologue_rel(id);
-        let Relational::Limit { limit, child, .. } = limit else {
+        let Relational::Limit(Limit { limit, child, .. }) = limit else {
             panic!("expected LIMIT node");
         };
         let (limit, child) = (*limit, *child);
@@ -1109,7 +1117,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_alias(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
-        let Expression::Alias { child, name } = expr else {
+        let Expression::Alias(Alias { child, name }) = expr else {
             panic!("Expected ALIAS node");
         };
         let (child, name) = (*child, name.clone());
@@ -1119,9 +1127,9 @@ impl<'p> SyntaxPlan<'p> {
         let child_expr = plan
             .get_expression_node(child)
             .expect("alias child expression");
-        if let Expression::Reference { .. } = child_expr {
+        if let Expression::Reference(_) = child_expr {
             let alias = plan
-                .get_alias_from_reference_node(child_expr)
+                .get_alias_from_reference_node(&child_expr)
                 .expect("alias name");
             if alias == name {
                 let sn = SyntaxNode::new_pointer(id, None, vec![child_sn_id]);
@@ -1137,18 +1145,18 @@ impl<'p> SyntaxPlan<'p> {
     fn add_binary_op(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
         let (left_plan_id, right_plan_id, op_sn_id) = match expr {
-            Expression::Bool {
+            Expression::Bool(BoolExpr {
                 left, right, op, ..
-            } => {
+            }) => {
                 let (op, left, right) = (op.clone(), *left, *right);
                 let op_sn_id = self
                     .nodes
                     .push_sn_non_plan(SyntaxNode::new_operator(&format!("{op}")));
                 (left, right, op_sn_id)
             }
-            Expression::Arithmetic {
+            Expression::Arithmetic(ArithmeticExpr {
                 left, right, op, ..
-            } => {
+            }) => {
                 let (op, left, right) = (op.clone(), *left, *right);
                 let op_sn_id = self
                     .nodes
@@ -1166,11 +1174,11 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_case(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
-        let Expression::Case {
+        let Expression::Case(Case {
             search_expr,
             when_blocks,
             else_expr,
-        } = expr
+        }) = expr
         else {
             panic!("Expected CASE node");
         };
@@ -1204,7 +1212,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_cast(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
-        let Expression::Cast { child, to } = expr else {
+        let Expression::Cast(Cast { child, to }) = expr else {
             panic!("Expected CAST node");
         };
         let to_alias = SmolStr::from(to);
@@ -1224,7 +1232,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_concat(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
-        let Expression::Concat { left, right } = expr else {
+        let Expression::Concat(Concat { left, right }) = expr else {
             panic!("Expected CONCAT node");
         };
         let (left, right) = (*left, *right);
@@ -1240,7 +1248,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_expr_in_parentheses(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
-        let Expression::ExprInParentheses { child } = expr else {
+        let Expression::ExprInParentheses(ExprInParentheses { child }) = expr else {
             panic!("Expected expression in parentheses node");
         };
         let child_sn_id = self.pop_from_stack(*child);
@@ -1259,7 +1267,7 @@ impl<'p> SyntaxPlan<'p> {
         let expr = plan
             .get_expression_node(id)
             .expect("node {id} must exist in the plan");
-        let Expression::Row { list, .. } = expr else {
+        let Expression::Row(Row { list, .. }) = expr else {
             panic!("Expected ROW node");
         };
 
@@ -1284,7 +1292,7 @@ impl<'p> SyntaxPlan<'p> {
             let first_child = plan
                 .get_expression_node(first_child_id)
                 .expect("row child is expression");
-            let first_child_is_ref = matches!(first_child, Expression::Reference { .. });
+            let first_child_is_ref = matches!(first_child, Expression::Reference(_));
 
             // Replace motion node to virtual table node.
             let vtable = self
@@ -1305,7 +1313,7 @@ impl<'p> SyntaxPlan<'p> {
                     let expr = plan
                         .get_expression_node(*child_id)
                         .expect("row child is expression");
-                    if matches!(expr, Expression::Reference { .. }) {
+                    if matches!(expr, Expression::Reference(_)) {
                         let referred_id = *plan
                             .get_relational_from_reference_node(*child_id)
                             .expect("referred id");
@@ -1346,7 +1354,7 @@ impl<'p> SyntaxPlan<'p> {
                     let expr = plan
                         .get_expression_node(*child_id)
                         .expect("row child is expression");
-                    if matches!(expr, Expression::Reference { .. }) {
+                    if matches!(expr, Expression::Reference(_)) {
                         let referred_id = *plan
                             .get_relational_from_reference_node(*child_id)
                             .expect("referred id");
@@ -1383,11 +1391,11 @@ impl<'p> SyntaxPlan<'p> {
         let expr = plan
             .get_expression_node(id)
             .expect("node {id} must exist in the plan");
-        let Expression::StableFunction {
+        let Expression::StableFunction(StableFunction {
             children: args,
             feature,
             ..
-        } = expr
+        }) = expr
         else {
             panic!("Expected stable function node");
         };
@@ -1413,11 +1421,11 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_trim(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
-        let Expression::Trim {
+        let Expression::Trim(Trim {
             kind,
             pattern,
             target,
-        } = expr
+        }) = expr
         else {
             panic!("Expected TRIM node");
         };
@@ -1461,12 +1469,12 @@ impl<'p> SyntaxPlan<'p> {
 
     fn add_unary_op(&mut self, id: NodeId) {
         let (plan, expr) = self.prologue_expr(id);
-        let Expression::Unary { child, op } = expr else {
+        let Expression::Unary(UnaryExpr { child, op }) = expr else {
             panic!("Expected unary expression node");
         };
         let (child, op) = (*child, op.clone());
         let child_node = plan.get_expression_node(child).expect("child expression");
-        let is_and = matches!(child_node, Expression::Bool { op: Bool::And, .. });
+        let is_and = matches!(child_node, Expression::Bool(BoolExpr { op: Bool::And, .. }));
         let operator_node_id = self
             .nodes
             .push_sn_non_plan(SyntaxNode::new_operator(&format!("{op}")));
@@ -1497,7 +1505,7 @@ impl<'p> SyntaxPlan<'p> {
     ///
     /// # Errors
     /// - syntax node wraps an invalid plan node
-    pub fn get_plan_node(&self, data: &SyntaxData) -> Result<Option<&Node>, SbroadError> {
+    pub fn get_plan_node(&self, data: &SyntaxData) -> Result<Option<Node>, SbroadError> {
         if let SyntaxData::PlanId(id) = data {
             Ok(Some(self.plan.get_ir_plan().get_node(*id)?))
         } else {
@@ -1510,7 +1518,7 @@ impl<'p> SyntaxPlan<'p> {
     /// # Errors
     /// - plan node is invalid
     /// - syntax tree node doesn't have a plan node
-    pub fn plan_node_or_err(&self, data: &SyntaxData) -> Result<&Node, SbroadError> {
+    pub fn plan_node_or_err(&self, data: &SyntaxData) -> Result<Node, SbroadError> {
         self.get_plan_node(data)?.ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::SyntaxPlan,

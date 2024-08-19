@@ -93,7 +93,7 @@ fn not_eq2_test() {
             format!(
                 "{} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
-                r#"WHERE ("t"."identification_number") <> (SELECT "id" FROM "TMP_test_79")"#,
+                r#"WHERE ("t"."identification_number") <> (SELECT "id" FROM "TMP_test_0136")"#,
             ),
             vec![],
         ))),

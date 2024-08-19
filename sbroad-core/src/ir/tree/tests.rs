@@ -1,9 +1,11 @@
+use crate::ir::node::expression::Expression;
+use crate::ir::node::{Alias, ArenaType};
 use crate::ir::operator::Bool;
 use crate::ir::relation::{SpaceEngine, Table, Type};
 use crate::ir::tests::column_user_non_null;
 use crate::ir::tree::traversal::{BreadthFirst, LevelNode, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use crate::ir::value::Value;
-use crate::ir::{ArenaType, Expression, Plan};
+use crate::ir::Plan;
 use pretty_assertions::assert_eq;
 use smol_str::SmolStr;
 
@@ -221,7 +223,7 @@ fn subtree_dfs_post() {
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
-    let a_ref = plan.nodes.next_id(ArenaType::Default);
+    let a_ref = plan.nodes.next_id(ArenaType::Arena64);
     let a = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let const1 = plan.add_const(Value::from(1_i64));
     let eq_op = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
@@ -240,9 +242,9 @@ fn subtree_dfs_post() {
         .clone_row_list()
         .unwrap();
     let alias_id = row_children.first().unwrap();
-    let Expression::Alias {
+    let Expression::Alias(Alias {
         child: c_ref_id, ..
-    } = plan.get_expression_node(*alias_id).unwrap()
+    }) = plan.get_expression_node(*alias_id).unwrap()
     else {
         panic!("invalid child in the row");
     };

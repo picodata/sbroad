@@ -197,7 +197,7 @@ pub struct Mcv<T: Scalar> {
     /// Number of such a value divided by the number of all values in a column.
     ///
     /// Represented not with `f64`, but with `Decimal` type because the former doesn't support NaNs
-    /// and implements `Eq` trait, that we need for putting this struct into the HashSet.
+    /// and implements `Eq` trait, that we need for putting this struct into the 'HashSet'.
     pub(crate) frequency: Decimal,
 }
 
@@ -512,8 +512,8 @@ pub struct Histogram<T: Scalar> {
     /// **Note**: Values from mcv are not included in histogram buckets.
     ///
     /// Boundaries:
-    /// * i = 0 -> [b_0; b_1] (where `from` field of the bucket is included)
-    /// * i = 1 -> (b_1; b_2]
+    /// * i = 0 -> ['b_0'; 'b_1'] (where `from` field of the bucket is included)
+    /// * i = 1 -> ('b_1'; 'b_2']
     /// * ...
     /// * i = n -> (b_(n-2); b_(n-1)]
     pub(crate) buckets: HistogramBuckets<T>,

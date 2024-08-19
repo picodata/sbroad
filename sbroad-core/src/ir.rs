@@ -1,32 +1,37 @@
-//! Intermediate representation (IR) module.
-//!
 //! Contains the logical plan tree and helpers.
 
 use base64ct::{Base64, Encoding};
+use expression::Position;
+use node::acl::{Acl, MutAcl};
+use node::block::{Block, MutBlock};
+use node::ddl::{Ddl, MutDdl};
+use node::expression::{Expression, MutExpression};
+use node::relational::{MutRelational, Relational};
+use node::{Invalid, Parameter, SizeNode};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::cell::{RefCell, RefMut};
 use std::collections::hash_map::IntoIter;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
+use std::slice::Iter;
 use tree::traversal::LevelNode;
 
-use std::slice::Iter;
 use tarantool::tlua;
 
-use acl::Acl;
-use block::Block;
-use ddl::Ddl;
-use expression::Expression;
-use operator::{Arithmetic, Relational};
+use operator::Arithmetic;
 use relation::{Table, Type};
 
 use crate::errors::Entity::Query;
 use crate::errors::{Action, Entity, SbroadError, TypeError};
 use crate::executor::engine::helpers::to_user;
 use crate::executor::engine::TableVersionMap;
-use crate::ir::expression::Expression::StableFunction;
 use crate::ir::helpers::RepeatableState;
+use crate::ir::node::{
+    Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, ExprInParentheses,
+    GroupBy, Insert, Motion, MutNode, Node, Node136, Node224, Node32, Node64, Node96, NodeId,
+    NodeOwned, Projection, Reference, Row, ScanRelation, StableFunction, Trim, UnaryExpr, Values,
+};
 use crate::ir::operator::Bool;
 use crate::ir::relation::Column;
 use crate::ir::tree::traversal::{
@@ -36,7 +41,6 @@ use crate::ir::undo::TransformationLog;
 use crate::ir::value::Value;
 use crate::{collection, error, warn};
 
-use self::expression::{NodeId, Position};
 use self::parameters::Parameters;
 use self::relation::Relations;
 use self::transformation::redistribution::MotionPolicy;
@@ -51,6 +55,7 @@ pub mod distribution;
 pub mod expression;
 pub mod function;
 pub mod helpers;
+pub mod node;
 pub mod operator;
 pub mod parameters;
 pub mod relation;
@@ -62,124 +67,388 @@ pub mod value;
 const DEFAULT_VTABLE_MAX_ROWS: u64 = 5000;
 const DEFAULT_VDBE_MAX_STEPS: u64 = 45000;
 
-/// Plan tree node.
-///
-/// There are two kinds of node variants: expressions and relational
-/// operators. Both of them can easily refer each other in the
-/// tree as they are stored in the same node arena. The reasons
-/// to separate them are:
-///
-/// - they should be treated with quite different logic
-/// - we don't want to have a single huge enum
-///
-/// Enum was chosen as we don't want to mess with dynamic
-/// dispatching and its performance penalties.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum Node {
-    Acl(Acl),
-    Block(Block),
-    Ddl(Ddl),
-    Expression(Expression),
-    Relational(Relational),
-    // The parameter type is inferred from the context. A typical value is None, i. e. any type.
-    // However, there is a special case where we can be more specific. According to Postgres,
-    // the parameter type can be specified by casting the parameter to a particular type.
-    // Thus, when we cast a parameter, we also assign it a type.
-    Parameter(Option<Type>),
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Hash, Copy)]
-pub enum ArenaType {
-    Default,
-}
-
-impl Display for ArenaType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "")
-    }
-}
-
 /// Plan nodes storage.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Nodes {
-    /// We don't want to mess with the borrow checker and RefCell/Rc,
-    /// so all nodes are stored in the single arena ("nodes" array).
-    /// The positions in the array act like pointers, so it is possible
+    /// The positions in the arrays act like pointers, so it is possible
     /// only to add nodes to the plan, but never remove them.
-    arena: Vec<Node>,
+    arena32: Vec<Node32>,
+    arena64: Vec<Node64>,
+    arena96: Vec<Node96>,
+    arena136: Vec<Node136>,
+    arena224: Vec<Node224>,
 }
 
 impl Nodes {
-    pub(crate) fn get(&self, id: NodeId) -> Option<&Node> {
-        let offset = usize::try_from(id.offset).unwrap();
+    pub(crate) fn get(&self, id: NodeId) -> Option<Node> {
         match id.arena_type {
-            ArenaType::Default => self.arena.get(offset),
+            ArenaType::Arena32 => self.arena32.get(id.offset as usize).map(|node| match node {
+                Node32::Alias(alias) => Node::Expression(Expression::Alias(alias)),
+                Node32::Arithmetic(arithm) => Node::Expression(Expression::Arithmetic(arithm)),
+                Node32::Bool(bool) => Node::Expression(Expression::Bool(bool)),
+                Node32::Concat(concat) => Node::Expression(Expression::Concat(concat)),
+                Node32::Cast(cast) => Node::Expression(Expression::Cast(cast)),
+                Node32::CountAsterisk(count) => Node::Expression(Expression::CountAsterisk(count)),
+                Node32::Except(except) => Node::Relational(Relational::Except(except)),
+                Node32::ExprInParentheses(expr) => {
+                    Node::Expression(Expression::ExprInParentheses(expr))
+                }
+                Node32::Intersect(intersect) => Node::Relational(Relational::Intersect(intersect)),
+                Node32::Invalid(inv) => Node::Invalid(inv),
+                Node32::Limit(limit) => Node::Relational(Relational::Limit(limit)),
+                Node32::Trim(trim) => Node::Expression(Expression::Trim(trim)),
+                Node32::Unary(unary) => Node::Expression(Expression::Unary(unary)),
+                Node32::Union(un) => Node::Relational(Relational::Union(un)),
+                Node32::UnionAll(union_all) => Node::Relational(Relational::UnionAll(union_all)),
+                Node32::Values(values) => Node::Relational(Relational::Values(values)),
+            }),
+            ArenaType::Arena64 => self.arena64.get(id.offset as usize).map(|node| match node {
+                Node64::Case(case) => Node::Expression(Expression::Case(case)),
+                Node64::Constant(constant) => Node::Expression(Expression::Constant(constant)),
+                Node64::CreateRole(create_role) => Node::Acl(Acl::CreateRole(create_role)),
+                Node64::Delete(delete) => Node::Relational(Relational::Delete(delete)),
+                Node64::DropIndex(drop_index) => Node::Ddl(Ddl::DropIndex(drop_index)),
+                Node64::DropRole(drop_role) => Node::Acl(Acl::DropRole(drop_role)),
+                Node64::DropTable(drop_table) => Node::Ddl(Ddl::DropTable(drop_table)),
+                Node64::Row(row) => Node::Expression(Expression::Row(row)),
+                Node64::DropUser(drop_user) => Node::Acl(Acl::DropUser(drop_user)),
+                Node64::GroupBy(group_by) => Node::Relational(Relational::GroupBy(group_by)),
+                Node64::Having(having) => Node::Relational(Relational::Having(having)),
+                Node64::Join(join) => Node::Relational(Relational::Join(join)),
+                Node64::OrderBy(order_by) => Node::Relational(Relational::OrderBy(order_by)),
+                Node64::Parameter(param) => Node::Parameter(param),
+                Node64::Procedure(proc) => Node::Block(Block::Procedure(proc)),
+                Node64::Projection(proj) => Node::Relational(Relational::Projection(proj)),
+                Node64::Reference(reference) => Node::Expression(Expression::Reference(reference)),
+                Node64::ScanCte(scan_cte) => Node::Relational(Relational::ScanCte(scan_cte)),
+                Node64::ScanRelation(scan_rel) => {
+                    Node::Relational(Relational::ScanRelation(scan_rel))
+                }
+                Node64::ScanSubQuery(scan_squery) => {
+                    Node::Relational(Relational::ScanSubQuery(scan_squery))
+                }
+                Node64::Selection(sel) => Node::Relational(Relational::Selection(sel)),
+                Node64::SetParam(set_param) => Node::Ddl(Ddl::SetParam(set_param)),
+                Node64::SetTransaction(set_trans) => Node::Ddl(Ddl::SetTransaction(set_trans)),
+                Node64::ValuesRow(values_row) => {
+                    Node::Relational(Relational::ValuesRow(values_row))
+                }
+            }),
+            ArenaType::Arena96 => self.arena96.get(id.offset as usize).map(|node| match node {
+                Node96::DropProc(drop_proc) => Node::Ddl(Ddl::DropProc(drop_proc)),
+                Node96::Insert(insert) => Node::Relational(Relational::Insert(insert)),
+                Node96::Invalid(inv) => Node::Invalid(inv),
+                Node96::StableFunction(stable_func) => {
+                    Node::Expression(Expression::StableFunction(stable_func))
+                }
+            }),
+            ArenaType::Arena136 => self
+                .arena136
+                .get(id.offset as usize)
+                .map(|node| match node {
+                    Node136::AlterUser(alter_user) => Node::Acl(Acl::AlterUser(alter_user)),
+                    Node136::CreateProc(create_proc) => Node::Ddl(Ddl::CreateProc(create_proc)),
+                    Node136::RevokePrivilege(revoke_priv) => {
+                        Node::Acl(Acl::RevokePrivilege(revoke_priv))
+                    }
+                    Node136::GrantPrivilege(grant_priv) => {
+                        Node::Acl(Acl::GrantPrivilege(grant_priv))
+                    }
+                    Node136::Update(update) => Node::Relational(Relational::Update(update)),
+                    Node136::AlterSystem(alter_system) => Node::Ddl(Ddl::AlterSystem(alter_system)),
+                    Node136::CreateUser(create_user) => Node::Acl(Acl::CreateUser(create_user)),
+                    Node136::Invalid(inv) => Node::Invalid(inv),
+                    Node136::Motion(motion) => Node::Relational(Relational::Motion(motion)),
+                    Node136::RenameRoutine(rename_routine) => {
+                        Node::Ddl(Ddl::RenameRoutine(rename_routine))
+                    }
+                }),
+            ArenaType::Arena224 => self
+                .arena224
+                .get(id.offset as usize)
+                .map(|node| match node {
+                    Node224::CreateIndex(create_index) => Node::Ddl(Ddl::CreateIndex(create_index)),
+                    Node224::CreateTable(create_table) => Node::Ddl(Ddl::CreateTable(create_table)),
+                    Node224::Invalid(inv) => Node::Invalid(inv),
+                }),
         }
     }
 
-    pub(crate) fn get_mut(&mut self, id: NodeId) -> Option<&mut Node> {
-        let offset = usize::try_from(id.offset).unwrap();
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn get_mut(&mut self, id: NodeId) -> Option<MutNode> {
         match id.arena_type {
-            ArenaType::Default => self.arena.get_mut(offset),
+            ArenaType::Arena32 => self
+                .arena32
+                .get_mut(id.offset as usize)
+                .map(|node| match node {
+                    Node32::Alias(alias) => MutNode::Expression(MutExpression::Alias(alias)),
+                    Node32::Arithmetic(arithm) => {
+                        MutNode::Expression(MutExpression::Arithmetic(arithm))
+                    }
+                    Node32::Bool(bool) => MutNode::Expression(MutExpression::Bool(bool)),
+                    Node32::Limit(limit) => MutNode::Relational(MutRelational::Limit(limit)),
+                    Node32::Concat(concat) => MutNode::Expression(MutExpression::Concat(concat)),
+                    Node32::Cast(cast) => MutNode::Expression(MutExpression::Cast(cast)),
+                    Node32::CountAsterisk(count) => {
+                        MutNode::Expression(MutExpression::CountAsterisk(count))
+                    }
+                    Node32::Except(except) => MutNode::Relational(MutRelational::Except(except)),
+                    Node32::ExprInParentheses(expr) => {
+                        MutNode::Expression(MutExpression::ExprInParentheses(expr))
+                    }
+                    Node32::Intersect(intersect) => {
+                        MutNode::Relational(MutRelational::Intersect(intersect))
+                    }
+                    Node32::Invalid(inv) => MutNode::Invalid(inv),
+                    Node32::Trim(trim) => MutNode::Expression(MutExpression::Trim(trim)),
+                    Node32::Unary(unary) => MutNode::Expression(MutExpression::Unary(unary)),
+                    Node32::Union(un) => MutNode::Relational(MutRelational::Union(un)),
+                    Node32::UnionAll(union_all) => {
+                        MutNode::Relational(MutRelational::UnionAll(union_all))
+                    }
+                    Node32::Values(values) => MutNode::Relational(MutRelational::Values(values)),
+                }),
+            ArenaType::Arena64 => self
+                .arena64
+                .get_mut(id.offset as usize)
+                .map(|node| match node {
+                    Node64::Case(case) => MutNode::Expression(MutExpression::Case(case)),
+                    Node64::Constant(constant) => {
+                        MutNode::Expression(MutExpression::Constant(constant))
+                    }
+                    Node64::CreateRole(create_role) => {
+                        MutNode::Acl(MutAcl::CreateRole(create_role))
+                    }
+                    Node64::Delete(delete) => MutNode::Relational(MutRelational::Delete(delete)),
+                    Node64::DropIndex(drop_index) => MutNode::Ddl(MutDdl::DropIndex(drop_index)),
+                    Node64::Row(row) => MutNode::Expression(MutExpression::Row(row)),
+                    Node64::DropRole(drop_role) => MutNode::Acl(MutAcl::DropRole(drop_role)),
+                    Node64::DropTable(drop_table) => MutNode::Ddl(MutDdl::DropTable(drop_table)),
+                    Node64::DropUser(drop_user) => MutNode::Acl(MutAcl::DropUser(drop_user)),
+                    Node64::GroupBy(group_by) => {
+                        MutNode::Relational(MutRelational::GroupBy(group_by))
+                    }
+                    Node64::Having(having) => MutNode::Relational(MutRelational::Having(having)),
+                    Node64::Join(join) => MutNode::Relational(MutRelational::Join(join)),
+                    Node64::OrderBy(order_by) => {
+                        MutNode::Relational(MutRelational::OrderBy(order_by))
+                    }
+                    Node64::Parameter(param) => MutNode::Parameter(param),
+                    Node64::Procedure(proc) => MutNode::Block(MutBlock::Procedure(proc)),
+                    Node64::Projection(proj) => {
+                        MutNode::Relational(MutRelational::Projection(proj))
+                    }
+                    Node64::Reference(reference) => {
+                        MutNode::Expression(MutExpression::Reference(reference))
+                    }
+                    Node64::ScanCte(scan_cte) => {
+                        MutNode::Relational(MutRelational::ScanCte(scan_cte))
+                    }
+                    Node64::ScanRelation(scan_rel) => {
+                        MutNode::Relational(MutRelational::ScanRelation(scan_rel))
+                    }
+                    Node64::ScanSubQuery(scan_squery) => {
+                        MutNode::Relational(MutRelational::ScanSubQuery(scan_squery))
+                    }
+                    Node64::Selection(sel) => MutNode::Relational(MutRelational::Selection(sel)),
+                    Node64::SetParam(set_param) => MutNode::Ddl(MutDdl::SetParam(set_param)),
+                    Node64::SetTransaction(set_trans) => {
+                        MutNode::Ddl(MutDdl::SetTransaction(set_trans))
+                    }
+                    Node64::ValuesRow(values_row) => {
+                        MutNode::Relational(MutRelational::ValuesRow(values_row))
+                    }
+                }),
+            ArenaType::Arena96 => self
+                .arena96
+                .get_mut(id.offset as usize)
+                .map(|node| match node {
+                    Node96::DropProc(drop_proc) => MutNode::Ddl(MutDdl::DropProc(drop_proc)),
+                    Node96::Insert(insert) => MutNode::Relational(MutRelational::Insert(insert)),
+                    Node96::Invalid(inv) => MutNode::Invalid(inv),
+                    Node96::StableFunction(stable_func) => {
+                        MutNode::Expression(MutExpression::StableFunction(stable_func))
+                    }
+                }),
+            ArenaType::Arena136 => {
+                self.arena136
+                    .get_mut(id.offset as usize)
+                    .map(|node| match node {
+                        Node136::AlterUser(alter_user) => {
+                            MutNode::Acl(MutAcl::AlterUser(alter_user))
+                        }
+                        Node136::CreateProc(create_proc) => {
+                            MutNode::Ddl(MutDdl::CreateProc(create_proc))
+                        }
+                        Node136::GrantPrivilege(grant_priv) => {
+                            MutNode::Acl(MutAcl::GrantPrivilege(grant_priv))
+                        }
+                        Node136::CreateUser(create_user) => {
+                            MutNode::Acl(MutAcl::CreateUser(create_user))
+                        }
+                        Node136::RevokePrivilege(revoke_priv) => {
+                            MutNode::Acl(MutAcl::RevokePrivilege(revoke_priv))
+                        }
+                        Node136::Invalid(inv) => MutNode::Invalid(inv),
+                        Node136::AlterSystem(alter_system) => {
+                            MutNode::Ddl(MutDdl::AlterSystem(alter_system))
+                        }
+                        Node136::Update(update) => {
+                            MutNode::Relational(MutRelational::Update(update))
+                        }
+                        Node136::Motion(motion) => {
+                            MutNode::Relational(MutRelational::Motion(motion))
+                        }
+                        Node136::RenameRoutine(rename_routine) => {
+                            MutNode::Ddl(MutDdl::RenameRoutine(rename_routine))
+                        }
+                    })
+            }
+            ArenaType::Arena224 => {
+                self.arena224
+                    .get_mut(id.offset as usize)
+                    .map(|node| match node {
+                        Node224::CreateIndex(create_index) => {
+                            MutNode::Ddl(MutDdl::CreateIndex(create_index))
+                        }
+                        Node224::Invalid(inv) => MutNode::Invalid(inv),
+                        Node224::CreateTable(create_table) => {
+                            MutNode::Ddl(MutDdl::CreateTable(create_table))
+                        }
+                    })
+            }
         }
     }
 
-    /// Get the amount of relational nodes in the plan.
+    /// Returns the next node position
+    /// # Panics
     #[must_use]
-    pub fn relation_node_amount(&self) -> usize {
-        self.arena
-            .iter()
-            .filter(|node| matches!(node, Node::Relational(_)))
-            .count()
-    }
-
-    /// Get the amount of expression nodes in the plan.
-    #[must_use]
-    pub fn expression_node_amount(&self) -> usize {
-        self.arena
-            .iter()
-            .filter(|node| matches!(node, Node::Expression(_)))
-            .count()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.arena.is_empty()
+    pub fn next_id(&self, arena_type: ArenaType) -> NodeId {
+        match arena_type {
+            ArenaType::Arena32 => NodeId {
+                offset: u32::try_from(self.arena32.len()).unwrap(),
+                arena_type: ArenaType::Arena32,
+            },
+            ArenaType::Arena64 => NodeId {
+                offset: u32::try_from(self.arena64.len()).unwrap(),
+                arena_type: ArenaType::Arena64,
+            },
+            ArenaType::Arena96 => NodeId {
+                offset: u32::try_from(self.arena96.len()).unwrap(),
+                arena_type: ArenaType::Arena96,
+            },
+            ArenaType::Arena136 => NodeId {
+                offset: u32::try_from(self.arena136.len()).unwrap(),
+                arena_type: ArenaType::Arena136,
+            },
+            ArenaType::Arena224 => NodeId {
+                offset: u32::try_from(self.arena224.len()).unwrap(),
+                arena_type: ArenaType::Arena224,
+            },
+        }
     }
 
     #[must_use]
     pub fn len(&self) -> usize {
-        self.arena.len()
+        self.arena32.len()
+            + self.arena64.len()
+            + self.arena96.len()
+            + self.arena136.len()
+            + self.arena224.len()
     }
 
-    pub fn iter(&self) -> Iter<'_, Node> {
-        self.arena.iter()
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.arena32.is_empty()
+            && self.arena64.is_empty()
+            && self.arena96.is_empty()
+            && self.arena136.is_empty()
+            && self.arena224.is_empty()
+    }
+
+    // #[must_use]
+    // pub fn len(&self) -> usize {
+    //     self.arena.len()
+    // }
+
+    pub fn iter32(&self) -> Iter<'_, Node32> {
+        self.arena32.iter()
+    }
+
+    pub fn iter64(&self) -> Iter<'_, Node64> {
+        self.arena64.iter()
+    }
+
+    pub fn iter96(&self) -> Iter<'_, Node96> {
+        self.arena96.iter()
+    }
+
+    pub fn iter136(&self) -> Iter<'_, Node136> {
+        self.arena136.iter()
+    }
+
+    pub fn iter224(&self) -> Iter<'_, Node224> {
+        self.arena224.iter()
     }
 
     /// Add new node to arena.
+    /// # Panics
     ///
     /// # Panics
     /// Inserts a new node to the arena and returns its position,
     /// that is treated as a pointer.
-    pub fn push(&mut self, node: Node) -> NodeId {
-        let position = self.arena.len();
-        self.arena.push(node);
+    pub fn push(&mut self, node: SizeNode) -> NodeId {
+        match node {
+            SizeNode::Node32(node32) => {
+                let new_node_id = NodeId {
+                    offset: u32::try_from(self.arena32.len()).unwrap(),
+                    arena_type: ArenaType::Arena32,
+                };
 
-        NodeId {
-            offset: u32::try_from(position).unwrap(),
-            arena_type: ArenaType::Default,
-        }
-    }
+                self.arena32.push(node32);
 
-    /// # Panics
-    /// Returns the next node position
-    #[must_use]
-    pub fn next_id(&self, arena_type: ArenaType) -> NodeId {
-        match arena_type {
-            ArenaType::Default => NodeId {
-                offset: u32::try_from(self.arena.len()).unwrap(),
-                arena_type: ArenaType::Default,
-            },
+                new_node_id
+            }
+            SizeNode::Node64(node64) => {
+                let new_node_id = NodeId {
+                    offset: u32::try_from(self.arena64.len()).unwrap(),
+                    arena_type: ArenaType::Arena64,
+                };
+
+                self.arena64.push(node64);
+
+                new_node_id
+            }
+            SizeNode::Node96(node96) => {
+                let new_node_id = NodeId {
+                    offset: u32::try_from(self.arena96.len()).unwrap(),
+                    arena_type: ArenaType::Arena96,
+                };
+
+                self.arena96.push(node96);
+
+                new_node_id
+            }
+            SizeNode::Node136(node136) => {
+                let new_node_id = NodeId {
+                    offset: u32::try_from(self.arena136.len()).unwrap(),
+                    arena_type: ArenaType::Arena136,
+                };
+
+                self.arena136.push(node136);
+
+                new_node_id
+            }
+            SizeNode::Node224(node224) => {
+                let new_node_id = NodeId {
+                    offset: u32::try_from(self.arena224.len()).unwrap(),
+                    arena_type: ArenaType::Arena224,
+                };
+
+                self.arena224.push(node224);
+
+                new_node_id
+            }
         }
     }
 
@@ -187,37 +456,37 @@ impl Nodes {
     ///
     /// # Errors
     /// - The node with the given position doesn't exist.
-    pub fn replace(&mut self, id: NodeId, node: Node) -> Result<Node, SbroadError> {
+    pub fn replace(&mut self, id: NodeId, node: Node64) -> Result<Node64, SbroadError> {
+        let offset = id.offset as usize;
+
         match id.arena_type {
-            ArenaType::Default => {
-                if id.offset as usize >= self.arena.len() {
+            ArenaType::Arena64 => {
+                if offset >= self.arena64.len() {
                     return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                         "can't replace node with id {id:?} as it is out of arena bounds"
                     )));
                 }
             }
+            _ => {
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some(format_smolstr!("node {:?} is invalid", node)),
+                ));
+            }
         };
 
-        let old_node = std::mem::replace(&mut self.arena[id.offset as usize], node);
+        let old_node = std::mem::replace(&mut self.arena64[offset], node);
         Ok(old_node)
     }
-
-    pub fn reserve(&mut self, capacity: usize) {
-        self.arena.reserve(capacity);
-    }
-
-    pub fn shrink_to_fit(&mut self) {
-        self.arena.shrink_to_fit();
-    }
 }
 
-impl<'nodes> IntoIterator for &'nodes Nodes {
-    type Item = &'nodes Node;
-    type IntoIter = Iter<'nodes, Node>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
+// impl<'nodes> IntoIterator for &'nodes Nodes {
+//     type Item = &'nodes Node;
+//     type IntoIter = Iter<'nodes, Node>;
+//     fn into_iter(self) -> Self::IntoIter {
+//         self.iter()
+//     }
+// }
 
 /// One level of `Slices`.
 /// Element of `slice` vec is a `motion_id` to execute.
@@ -543,20 +812,62 @@ impl Plan {
     /// # Errors
     /// Returns `SbroadError` when the plan tree check fails.
     pub fn check(&self) -> Result<(), SbroadError> {
-        match self.top {
+        let _ = match self.top {
             None => {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
                     Some("plan tree top is None".into()),
-                ));
+                ))
             }
             Some(top) => match top.arena_type {
-                ArenaType::Default => {
-                    if self.nodes.get(top).is_none() {
-                        return Err(SbroadError::Invalid(
+                ArenaType::Arena32 => {
+                    let top_node = self.nodes.arena32.get(top.offset as usize);
+                    match top_node {
+                        Some(_) => Ok(()),
+                        None => Err(SbroadError::Invalid(
                             Entity::Plan,
-                            Some("plan tree top index is out of bouns".into()),
-                        ));
+                            Some("plan tree top index is out of bounds".into()),
+                        )),
+                    }
+                }
+                ArenaType::Arena64 => {
+                    let top_node = self.nodes.arena64.get(top.offset as usize);
+                    match top_node {
+                        Some(_) => Ok(()),
+                        None => Err(SbroadError::Invalid(
+                            Entity::Plan,
+                            Some("plan tree top index is out of bounds".into()),
+                        )),
+                    }
+                }
+                ArenaType::Arena96 => {
+                    let top_node = self.nodes.arena96.get(top.offset as usize);
+                    match top_node {
+                        Some(_) => Ok(()),
+                        None => Err(SbroadError::Invalid(
+                            Entity::Plan,
+                            Some("plan tree top index is out of bounds".into()),
+                        )),
+                    }
+                }
+                ArenaType::Arena136 => {
+                    let top_node = self.nodes.arena136.get(top.offset as usize);
+                    match top_node {
+                        Some(_) => Ok(()),
+                        None => Err(SbroadError::Invalid(
+                            Entity::Plan,
+                            Some("plan tree top index is out of bounds".into()),
+                        )),
+                    }
+                }
+                ArenaType::Arena224 => {
+                    let top_node = self.nodes.arena224.get(top.offset as usize);
+                    match top_node {
+                        Some(_) => Ok(()),
+                        None => Err(SbroadError::Invalid(
+                            Entity::Plan,
+                            Some("plan tree top index is out of bounds".into()),
+                        )),
                     }
                 }
             },
@@ -566,11 +877,74 @@ impl Plan {
         //TODO: additional consistency checks
     }
 
+    /// # Panics
+    #[must_use]
+    pub fn replace_with_stub(&mut self, dst_id: NodeId) -> NodeOwned {
+        match dst_id.arena_type {
+            ArenaType::Arena32 => {
+                let node32 = self
+                    .nodes
+                    .arena32
+                    .get_mut(usize::try_from(dst_id.offset).unwrap())
+                    .unwrap();
+                let stub = Node32::Invalid(Invalid {});
+                let node32 = std::mem::replace(node32, stub);
+                node32.into_common_node()
+            }
+            ArenaType::Arena64 => {
+                let node64 = self
+                    .nodes
+                    .arena64
+                    .get_mut(usize::try_from(dst_id.offset).unwrap())
+                    .unwrap();
+                let stub = Node64::Parameter(Parameter { param_type: None });
+                let node64 = std::mem::replace(node64, stub);
+                node64.into_common_node()
+            }
+            ArenaType::Arena96 => {
+                let node96 = self
+                    .nodes
+                    .arena96
+                    .get_mut(usize::try_from(dst_id.offset).unwrap())
+                    .unwrap();
+                let stub = Node96::Invalid(Invalid {});
+                let node96 = std::mem::replace(node96, stub);
+                node96.into_common_node()
+            }
+            ArenaType::Arena136 => {
+                let node136 = self
+                    .nodes
+                    .arena136
+                    .get_mut(usize::try_from(dst_id.offset).unwrap())
+                    .unwrap();
+                let stub = Node136::Invalid(Invalid {});
+                let node136 = std::mem::replace(node136, stub);
+                node136.into_common_node()
+            }
+            ArenaType::Arena224 => {
+                let node224 = self
+                    .nodes
+                    .arena224
+                    .get_mut(usize::try_from(dst_id.offset).unwrap())
+                    .unwrap();
+                let stub = Node224::Invalid(Invalid {});
+                let node224 = std::mem::replace(node224, stub);
+                node224.into_common_node()
+            }
+        }
+    }
+
     /// Constructor for an empty plan structure.
     #[must_use]
     pub fn new() -> Self {
         Plan {
-            nodes: Nodes { arena: Vec::new() },
+            nodes: Nodes {
+                arena32: Vec::new(),
+                arena64: Vec::new(),
+                arena96: Vec::new(),
+                arena136: Vec::new(),
+                arena224: Vec::new(),
+            },
             relations: Relations::new(),
             slices: Slices { slices: vec![] },
             top: None,
@@ -606,9 +980,11 @@ impl Plan {
             let nodes = bfs.take_nodes();
             for level_node in nodes {
                 let id = level_node.1;
-                if let Relational::Insert { .. } = self.get_relation_node(id)? {
+                if let Relational::Insert(_) = self.get_relation_node(id)? {
                     let child_id = self.get_relational_child(id, 0)?;
-                    if let Relational::Values { children, .. } = self.get_relation_node(child_id)? {
+                    if let Relational::Values(Values { children, .. }) =
+                        self.get_relation_node(child_id)?
+                    {
                         values_count = Some(children.len());
                     }
                 }
@@ -677,7 +1053,7 @@ impl Plan {
     /// Check if the plan arena is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.nodes.arena.is_empty()
+        self.nodes.is_empty()
     }
 
     /// Get a node by its pointer (position in the node arena).
@@ -685,15 +1061,13 @@ impl Plan {
     /// # Errors
     /// Returns `SbroadError` when the node with requested index
     /// doesn't exist.
-    pub fn get_node(&self, id: NodeId) -> Result<&Node, SbroadError> {
-        match id.arena_type {
-            ArenaType::Default => match self.nodes.arena.get(id.offset as usize) {
-                None => Err(SbroadError::NotFound(
-                    Entity::Node,
-                    format_smolstr!("from {:?} arena with index {}", id.arena_type, id.offset),
-                )),
-                Some(node) => Ok(node),
-            },
+    pub fn get_node(&self, id: NodeId) -> Result<Node, SbroadError> {
+        match self.nodes.get(id) {
+            None => Err(SbroadError::NotFound(
+                Entity::Node,
+                format_smolstr!("from {:?} with index {}", id.arena_type, id.offset),
+            )),
+            Some(node) => Ok(node),
         }
     }
 
@@ -702,19 +1076,13 @@ impl Plan {
     /// # Errors
     /// Returns `SbroadError` when the node with requested index
     /// doesn't exist.
-    pub fn get_mut_node(&mut self, id: NodeId) -> Result<&mut Node, SbroadError> {
-        match id.arena_type {
-            ArenaType::Default => match self.nodes.arena.get_mut(id.offset as usize) {
-                None => Err(SbroadError::NotFound(
-                    Entity::Node,
-                    format_smolstr!(
-                        "(mutable) from {:?} arena with index {}",
-                        id.arena_type,
-                        id.offset
-                    ),
-                )),
-                Some(node) => Ok(node),
-            },
+    pub fn get_mut_node(&mut self, id: NodeId) -> Result<MutNode, SbroadError> {
+        match self.nodes.get_mut(id) {
+            None => Err(SbroadError::NotFound(
+                Entity::Node,
+                format_smolstr!("from {:?} with index {}", id.arena_type, id.offset),
+            )),
+            Some(node) => Ok(node),
         }
     }
 
@@ -752,7 +1120,7 @@ impl Plan {
     /// - Given node is not a scan
     pub fn get_scan_relation(&self, scan_id: NodeId) -> Result<&str, SbroadError> {
         let node = self.get_relation_node(scan_id)?;
-        if let Relational::ScanRelation { relation, .. } = node {
+        if let Relational::ScanRelation(ScanRelation { relation, .. }) = node {
             return Ok(relation.as_str());
         }
         Err(SbroadError::Invalid(
@@ -799,7 +1167,7 @@ impl Plan {
         let filter = |id: NodeId| -> bool {
             matches!(
                 self.get_node(id),
-                Ok(Node::Expression(Expression::StableFunction { .. }))
+                Ok(Node::Expression(Expression::StableFunction(_)))
             )
         };
         let mut dfs = PostOrderWithFilter::with_capacity(
@@ -812,7 +1180,9 @@ impl Plan {
             if !check_top && id == expr_id {
                 continue;
             }
-            if let Node::Expression(Expression::StableFunction { name, .. }) = self.get_node(id)? {
+            if let Node::Expression(Expression::StableFunction(StableFunction { name, .. })) =
+                self.get_node(id)?
+            {
                 if Expression::is_aggregate_name(name) {
                     return Ok(true);
                 }
@@ -820,19 +1190,6 @@ impl Plan {
         }
 
         Ok(false)
-    }
-
-    /// Construct a plan from the YAML file.
-    ///
-    /// # Errors
-    /// Returns `SbroadError` when the YAML plan is invalid.
-    pub fn from_yaml(s: &str) -> Result<Self, SbroadError> {
-        let plan: Plan = match serde_yaml::from_str(s) {
-            Ok(p) => p,
-            Err(e) => return Err(SbroadError::Invalid(Entity::Plan, Some(e.to_smolstr()))),
-        };
-        plan.check()?;
-        Ok(plan)
     }
 
     /// Helper function for writing tests with yaml
@@ -849,16 +1206,19 @@ impl Plan {
 
     /// Get relational node and produce a new row without aliases from its output (row with aliases).
     ///
+    /// # Panics
     /// # Errors
     /// - node is not relational
     /// - node's output is not a row of aliases
     pub fn get_row_from_rel_node(&mut self, node: NodeId) -> Result<NodeId, SbroadError> {
         let n = self.get_node(node)?;
-        if let Node::Relational(rel) = n {
-            if let Node::Expression(Expression::Row { list, .. }) = self.get_node(rel.output())? {
+        if let Node::Relational(ref rel) = n {
+            if let Node::Expression(Expression::Row(Row { list, .. })) =
+                self.get_node(rel.output())?
+            {
                 let mut cols: Vec<NodeId> = Vec::with_capacity(list.len());
                 for alias in list {
-                    if let Node::Expression(Expression::Alias { child, .. }) =
+                    if let Node::Expression(Expression::Alias(Alias { child, .. })) =
                         self.get_node(*alias)?
                     {
                         cols.push(*child);
@@ -876,11 +1236,6 @@ impl Plan {
             Entity::Node,
             Some(format_smolstr!("node is not Relational type: {n:?}")),
         ))
-    }
-
-    #[must_use]
-    pub fn next_id(&self, arena_type: ArenaType) -> NodeId {
-        self.nodes.next_id(arena_type)
     }
 
     /// Add condition node to the plan.
@@ -932,11 +1287,14 @@ impl Plan {
         when_blocks: Vec<(NodeId, NodeId)>,
         else_expr: Option<NodeId>,
     ) -> NodeId {
-        self.nodes.push(Node::Expression(Expression::Case {
-            search_expr,
-            else_expr,
-            when_blocks,
-        }))
+        self.nodes.push(
+            Case {
+                search_expr,
+                when_blocks,
+                else_expr,
+            }
+            .into(),
+        )
     }
 
     /// Add bool operator node to the plan.
@@ -969,7 +1327,8 @@ impl Plan {
     /// - top node doesn't exist in the plan or is invalid.
     pub fn is_block(&self) -> Result<bool, SbroadError> {
         let top_id = self.get_top()?;
-        Ok(matches!(self.get_node(top_id)?, Node::Block(..)))
+        let top = self.get_node(top_id)?;
+        Ok(matches!(top, Node::Block(_)))
     }
 
     /// Checks that plan is a dml query on global table.
@@ -990,7 +1349,8 @@ impl Plan {
     /// - top node doesn't exist in the plan or is invalid.
     pub fn is_ddl(&self) -> Result<bool, SbroadError> {
         let top_id = self.get_top()?;
-        Ok(matches!(self.get_node(top_id)?, Node::Ddl(..)))
+        let top = self.get_node(top_id)?;
+        Ok(matches!(top, Node::Ddl(_)))
     }
 
     /// Checks that plan is ACL query.
@@ -999,7 +1359,8 @@ impl Plan {
     /// - top node doesn't exist in the plan or is invalid.
     pub fn is_acl(&self) -> Result<bool, SbroadError> {
         let top_id = self.get_top()?;
-        Ok(matches!(self.get_node(top_id)?, Node::Acl(..)))
+        let top = self.get_node(top_id)?;
+        Ok(matches!(top, Node::Acl(_)))
     }
 
     /// Set top node of plan
@@ -1016,13 +1377,14 @@ impl Plan {
     /// # Errors
     /// - node doesn't exist in the plan
     /// - node is not a relational type
-    pub fn get_relation_node(&self, node_id: NodeId) -> Result<&Relational, SbroadError> {
+    pub fn get_relation_node(&self, node_id: NodeId) -> Result<Relational, SbroadError> {
         let node = self.get_node(node_id)?;
         match node {
             Node::Relational(rel) => Ok(rel),
             Node::Expression(_)
             | Node::Parameter(..)
             | Node::Ddl(..)
+            | Node::Invalid(..)
             | Node::Acl(..)
             | Node::Block(..) => Err(SbroadError::Invalid(
                 Entity::Node,
@@ -1036,17 +1398,15 @@ impl Plan {
     /// # Errors
     /// - node doesn't exist in the plan
     /// - node is not a relational type
-    pub fn get_mut_relation_node(
-        &mut self,
-        node_id: NodeId,
-    ) -> Result<&mut Relational, SbroadError> {
+    pub fn get_mut_relation_node(&mut self, node_id: NodeId) -> Result<MutRelational, SbroadError> {
         match self.get_mut_node(node_id)? {
-            Node::Relational(rel) => Ok(rel),
-            Node::Expression(_)
-            | Node::Parameter(..)
-            | Node::Ddl(..)
-            | Node::Acl(..)
-            | Node::Block(..) => Err(SbroadError::Invalid(
+            MutNode::Relational(rel) => Ok(rel),
+            MutNode::Expression(_)
+            | MutNode::Parameter(..)
+            | MutNode::Ddl(..)
+            | MutNode::Invalid(..)
+            | MutNode::Acl(..)
+            | MutNode::Block(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("Node is not relational".into()),
             )),
@@ -1058,23 +1418,23 @@ impl Plan {
     /// # Errors
     /// - node doesn't exist in the plan
     /// - node is not expression type
-    pub fn get_expression_node(&self, node_id: NodeId) -> Result<&Expression, SbroadError> {
+    pub fn get_expression_node(&self, node_id: NodeId) -> Result<Expression, SbroadError> {
         match self.get_node(node_id)? {
             Node::Expression(exp) => Ok(exp),
             Node::Parameter(..) => {
-                let node = self.constants.get(node_id);
-                if let Some(Node::Expression(exp)) = node {
-                    Ok(exp)
-                } else {
-                    Err(SbroadError::Invalid(
-                        Entity::Node,
-                        Some("parameter node does not refer to an expression".into()),
-                    ))
+                if let Some(Node64::Constant(constant)) = self.constants.get(node_id) {
+                    return Ok(Expression::Constant(constant));
                 }
+
+                Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some("parameter node does not refer to an expression".into()),
+                ))
             }
-            Node::Relational(_) | Node::Ddl(..) | Node::Acl(..) | Node::Block(..) => Err(
-                SbroadError::Invalid(Entity::Node, Some("node is not Expression type".into())),
-            ),
+            _ => Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("node is not Expression type".into()),
+            )),
         }
     }
 
@@ -1086,18 +1446,19 @@ impl Plan {
     pub fn get_mut_expression_node(
         &mut self,
         node_id: NodeId,
-    ) -> Result<&mut Expression, SbroadError> {
+    ) -> Result<MutExpression, SbroadError> {
         let node = self.get_mut_node(node_id)?;
         match node {
-            Node::Expression(exp) => Ok(exp),
-            Node::Relational(_)
-            | Node::Parameter(..)
-            | Node::Ddl(..)
-            | Node::Acl(..)
-            | Node::Block(..) => Err(SbroadError::Invalid(
+            MutNode::Expression(exp) => Ok(exp),
+            MutNode::Relational(_)
+            | MutNode::Parameter(..)
+            | MutNode::Ddl(..)
+            | MutNode::Invalid(..)
+            | MutNode::Acl(..)
+            | MutNode::Block(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format_smolstr!(
-                    "node ({node_id:?}) is not expression type: {node:?}"
+                    "node ({node_id}) is not expression type: {node:?}"
                 )),
             )),
         }
@@ -1107,8 +1468,15 @@ impl Plan {
     ///
     /// # Errors
     /// - supplied id does not correspond to `Row` node
-    pub fn get_row_list(&self, row_id: NodeId) -> Result<&[NodeId], SbroadError> {
-        self.get_expression_node(row_id)?.get_row_list()
+    pub fn get_row_list(&self, row_id: NodeId) -> Result<&Vec<NodeId>, SbroadError> {
+        if let Expression::Row(Row { list, .. }) = self.get_expression_node(row_id)? {
+            return Ok(list);
+        }
+
+        Err(SbroadError::Invalid(
+            Entity::Expression,
+            Some("node is not Row".into()),
+        ))
     }
 
     /// Helper function to get id of node under alias node,
@@ -1117,12 +1485,11 @@ impl Plan {
     /// # Errors
     /// - node is not an expression node
     pub fn get_child_under_alias(&self, child_id: NodeId) -> Result<NodeId, SbroadError> {
-        match self.get_expression_node(child_id)? {
-            Expression::Alias {
-                child: alias_child, ..
-            } => Ok(*alias_child),
-            _ => Ok(child_id),
+        if let Expression::Alias(Alias { child, .. }) = self.get_expression_node(child_id)? {
+            return Ok(*child);
         }
+
+        Ok(child_id)
     }
 
     /// Gets mut list of `Row` children ids
@@ -1130,7 +1497,14 @@ impl Plan {
     /// # Errors
     /// - supplied id does not correspond to `Row` node
     pub fn get_mut_row_list(&mut self, row_id: NodeId) -> Result<&mut Vec<NodeId>, SbroadError> {
-        self.get_mut_expression_node(row_id)?.get_mut_row_list()
+        if let MutExpression::Row(Row { list, .. }) = self.get_mut_expression_node(row_id)? {
+            return Ok(list);
+        }
+
+        Err(SbroadError::Invalid(
+            Entity::Expression,
+            Some("node is not Row".into()),
+        ))
     }
 
     /// Replace expression that is not root of the tree (== has parent)
@@ -1154,20 +1528,20 @@ impl Plan {
         new_id: NodeId,
     ) -> Result<(), SbroadError> {
         match self.get_mut_expression_node(parent_id)? {
-            Expression::Unary { child, .. }
-            | Expression::ExprInParentheses { child }
-            | Expression::Alias { child, .. }
-            | Expression::Cast { child, .. } => {
+            MutExpression::Unary(UnaryExpr { child, .. })
+            | MutExpression::ExprInParentheses(ExprInParentheses { child })
+            | MutExpression::Alias(Alias { child, .. })
+            | MutExpression::Cast(Cast { child, .. }) => {
                 if *child == old_id {
                     *child = new_id;
                     return Ok(());
                 }
             }
-            Expression::Case {
+            MutExpression::Case(Case {
                 search_expr,
                 when_blocks,
                 else_expr,
-            } => {
+            }) => {
                 if let Some(search_expr) = search_expr {
                     if *search_expr == old_id {
                         *search_expr = new_id;
@@ -1191,9 +1565,9 @@ impl Plan {
                     }
                 }
             }
-            Expression::Bool { left, right, .. }
-            | Expression::Arithmetic { left, right, .. }
-            | Expression::Concat { left, right, .. } => {
+            MutExpression::Bool(BoolExpr { left, right, .. })
+            | MutExpression::Arithmetic(ArithmeticExpr { left, right, .. })
+            | MutExpression::Concat(Concat { left, right, .. }) => {
                 if *left == old_id {
                     *left = new_id;
                     return Ok(());
@@ -1203,9 +1577,9 @@ impl Plan {
                     return Ok(());
                 }
             }
-            Expression::Trim {
+            MutExpression::Trim(Trim {
                 pattern, target, ..
-            } => {
+            }) => {
                 if let Some(pattern_id) = pattern {
                     if *pattern_id == old_id {
                         *pattern_id = new_id;
@@ -1217,7 +1591,8 @@ impl Plan {
                     return Ok(());
                 }
             }
-            Expression::Row { list: arr, .. } | StableFunction { children: arr, .. } => {
+            MutExpression::Row(Row { list: arr, .. })
+            | MutExpression::StableFunction(StableFunction { children: arr, .. }) => {
                 for child in arr.iter_mut() {
                     if *child == old_id {
                         *child = new_id;
@@ -1225,14 +1600,14 @@ impl Plan {
                     }
                 }
             }
-            Expression::Constant { .. }
-            | Expression::Reference { .. }
-            | Expression::CountAsterisk => {}
+            MutExpression::Constant { .. }
+            | MutExpression::Reference { .. }
+            | MutExpression::CountAsterisk { .. } => {}
         }
         Err(SbroadError::FailedTo(
             Action::Replace,
             Some(Entity::Expression),
-            format_smolstr!("parent expression ({parent_id:?}) has no child with id {old_id:?}"),
+            format_smolstr!("parent expression ({parent_id}) has no child with id {old_id}"),
         ))
     }
 
@@ -1247,7 +1622,7 @@ impl Plan {
         col_idx: usize,
     ) -> Result<NodeId, SbroadError> {
         let node = self.get_relation_node(groupby_id)?;
-        if let Relational::GroupBy { gr_cols, .. } = node {
+        if let Relational::GroupBy(GroupBy { gr_cols, .. }) = node {
             let col_id = gr_cols.get(col_idx).ok_or_else(|| {
                 SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                     "groupby column index out of range. Node: {node:?}"
@@ -1268,7 +1643,7 @@ impl Plan {
     /// - node is not `Projection`
     pub fn get_proj_col(&self, proj_id: NodeId, col_idx: usize) -> Result<NodeId, SbroadError> {
         let node = self.get_relation_node(proj_id)?;
-        if let Relational::Projection { output, .. } = node {
+        if let Relational::Projection(Projection { output, .. }) = node {
             let col_id = self.get_row_list(*output)?.get(col_idx).ok_or_else(|| {
                 SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                     "projection column index out of range. Node: {node:?}"
@@ -1288,7 +1663,7 @@ impl Plan {
     /// - node is not `GroupBy`
     pub fn get_grouping_cols(&self, groupby_id: NodeId) -> Result<&[NodeId], SbroadError> {
         let node = self.get_relation_node(groupby_id)?;
-        if let Relational::GroupBy { gr_cols, .. } = node {
+        if let Relational::GroupBy(GroupBy { gr_cols, .. }) = node {
             return Ok(gr_cols);
         }
         Err(SbroadError::Invalid(
@@ -1307,7 +1682,7 @@ impl Plan {
         new_cols: Vec<NodeId>,
     ) -> Result<(), SbroadError> {
         let node = self.get_mut_relation_node(groupby_id)?;
-        if let Relational::GroupBy { gr_cols, .. } = node {
+        if let MutRelational::GroupBy(GroupBy { gr_cols, .. }) = node {
             *gr_cols = new_cols;
             return Ok(());
         }
@@ -1327,12 +1702,12 @@ impl Plan {
     /// # Panics
     /// - Plan is in invalid state
     pub fn get_alias_from_reference_node(&self, node: &Expression) -> Result<&str, SbroadError> {
-        let Expression::Reference {
+        let Expression::Reference(Reference {
             targets,
             position,
             parent,
             ..
-        } = node
+        }) = node
         else {
             unreachable!("get_alias_from_reference_node: Node is not of a reference type");
         };
@@ -1345,7 +1720,7 @@ impl Plan {
 
         // In a case of insert we don't inspect children output tuple
         // but rather use target relation columns.
-        if let Relational::Insert { ref relation, .. } = ref_node {
+        if let Relational::Insert(Insert { ref relation, .. }) = ref_node {
             let rel = self
                 .relations
                 .get(relation)
@@ -1380,8 +1755,22 @@ impl Plan {
             .get(*position)
             .unwrap_or_else(|| panic!("Column not found at position {position} in row list"));
 
-        let col_alias_node = self.get_expression_node(*col_alias_id)?;
-        col_alias_node.get_alias_name()
+        self.get_alias_name(*col_alias_id)
+    }
+
+    /// Gets alias node name.
+    ///
+    /// # Errors
+    /// - node isn't `Alias`
+    pub fn get_alias_name(&self, alias_id: NodeId) -> Result<&str, SbroadError> {
+        if let Expression::Alias(Alias { name, .. }) = self.get_expression_node(alias_id)? {
+            return Ok(name);
+        }
+
+        Err(SbroadError::Invalid(
+            Entity::Expression,
+            Some("node is not Alias".into()),
+        ))
     }
 
     /// Set slices of the plan.
@@ -1395,11 +1784,12 @@ impl Plan {
         let mut dfs = PostOrder::with_capacity(|x| self.subtree_iter(x, false), self.nodes.len());
         dfs.populate_nodes(top_id);
         let nodes = dfs.take_nodes();
-        let mut plan_nodes: Vec<&Node> = Vec::with_capacity(nodes.len());
+        let mut plan_nodes: Vec<Node> = Vec::with_capacity(nodes.len());
         for level_node in nodes {
-            let id = level_node.1;
-            plan_nodes.push(self.get_node(id)?);
+            let node = self.get_node(level_node.1)?;
+            plan_nodes.push(node);
         }
+
         let bytes: Vec<u8> = bincode::serialize(&plan_nodes).map_err(|e| {
             SbroadError::FailedTo(
                 Action::Serialize,
@@ -1407,6 +1797,7 @@ impl Plan {
                 format_smolstr!("plan nodes to binary: {e:?}"),
             )
         })?;
+
         let hash = Base64::encode_string(blake3::hash(&bytes).to_hex().as_bytes()).to_smolstr();
         Ok(hash)
     }
@@ -1416,7 +1807,7 @@ impl Plan {
     fn get_param_type(&self, param_id: NodeId) -> Result<Option<Type>, SbroadError> {
         let node = self.get_node(param_id)?;
         if let Node::Parameter(ty) = node {
-            return Ok(ty.clone());
+            return Ok(ty.param_type.clone());
         }
         Err(SbroadError::Invalid(
             Entity::Node,
@@ -1426,8 +1817,8 @@ impl Plan {
 
     fn set_param_type(&mut self, param_id: NodeId, ty: &Type) -> Result<(), SbroadError> {
         let node = self.get_mut_node(param_id)?;
-        if let Node::Parameter(..) = node {
-            *node = Node::Parameter(Some(ty.clone()));
+        if let MutNode::Parameter(param) = node {
+            param.param_type = Some(ty.clone());
             Ok(())
         } else {
             Err(SbroadError::Invalid(
@@ -1545,14 +1936,14 @@ impl ShardColumnsMap {
     pub fn update_node(&mut self, node_id: NodeId, plan: &Plan) -> Result<(), SbroadError> {
         let node = plan.get_relation_node(node_id)?;
         match node {
-            Relational::ScanRelation { relation, .. } => {
+            Relational::ScanRelation(ScanRelation { relation, .. }) => {
                 let table = plan.get_relation_or_error(relation)?;
                 if let Ok(Some(pos)) = table.get_bucket_id_position() {
                     self.memo.insert(node_id, [Some(pos), None]);
                 }
                 return Ok(());
             }
-            Relational::Motion { policy, .. } => {
+            Relational::Motion(Motion { policy, .. }) => {
                 // Any motion node that moves data invalidates
                 // bucket_id column selected from that space.
                 // Even Segment policy is no help, because it only
@@ -1586,9 +1977,9 @@ impl ShardColumnsMap {
             // If there is a parameter under alias
             // and we haven't bound parameters yet,
             // we will get an error.
-            let Ok(Expression::Reference {
+            let Ok(Expression::Reference(Reference {
                 targets, position, ..
-            }) = plan.get_expression_node(ref_id)
+            })) = plan.get_expression_node(ref_id)
             else {
                 continue;
             };
@@ -1651,9 +2042,9 @@ impl ShardColumnsMap {
         plan: &Plan,
     ) -> Result<(), SbroadError> {
         let node = plan.get_relation_node(node_id)?;
-        if let Relational::Motion {
+        if let Relational::Motion(Motion {
             policy, children, ..
-        } = node
+        }) = node
         {
             if matches!(policy, MotionPolicy::Local | MotionPolicy::LocalSegment(_)) {
                 return Ok(());

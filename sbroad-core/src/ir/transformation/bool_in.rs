@@ -11,7 +11,8 @@
 //! ```
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::{Expression, NodeId};
+use crate::ir::node::expression::Expression;
+use crate::ir::node::{BoolExpr, NodeId};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::Plan;
@@ -36,12 +37,12 @@ impl Plan {
     fn in_to_or(&mut self, top_id: NodeId) -> Result<OldNewTopIdPair, SbroadError> {
         let top_expr = self.get_expression_node(top_id)?;
         let (left_id, right_id) = match top_expr {
-            Expression::Bool {
+            Expression::Bool(BoolExpr {
                 left,
                 op: Bool::In,
                 right,
                 ..
-            } => (*left, *right),
+            }) => (*left, *right),
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,

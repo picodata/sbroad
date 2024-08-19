@@ -10,10 +10,16 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::api::children::Children;
 use crate::ir::distribution::{Distribution, Key, KeySet};
-use crate::ir::expression::Expression;
-use crate::ir::expression::{ColumnPositionMap, NodeId};
-use crate::ir::operator::{Bool, JoinKind, Relational, Unary, UpdateStrategy};
+use crate::ir::expression::ColumnPositionMap;
+use crate::ir::node::expression::Expression;
+use crate::ir::node::relational::{RelOwned, Relational};
+use crate::ir::operator::{Bool, JoinKind, Unary, UpdateStrategy};
 
+use crate::ir::node::{
+    BoolExpr, Except, GroupBy, Having, Intersect, Join, Limit, NodeId, OrderBy, Projection,
+    Reference, ScanCte, ScanRelation, ScanSubQuery, Selection, UnaryExpr, Union, UnionAll, Update,
+    Values, ValuesRow,
+};
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
 use crate::ir::tree::traversal::{
     BreadthFirst, LevelNode, PostOrder, PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY,
@@ -161,9 +167,9 @@ struct BoolOp {
 
 impl BoolOp {
     fn from_expr(plan: &Plan, expr_id: NodeId) -> Result<Self, SbroadError> {
-        if let Expression::Bool {
+        if let Expression::Bool(BoolExpr {
             left, op, right, ..
-        } = plan.get_expression_node(expr_id)?
+        }) = plan.get_expression_node(expr_id)?
         {
             Ok(BoolOp {
                 left: *left,
@@ -277,7 +283,10 @@ impl Plan {
         let filter = |node_id: NodeId| -> bool {
             matches!(
                 self.get_node(node_id),
-                Ok(Node::Expression(Expression::Unary { op: Unary::Not, .. }))
+                Ok(Node::Expression(Expression::Unary(UnaryExpr {
+                    op: Unary::Not,
+                    ..
+                })))
             )
         };
         let mut post_tree = PostOrderWithFilter::with_capacity(
@@ -299,16 +308,16 @@ impl Plan {
     pub(crate) fn get_bool_nodes_with_row_children(&self, top: NodeId) -> Vec<LevelNode<NodeId>> {
         let filter = |node_id: NodeId| -> bool {
             // Append only booleans with row children.
-            if let Ok(Node::Expression(Expression::Bool { left, right, .. })) =
+            if let Ok(Node::Expression(Expression::Bool(BoolExpr { left, right, .. }))) =
                 self.get_node(node_id)
             {
                 let left_is_row = matches!(
                     self.get_node(*left),
-                    Ok(Node::Expression(Expression::Row { .. }))
+                    Ok(Node::Expression(Expression::Row(_)))
                 );
                 let right_is_row = matches!(
                     self.get_node(*right),
-                    Ok(Node::Expression(Expression::Row { .. }))
+                    Ok(Node::Expression(Expression::Row(_)))
                 );
                 if left_is_row && right_is_row {
                     return true;
@@ -335,10 +344,12 @@ impl Plan {
     pub(crate) fn get_unary_nodes_with_row_children(&self, top: NodeId) -> Vec<LevelNode<NodeId>> {
         let filter = |node_id: NodeId| -> bool {
             // Append only unaries with row children.
-            if let Ok(Node::Expression(Expression::Unary { child, .. })) = self.get_node(node_id) {
+            if let Ok(Node::Expression(Expression::Unary(UnaryExpr { child, .. }))) =
+                self.get_node(node_id)
+            {
                 let child_is_row = matches!(
                     self.get_node(*child),
-                    Ok(Node::Expression(Expression::Row { .. }))
+                    Ok(Node::Expression(Expression::Row(_)))
                 );
                 if child_is_row {
                     return true;
@@ -379,7 +390,7 @@ impl Plan {
     ) -> Result<Option<NodeId>, SbroadError> {
         let mut sq_set: HashSet<NodeId, RandomState> = HashSet::with_hasher(RandomState::new());
         for rel_id in rel_nodes {
-            if let Node::Relational(Relational::ScanSubQuery { .. }) = self.get_node(*rel_id)? {
+            if let Node::Relational(Relational::ScanSubQuery(_)) = self.get_node(*rel_id)? {
                 sq_set.insert(*rel_id);
             }
         }
@@ -468,11 +479,11 @@ impl Plan {
         let mut search_row = |row_id: NodeId| -> Result<bool, SbroadError> {
             let refs = self.get_row_list(row_id)?;
             for (pos_in_row, ref_id) in refs.iter().enumerate() {
-                let node @ Expression::Reference {
+                let ref node @ Expression::Reference(Reference {
                     targets,
                     position: ref_pos,
                     ..
-                } = self.get_expression_node(*ref_id)?
+                }) = self.get_expression_node(*ref_id)?
                 else {
                     continue;
                 };
@@ -581,7 +592,7 @@ impl Plan {
         if !strategy
             .children_policy
             .iter()
-            .all(|(node, _)| children_set.get(node).is_some())
+            .all(|(node, _)| children_set.contains(node))
         {
             return Err(SbroadError::FailedTo(
                 Action::Add,
@@ -700,7 +711,7 @@ impl Plan {
         op_id: NodeId,
     ) -> Result<Option<(NodeId, MotionPolicy)>, SbroadError> {
         let unary_op_expr = self.get_expression_node(op_id)?;
-        let Expression::Unary { child, op } = unary_op_expr else {
+        let Expression::Unary(UnaryExpr { child, op }) = unary_op_expr else {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
                 Some(format_smolstr!(
@@ -735,7 +746,7 @@ impl Plan {
         for level_node in &not_nodes {
             let not_node_id = level_node.1;
             let not_node = self.get_expression_node(not_node_id)?;
-            if let Expression::Unary { child, .. } = not_node {
+            if let Expression::Unary(UnaryExpr { child, .. }) = not_node {
                 not_nodes_children.insert(*child);
             } else {
                 return Err(SbroadError::Invalid(
@@ -789,15 +800,14 @@ impl Plan {
     /// - If the node is not a join node.
     /// - Join node has no children.
     fn get_join_children(&self, join_id: NodeId) -> Result<Children<'_>, SbroadError> {
-        let join = self.get_relation_node(join_id)?;
-        if let Relational::Join { .. } = join {
+        if let Ok(children) = self.get_relational_children(join_id) {
+            Ok(children)
         } else {
-            return Err(SbroadError::Invalid(
+            Err(SbroadError::Invalid(
                 Entity::Relational,
                 Some("Join node is not an inner join.".into()),
-            ));
+            ))
         }
-        Ok(join.children())
     }
 
     /// Detect join child from the position map corresponding to the distribution key.
@@ -815,7 +825,9 @@ impl Plan {
                     format_smolstr!("{pos} in row map {row_map:?}"),
                 )
             })?;
-            if let Expression::Reference { targets, .. } = self.get_expression_node(column_id)? {
+            if let Expression::Reference(Reference { targets, .. }) =
+                self.get_expression_node(column_id)?
+            {
                 if let Some(targets) = targets {
                     for target in targets {
                         let child_id = *join_children.get(*target).ok_or_else(|| {
@@ -851,7 +863,7 @@ impl Plan {
     /// # Errors
     /// - If the node is not a row node.
     fn build_row_map(&self, row_id: NodeId) -> Result<HashMap<usize, NodeId>, SbroadError> {
-        let columns = self.get_expression_node(row_id)?.get_row_list()?;
+        let columns = self.get_row_list(row_id)?;
         let mut map: HashMap<usize, NodeId> = HashMap::new();
         for (pos, col) in columns.iter().enumerate() {
             map.insert(pos, *col);
@@ -913,10 +925,10 @@ impl Plan {
         let mut inner_positions: AHashSet<usize> = AHashSet::with_capacity(row_map.len());
         for (pos, col) in row_map {
             let expression = self.get_expression_node(*col)?;
-            if let Expression::Reference {
+            if let Expression::Reference(Reference {
                 targets: Some(targets),
                 ..
-            } = expression
+            }) = expression
             {
                 // Inner child of the join node is always the second one.
                 if targets == &[1; 1] {
@@ -942,9 +954,9 @@ impl Plan {
                     format_smolstr!("{pos} in row map {condition_row_map:?}"),
                 )
             })?;
-            if let Expression::Reference {
+            if let Expression::Reference(Reference {
                 targets, position, ..
-            } = self.get_expression_node(column_id)?
+            }) = self.get_expression_node(column_id)?
             {
                 if let Some(targets) = targets {
                     // Inner child of the join node is always the second one.
@@ -1166,7 +1178,7 @@ impl Plan {
             matches!(
                 self.get_node(node_id),
                 Ok(Node::Expression(
-                    Expression::Bool { .. } | Expression::Unary { op: Unary::Not, .. }
+                    Expression::Bool(_) | Expression::Unary(UnaryExpr { op: Unary::Not, .. })
                 ))
             )
         };
@@ -1183,13 +1195,13 @@ impl Plan {
             let expr = self.get_expression_node(node_id)?;
 
             // Under `not ... in ...` we should change the policy to `Full`
-            if let Expression::Unary {
+            if let Expression::Unary(UnaryExpr {
                 op: Unary::Not,
                 child,
-            } = expr
+            }) = expr
             {
                 let child_expr = self.get_expression_node(*child)?;
-                if let Expression::Bool { op: Bool::In, .. } = child_expr {
+                if let Expression::Bool(BoolExpr { op: Bool::In, .. }) = child_expr {
                     new_inner_policy = MotionPolicy::Full;
                     inner_map.insert(node_id, new_inner_policy.clone());
                     continue;
@@ -1224,12 +1236,12 @@ impl Plan {
             let left_expr = self.get_expression_node(bool_op.left)?;
             let right_expr = self.get_expression_node(bool_op.right)?;
             new_inner_policy = match (left_expr, right_expr) {
-                (Expression::Arithmetic { .. }, _) | (_, Expression::Arithmetic { .. }) => {
+                (Expression::Arithmetic(_), _) | (_, Expression::Arithmetic(_)) => {
                     MotionPolicy::Full
                 }
                 (
-                    Expression::Bool { .. } | Expression::Unary { .. },
-                    Expression::Bool { .. } | Expression::Unary { .. },
+                    Expression::Bool(_) | Expression::Unary(_),
+                    Expression::Bool(_) | Expression::Unary(_),
                 ) => {
                     let left_policy = inner_map
                         .get(&bool_op.left)
@@ -1250,7 +1262,7 @@ impl Plan {
                         }
                     }
                 }
-                (Expression::Row { .. }, Expression::Row { .. }) => {
+                (Expression::Row(_), Expression::Row(_)) => {
                     match bool_op.op {
                         Bool::Between => {
                             unreachable!("Between in redistribution")
@@ -1270,17 +1282,11 @@ impl Plan {
                         }
                     }
                 }
-                (
-                    Expression::Constant { .. },
-                    Expression::Bool { .. } | Expression::Unary { .. },
-                ) => inner_map
+                (Expression::Constant(_), Expression::Bool(_) | Expression::Unary(_)) => inner_map
                     .get(&bool_op.right)
                     .cloned()
                     .unwrap_or(MotionPolicy::Full),
-                (
-                    Expression::Bool { .. } | Expression::Unary { .. },
-                    Expression::Constant { .. },
-                ) => inner_map
+                (Expression::Bool(_) | Expression::Unary(_), Expression::Constant(_)) => inner_map
                     .get(&bool_op.left)
                     .cloned()
                     .unwrap_or(MotionPolicy::Full),
@@ -1368,9 +1374,9 @@ impl Plan {
                 // Otherwise, if they read some sharded table (Segment or Any),
                 // then they always have Motion, which was set before this function
                 // was called in `get_sq_node_strategy_for_unary_op`.
-                if let Expression::Bool {
+                if let Expression::Bool(BoolExpr {
                     op, left, right, ..
-                } = self.get_expression_node(node_id)?
+                }) = self.get_expression_node(node_id)?
                 {
                     // If some other operator is used, then the corresponding subquery
                     // already must have a Motion (in case it is reading non-global table),
@@ -1593,14 +1599,13 @@ impl Plan {
             return self.resolve_dml_node_conflict_for_global_table(update_id);
         }
 
-        if let Relational::Update { strategy: kind, .. } = self.get_relation_node(update_id)? {
+        if let Relational::Update(Update { strategy: kind, .. }) =
+            self.get_relation_node(update_id)?
+        {
             let mut map = Strategy::new(update_id);
             let table = self.dml_node_table(update_id)?;
             let child_id = self.get_relational_child(update_id, 0)?;
-            if !matches!(
-                self.get_relation_node(child_id)?,
-                Relational::Projection { .. }
-            ) {
+            if !matches!(self.get_relation_node(child_id)?, Relational::Projection(_)) {
                 return Err(SbroadError::Invalid(
                     Entity::Update,
                     Some(format_smolstr!(
@@ -1778,7 +1783,7 @@ impl Plan {
         let mut map = Strategy::new(rel_id);
         let child_id = self.dml_child_id(rel_id)?;
         let child_node = self.get_relation_node(child_id)?;
-        if !matches!(child_node, Relational::Motion { .. }) {
+        if !matches!(child_node, Relational::Motion(_)) {
             map.add_child(child_id, MotionPolicy::Full, Program::default());
         }
         Ok(map)
@@ -1886,7 +1891,7 @@ impl Plan {
 
     #[allow(clippy::too_many_lines)]
     fn resolve_except_conflicts(&mut self, rel_id: NodeId) -> Result<Strategy, SbroadError> {
-        if !matches!(self.get_relation_node(rel_id)?, Relational::Except { .. }) {
+        if !matches!(self.get_relation_node(rel_id)?, Relational::Except(_)) {
             return Err(SbroadError::Invalid(
                 Entity::Relational,
                 Some("expected Except node".into()),
@@ -2027,12 +2032,12 @@ impl Plan {
         let cloned_left_id = SubtreeCloner::clone_subtree(self, left_id, left_id.offset as usize)?;
         let right_output_id = self.get_relational_output(right_id)?;
         let intersect_output_id = self.clone_expr_subtree(right_output_id)?;
-        let intersect = Relational::Intersect {
+        let intersect = Intersect {
             left: right_id,
             right: cloned_left_id,
             output: intersect_output_id,
         };
-        let intersect_id = self.add_relational(intersect)?;
+        let intersect_id = self.add_relational(intersect.into())?;
 
         self.change_child(except_id, right_id, intersect_id)?;
 
@@ -2046,7 +2051,7 @@ impl Plan {
     fn resolve_union_conflicts(&mut self, rel_id: NodeId) -> Result<Strategy, SbroadError> {
         if !matches!(
             self.get_relation_node(rel_id)?,
-            Relational::UnionAll { .. } | Relational::Union { .. }
+            Relational::UnionAll(_) | Relational::Union(_)
         ) {
             return Err(SbroadError::Invalid(
                 Entity::Relational,
@@ -2060,8 +2065,8 @@ impl Plan {
         let right_output_id = self.get_relation_node(right_id)?.output();
 
         {
-            let left_output_row = self.get_expression_node(left_output_id)?.get_row_list()?;
-            let right_output_row = self.get_expression_node(right_output_id)?.get_row_list()?;
+            let left_output_row = self.get_row_list(left_output_id)?;
+            let right_output_row = self.get_row_list(right_output_id)?;
             if left_output_row.len() != right_output_row.len() {
                 return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                     "Except node children have different row lengths: left {}, right {}",
@@ -2152,7 +2157,7 @@ impl Plan {
                 continue;
             }
 
-            let node = self.get_relation_node(id)?.clone();
+            let node = self.get_relation_node(id)?.get_rel_owned();
 
             // Some transformations (Union) need to add new nodes above
             // themselves, because we don't store parent references,
@@ -2172,15 +2177,15 @@ impl Plan {
                 // At the moment our grammar and IR constructors
                 // don't allow projection and values row with
                 // sub queries.
-                Relational::ScanRelation { output, .. }
-                | Relational::ScanSubQuery { output, .. }
-                | Relational::GroupBy { output, .. }
-                | Relational::Intersect { output, .. }
-                | Relational::Having { output, .. }
-                | Relational::ValuesRow { output, .. } => {
+                RelOwned::ScanRelation(ScanRelation { output, .. })
+                | RelOwned::ScanSubQuery(ScanSubQuery { output, .. })
+                | RelOwned::GroupBy(GroupBy { output, .. })
+                | RelOwned::Intersect(Intersect { output, .. })
+                | RelOwned::Having(Having { output, .. })
+                | RelOwned::ValuesRow(ValuesRow { output, .. }) => {
                     self.set_distribution(output)?;
                 }
-                Relational::Limit { output, limit, .. } => {
+                RelOwned::Limit(Limit { output, limit, .. }) => {
                     let rel_child_id = self.get_relational_child(id, 0)?;
                     let child_dist =
                         self.get_distribution(self.get_relational_output(rel_child_id)?)?;
@@ -2209,7 +2214,7 @@ impl Plan {
                         }
                     }
                 }
-                Relational::OrderBy { output, .. } => {
+                RelOwned::OrderBy(OrderBy { output, .. }) => {
                     let rel_child_id = self.get_relational_child(id, 0)?;
 
                     let child_dist =
@@ -2225,13 +2230,13 @@ impl Plan {
                     }
                     self.set_dist(output, Distribution::Single)?;
                 }
-                Relational::Values { output, .. } => {
+                RelOwned::Values(Values { output, .. }) => {
                     self.set_dist(output, Distribution::Global)?;
                 }
-                Relational::Projection {
+                RelOwned::Projection(Projection {
                     output: proj_output_id,
                     ..
-                } => {
+                }) => {
                     let child_dist = self.get_distribution(
                         self.get_relational_output(self.get_relational_child(id, 0)?)?,
                     )?;
@@ -2248,14 +2253,14 @@ impl Plan {
                         self.set_projection_distribution(id)?;
                     }
                 }
-                Relational::Motion { .. } => {
+                RelOwned::Motion { .. } => {
                     // We can apply this transformation only once,
                     // i.e. to the plan without any motion nodes.
                     return Err(SbroadError::DuplicatedValue(SmolStr::from(
                         "IR already has Motion nodes.",
                     )));
                 }
-                Relational::Selection { output, filter, .. } => {
+                RelOwned::Selection(Selection { output, filter, .. }) => {
                     let strategy = self.resolve_sub_query_conflicts(id, filter)?;
                     self.create_motion_nodes(strategy)?;
                     if let Some(dist) = self.dist_from_subqueries(id)? {
@@ -2264,12 +2269,12 @@ impl Plan {
                         self.set_distribution(output)?;
                     }
                 }
-                Relational::Join {
+                RelOwned::Join(Join {
                     output,
                     condition,
                     kind,
                     ..
-                } => {
+                }) => {
                     self.resolve_join_conflicts(id, condition, &kind)?;
                     if let Some(dist) = self.dist_from_subqueries(id)? {
                         self.set_dist(output, dist)?;
@@ -2277,26 +2282,26 @@ impl Plan {
                         self.set_distribution(output)?;
                     }
                 }
-                Relational::Delete { .. } => {
+                RelOwned::Delete { .. } => {
                     let strategy = self.resolve_delete_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                 }
-                Relational::Insert { .. } => {
+                RelOwned::Insert { .. } => {
                     // Insert output tuple already has relation's distribution.
                     let strategy = self.resolve_insert_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                 }
-                Relational::Update { output, .. } => {
+                RelOwned::Update(Update { output, .. }) => {
                     let strategy = self.resolve_update_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
                 }
-                Relational::Except { output, .. } => {
+                RelOwned::Except(Except { output, .. }) => {
                     let strategy = self.resolve_except_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
                 }
-                Relational::Union { output, .. } => {
+                RelOwned::Union(Union { output, .. }) => {
                     let strategy = self.resolve_union_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
@@ -2307,12 +2312,12 @@ impl Plan {
                     )?;
                     old_new.insert(id, new_top_id);
                 }
-                Relational::UnionAll { output, .. } => {
+                RelOwned::UnionAll(UnionAll { output, .. }) => {
                     let strategy = self.resolve_union_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
                 }
-                Relational::ScanCte { output, child, .. } => {
+                RelOwned::ScanCte(ScanCte { output, child, .. }) => {
                     // Possible, current CTE subtree has already been resolved and we
                     // can just copy the corresponding motion node.
                     if let Some(motion_id) = cte_motions.get(&child) {
@@ -2339,6 +2344,7 @@ impl Plan {
                     }
                 }
             }
+
             visited.insert(id);
         }
 
@@ -2353,7 +2359,6 @@ impl Plan {
         let top_id = self.get_top()?;
         let slices = self.calculate_slices(top_id)?;
         self.set_slices(slices);
-
         Ok(())
     }
 
@@ -2371,7 +2376,7 @@ impl Plan {
         let mut map: HashMap<usize, usize> = HashMap::new();
         let mut max_level: usize = 0;
         for LevelNode(level, id) in bft_tree.iter(top_id) {
-            if let Node::Relational(Relational::Motion { .. }) = self.get_node(id)? {
+            if let Node::Relational(Relational::Motion(_)) = self.get_node(id)? {
                 let key: usize = match map.entry(level) {
                     Entry::Occupied(o) => *o.into_mut(),
                     Entry::Vacant(v) => {

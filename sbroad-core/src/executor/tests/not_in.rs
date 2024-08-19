@@ -55,7 +55,7 @@ fn not_in1_test() {
             format!(
                 "{} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
-                r#"WHERE not ("t"."identification_number") in (SELECT "id" FROM "TMP_test_77")"#,
+                r#"WHERE not ("t"."identification_number") in (SELECT "id" FROM "TMP_test_0136")"#,
             ),
             vec![],
         ))),

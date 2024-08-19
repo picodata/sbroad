@@ -1,7 +1,9 @@
+use std::fmt::Debug;
+
 use crate::executor::ir::ExecutionPlan;
-use crate::ir::expression::NodeId;
+use crate::executor::protocol::VTablesMeta;
 use crate::ir::relation::SpaceEngine;
-use crate::{errors::SbroadError, executor::protocol::VTablesMeta};
+use crate::{errors::SbroadError, ir::node::NodeId};
 
 #[cfg(not(feature = "mock"))]
 mod prod_imports {
@@ -11,6 +13,7 @@ mod prod_imports {
     pub use crate::executor::engine::helpers::{pk_name, table_name};
     pub use crate::executor::ir::ExecutionPlan;
     use crate::executor::protocol::VTablesMeta;
+    pub use crate::ir::node::NodeId;
     pub use crate::ir::relation::SpaceEngine;
     pub use smol_str::{format_smolstr, SmolStr};
     pub use tarantool::index::{FieldType, IndexOptions, IndexType, Part};
@@ -20,7 +23,7 @@ mod prod_imports {
     pub fn create_tmp_space_impl(
         exec_plan: &ExecutionPlan,
         plan_id: &str,
-        motion_id: usize,
+        motion_id: NodeId,
         engine: &SpaceEngine,
         vtables_meta: Option<&VTablesMeta>,
     ) -> Result<SmolStr, SbroadError> {

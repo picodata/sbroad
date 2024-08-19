@@ -71,10 +71,11 @@
 //! ```
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::{Expression, NodeId};
+use crate::ir::node::expression::Expression;
+use crate::ir::node::{BoolExpr, ExprInParentheses, Node32, NodeId};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::OldNewTopIdPair;
-use crate::ir::{Node, Plan};
+use crate::ir::Plan;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 use std::collections::VecDeque;
@@ -90,14 +91,16 @@ pub struct Chain {
 fn optionally_covered_and_or(expr_id: NodeId, plan: &Plan) -> Result<Option<NodeId>, SbroadError> {
     let expr = plan.get_expression_node(expr_id)?;
     let and_or = match expr {
-        Expression::Bool { op, .. } => {
+        Expression::Bool(BoolExpr { op, .. }) => {
             if matches!(op, Bool::And) || matches!(op, Bool::Or) {
                 Some(expr_id)
             } else {
                 None
             }
         }
-        Expression::ExprInParentheses { child } => optionally_covered_and_or(*child, plan)?,
+        Expression::ExprInParentheses(ExprInParentheses { child }) => {
+            optionally_covered_and_or(*child, plan)?
+        }
         _ => None,
     };
     Ok(and_or)
@@ -134,10 +137,10 @@ impl Chain {
     fn pop_back(&mut self, plan: &Plan) -> Result<Option<NodeId>, SbroadError> {
         if let Some(expr_id) = self.nodes.back() {
             let expr = plan.get_expression_node(*expr_id)?;
-            if let Expression::Bool {
+            if let Expression::Bool(BoolExpr {
                 op: Bool::And | Bool::Or,
                 ..
-            } = expr
+            }) = expr
             {
                 return Ok(self.nodes.pop_back());
             }
@@ -186,9 +189,9 @@ impl Plan {
     /// - If the expression tree is not a trivalent expression.
     /// - Failed to append node to the AND chain.
     pub fn get_dnf_chains(&self, top_id: NodeId) -> Result<VecDeque<Chain>, SbroadError> {
-        let capacity: usize = self.nodes.arena.iter().fold(0_usize, |acc, node| {
+        let capacity: usize = self.nodes.arena32.iter().fold(0_usize, |acc, node| {
             acc + match node {
-                Node::Expression(Expression::Bool {
+                Node32::Bool(BoolExpr {
                     op: Bool::And | Bool::Or,
                     ..
                 }) => 1,
@@ -208,9 +211,9 @@ impl Plan {
                 continue;
             };
             let expr = self.get_expression_node(expr_id)?;
-            if let Expression::Bool {
+            if let Expression::Bool(BoolExpr {
                 op, left, right, ..
-            } = expr
+            }) = expr
             {
                 match *op {
                     Bool::And => {

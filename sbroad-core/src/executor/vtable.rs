@@ -13,8 +13,8 @@ use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::{TupleBuilderCommand, TupleBuilderPattern};
 use crate::executor::protocol::{Binary, EncodedRows, EncodedTables};
 use crate::executor::{bucket::Buckets, Vshard};
-use crate::ir::expression::NodeId;
 use crate::ir::helpers::RepeatableState;
+use crate::ir::node::NodeId;
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::{ColumnPosition, MotionKey, Target};
 use crate::ir::value::{EncodedValue, LuaValue, MsgPackValue, Value};
@@ -231,10 +231,10 @@ impl VirtualTable {
     /// - bucket index is corrupted
     pub fn new_with_buckets(&self, bucket_ids: &[u64]) -> Result<Self, SbroadError> {
         let mut result = Self::new();
-        result.columns = self.columns.clone();
-        result.name = self.name.clone();
+        result.columns.clone_from(&self.columns);
+        result.name.clone_from(&self.name);
 
-        result.primary_key = self.primary_key.clone();
+        result.primary_key.clone_from(&self.primary_key);
         for bucket_id in bucket_ids {
             // If bucket_id is met among those that are present in self.
             if let Some(pointers) = self.get_bucket_index().get(bucket_id) {

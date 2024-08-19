@@ -13,7 +13,8 @@
 //! ```
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::{Expression, NodeId};
+use crate::ir::node::expression::Expression;
+use crate::ir::node::{BoolExpr, NodeId, Row};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::Plan;
@@ -54,9 +55,9 @@ impl Plan {
     fn split_bool(&mut self, top_id: NodeId) -> Result<OldNewTopIdPair, SbroadError> {
         let top_expr = self.get_expression_node(top_id)?;
         let (left_id, right_id, op) = match top_expr {
-            Expression::Bool {
+            Expression::Bool(BoolExpr {
                 left, op, right, ..
-            } => (*left, *right, op.clone()),
+            }) => (*left, *right, op.clone()),
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
@@ -66,15 +67,15 @@ impl Plan {
                 ));
             }
         };
-        let left_expr = self.get_expression_node(left_id)?;
-        let right_expr = self.get_expression_node(right_id)?;
+        let left_expr = &self.get_expression_node(left_id)?;
+        let right_expr = &self.get_expression_node(right_id)?;
         if let (
-            Expression::Row {
+            Expression::Row(Row {
                 list: left_list, ..
-            },
-            Expression::Row {
+            }),
+            Expression::Row(Row {
                 list: right_list, ..
-            },
+            }),
         ) = (left_expr, right_expr)
         {
             if left_list.len() != right_list.len() {

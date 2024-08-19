@@ -1,9 +1,14 @@
-use crate::ir::{Entity, Node, Plan, SbroadError};
+use crate::{
+    ir::node::{MutNode, NodeId},
+    ir::{Entity, Node, Plan, SbroadError},
+};
 use serde::{Deserialize, Serialize};
-use smol_str::{format_smolstr, SmolStr, ToSmolStr};
-use tarantool::decimal::Decimal;
+use smol_str::{format_smolstr, SmolStr};
 
-use super::{ddl::ParamDef, expression::NodeId};
+use super::{
+    ddl::ParamDef,
+    node::acl::{Acl, MutAcl},
+};
 
 ::tarantool::define_str_enum! {
     /// Revoked or granted privilege.
@@ -187,76 +192,13 @@ pub enum AlterOption {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub enum Acl {
-    DropRole {
-        name: SmolStr,
-        timeout: Decimal,
-    },
-    DropUser {
-        name: SmolStr,
-        timeout: Decimal,
-    },
-    CreateRole {
-        name: SmolStr,
-        timeout: Decimal,
-    },
-    CreateUser {
-        name: SmolStr,
-        password: SmolStr,
-        auth_method: SmolStr,
-        timeout: Decimal,
-    },
-    AlterUser {
-        name: SmolStr,
-        alter_option: AlterOption,
-        timeout: Decimal,
-    },
-    GrantPrivilege {
-        grant_type: GrantRevokeType,
-        grantee_name: SmolStr,
-        timeout: Decimal,
-    },
-    RevokePrivilege {
-        revoke_type: GrantRevokeType,
-        grantee_name: SmolStr,
-        timeout: Decimal,
-    },
-}
-
-impl Acl {
-    /// Return ACL node timeout.
-    ///
-    /// # Errors
-    /// - timeout parsing error
-    pub fn timeout(&self) -> Result<f64, SbroadError> {
-        match self {
-            Acl::DropRole { ref timeout, .. }
-            | Acl::DropUser { ref timeout, .. }
-            | Acl::CreateRole { ref timeout, .. }
-            | Acl::AlterUser { ref timeout, .. }
-            | Acl::CreateUser { ref timeout, .. }
-            | Acl::RevokePrivilege { ref timeout, .. }
-            | Acl::GrantPrivilege { ref timeout, .. } => timeout,
-        }
-        .to_smolstr()
-        .parse()
-        .map_err(|e| {
-            SbroadError::Invalid(
-                Entity::SpaceMetadata,
-                Some(format_smolstr!("timeout parsing error {e:?}")),
-            )
-        })
-    }
-}
-
 impl Plan {
     /// Get ACL node from the plan arena.
     ///
     /// # Errors
     /// - the node index is absent in arena
     /// - current node is not of ACL type
-    pub fn get_acl_node(&self, node_id: NodeId) -> Result<&Acl, SbroadError> {
+    pub fn get_acl_node(&self, node_id: NodeId) -> Result<Acl, SbroadError> {
         let node = self.get_node(node_id)?;
         match node {
             Node::Acl(acl) => Ok(acl),
@@ -272,28 +214,10 @@ impl Plan {
     /// # Errors
     /// - the node index is absent in arena
     /// - current node is not of ACL type
-    pub fn get_mut_acl_node(&mut self, node_id: NodeId) -> Result<&mut Acl, SbroadError> {
+    pub fn get_mut_acl_node(&mut self, node_id: NodeId) -> Result<MutAcl, SbroadError> {
         let node = self.get_mut_node(node_id)?;
         match node {
-            Node::Acl(acl) => Ok(acl),
-            _ => Err(SbroadError::Invalid(
-                Entity::Node,
-                Some(format_smolstr!("node is not ACL type: {node:?}")),
-            )),
-        }
-    }
-
-    /// Take ACL node from the plan arena and replace it with parameter node.
-    ///
-    /// # Errors
-    /// - current node is not of ACL type
-    pub fn take_acl_node(&mut self, node_id: NodeId) -> Result<Acl, SbroadError> {
-        // Check that node is ACL type (before making any distructive operations).
-        let _ = self.get_acl_node(node_id)?;
-        // Replace ACL with parameter node.
-        let node = std::mem::replace(self.get_mut_node(node_id)?, Node::Parameter(None));
-        match node {
-            Node::Acl(acl) => Ok(acl),
+            MutNode::Acl(acl) => Ok(acl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format_smolstr!("node is not ACL type: {node:?}")),

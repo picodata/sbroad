@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 
 use super::TreeIterator;
-use crate::ir::expression::NodeId;
-use crate::ir::operator::Relational;
-use crate::ir::{ArenaType, Node, Nodes};
+use crate::ir::node::relational::Relational;
+use crate::ir::node::{ArenaType, GroupBy, Limit, NodeId, OrderBy, ScanCte};
+use crate::ir::{Node, Nodes};
 
 trait RelationalTreeIterator<'nodes>: TreeIterator<'nodes> {}
 
@@ -30,7 +30,7 @@ impl<'n> Nodes {
     #[must_use]
     pub fn empty_rel_iter(&'n self) -> RelationalIterator<'n> {
         RelationalIterator {
-            current: self.next_id(ArenaType::Default),
+            current: self.next_id(ArenaType::Arena64),
             child: RefCell::new(0),
             nodes: self,
         }
@@ -57,13 +57,11 @@ impl<'n> Iterator for RelationalIterator<'n> {
     type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
-        relational_next(self).copied()
+        relational_next(self)
     }
 }
 
-fn relational_next<'nodes>(
-    iter: &mut impl RelationalTreeIterator<'nodes>,
-) -> Option<&'nodes NodeId> {
+fn relational_next<'nodes>(iter: &mut impl RelationalTreeIterator<'nodes>) -> Option<NodeId> {
     match iter.get_nodes().get(iter.get_current()) {
         Some(Node::Relational(
             node @ (Relational::Except { .. }
@@ -86,27 +84,27 @@ fn relational_next<'nodes>(
             let children = node.children();
             if step < children.len() {
                 *iter.get_child().borrow_mut() += 1;
-                return children.get(step);
+                return children.get(step).copied();
             }
             None
         }
-        Some(Node::Relational(Relational::GroupBy { children, .. })) => {
+        Some(Node::Relational(Relational::GroupBy(GroupBy { children, .. }))) => {
             let step = *iter.get_child().borrow();
             if step == 0 {
                 *iter.get_child().borrow_mut() += 1;
-                return children.get(step);
+                return children.get(step).copied();
             }
             None
         }
         Some(Node::Relational(
-            Relational::OrderBy { child, .. }
-            | Relational::ScanCte { child, .. }
-            | Relational::Limit { child, .. },
+            Relational::OrderBy(OrderBy { child, .. })
+            | Relational::ScanCte(ScanCte { child, .. })
+            | Relational::Limit(Limit { child, .. }),
         )) => {
             let step = *iter.get_child().borrow();
             if step == 0 {
                 *iter.get_child().borrow_mut() += 1;
-                return Some(child);
+                return Some(*child);
             }
             None
         }
@@ -114,6 +112,7 @@ fn relational_next<'nodes>(
             Node::Relational(Relational::ScanRelation { .. })
             | Node::Expression(_)
             | Node::Parameter(_)
+            | Node::Invalid(_)
             | Node::Ddl(_)
             | Node::Acl(_)
             | Node::Block(_),

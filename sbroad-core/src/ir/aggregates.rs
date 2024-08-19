@@ -2,15 +2,16 @@ use smol_str::{format_smolstr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type;
-use crate::ir::expression::Expression;
+use crate::ir::node::{NodeId, Reference, StableFunction};
 use crate::ir::operator::Arithmetic;
 use crate::ir::relation::Type as RelType;
-use crate::ir::{Node, Plan, Position};
+use crate::ir::Plan;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
-use super::expression::{ColumnPositionMap, FunctionFeature, NodeId};
+use super::expression::{ColumnPositionMap, FunctionFeature, Position};
+use super::node::expression::Expression;
 
 /// The kind of aggregate function
 ///
@@ -309,18 +310,18 @@ impl SimpleAggregate {
                                      local_kind: AggregateKind,
                                      final_func: AggregateKind|
          -> Result<(), SbroadError> {
-            let ref_node = Expression::Reference {
+            let ref_node = Reference {
                 parent: Some(parent),
                 // projection has only one child
                 targets: Some(vec![0]),
                 position,
                 col_type: fun_type.clone(),
             };
-            let ref_id = plan.nodes.push(Node::Expression(ref_node));
+            let ref_id = plan.nodes.push(ref_node.into());
             let children = match self.kind {
                 AggregateKind::AVG => vec![plan.add_cast(ref_id, Type::Double)?],
                 AggregateKind::GRCONCAT => {
-                    if let Expression::StableFunction { children, .. } =
+                    if let Expression::StableFunction(StableFunction { children, .. }) =
                         plan.get_expression_node(self.fun_id)?
                     {
                         if children.len() > 1 {
@@ -351,14 +352,14 @@ impl SimpleAggregate {
             } else {
                 None
             };
-            let final_aggr = Expression::StableFunction {
+            let final_aggr = StableFunction {
                 name: final_func.to_smolstr(),
                 children,
                 feature,
                 func_type: RelType::from(final_func),
                 is_system: true,
             };
-            let aggr_id = plan.nodes.push(Node::Expression(final_aggr));
+            let aggr_id = plan.nodes.push(final_aggr.into());
             final_aggregates.insert(local_kind, aggr_id);
             Ok(())
         };

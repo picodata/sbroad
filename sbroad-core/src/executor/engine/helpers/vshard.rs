@@ -18,19 +18,21 @@ use crate::{
         protocol::{FullMessage, RequiredMessage},
         result::ProducerResult,
     },
-    ir::{
-        expression::NodeId,
+    ir::node::{
+        relational::{MutRelational, Relational},
+        Motion, Node, NodeId,
+    },
+    otm::child_span,
+};
+use crate::ir::{
         helpers::RepeatableState,
-        operator::Relational,
         transformation::redistribution::{MotionOpcode, MotionPolicy},
         tree::{
             relation::RelationalIterator,
             traversal::{LevelNode, PostOrderWithFilter, REL_CAPACITY},
         },
-        Node, Plan,
-    },
-    otm::child_span,
-};
+        Plan,
+    };
 use ahash::AHashMap;
 use rand::{thread_rng, Rng};
 use sbroad_proc::otm_child_span;
@@ -750,7 +752,9 @@ impl Plan {
     // return true if given node is Motion containing seriliaze as empty
     // opcode. If `check_enabled` is true checks that the opcode is enabled.
     fn is_serialize_as_empty_motion(&self, node_id: NodeId, check_enabled: bool) -> bool {
-        if let Ok(Node::Relational(Relational::Motion { program, .. })) = self.get_node(node_id) {
+        if let Ok(Node::Relational(Relational::Motion(Motion { program, .. }))) =
+            self.get_node(node_id)
+        {
             if let Some(op) = program
                 .0
                 .iter()
@@ -787,7 +791,7 @@ impl Plan {
         let filter = |node_id: NodeId| -> bool {
             matches!(
                 self.get_node(node_id),
-                Ok(Node::Relational(Relational::Motion { .. }))
+                Ok(Node::Relational(Relational::Motion(_)))
             )
         };
         let mut dfs =
@@ -809,7 +813,7 @@ impl Plan {
             let is_motion = |node_id: NodeId| -> bool {
                 matches!(
                     self.get_node(node_id),
-                    Ok(Node::Relational(Relational::Motion { .. }))
+                    Ok(Node::Relational(Relational::Motion(_)))
                 )
             };
             let mut all_motions = Vec::new();
@@ -913,9 +917,9 @@ fn disable_serialize_as_empty_opcode(
     info: &SerializeAsEmptyInfo,
 ) -> Result<(), SbroadError> {
     for motion_id in &info.target_motion_ids {
-        let program = if let Relational::Motion {
+        let program = if let MutRelational::Motion(Motion {
             policy, program, ..
-        } = sub_plan
+        }) = sub_plan
             .get_mut_ir_plan()
             .get_mut_relation_node(*motion_id)?
         {

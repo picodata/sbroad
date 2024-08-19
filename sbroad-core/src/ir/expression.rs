@@ -7,205 +7,30 @@
 //! - distribution of the data in the tuple
 
 use ahash::RandomState;
+use distribution::Distribution;
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
 use std::collections::{BTreeMap, HashSet};
-use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Bound::Included;
 
+use super::{
+    distribution, operator, Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant,
+    ExprInParentheses, Expression, LevelNode, MutExpression, MutNode, Node, NodeId, Reference,
+    Relational, Row, StableFunction, Trim, UnaryExpr, Value,
+};
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::to_user;
-use crate::ir::aggregates::AggregateKind;
-use crate::ir::operator::{Bool, Relational};
+use crate::ir::operator::Bool;
 use crate::ir::relation::Type;
-use crate::ir::Positions as Targets;
-
-use super::distribution::Distribution;
-use super::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
-use super::value::Value;
-use super::{operator, ArenaType, Node, Nodes, Plan};
+use crate::ir::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
+use crate::ir::{Nodes, Plan, Positions as Targets};
 
 pub mod cast;
 pub mod concat;
 pub mod types;
 
 pub(crate) type ExpressionId = NodeId;
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, Hash, Copy)]
-pub struct NodeId {
-    pub offset: u32,
-    pub arena_type: ArenaType,
-}
-
-impl Display for NodeId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", self.offset, self.arena_type)
-    }
-}
-
-impl Default for NodeId {
-    fn default() -> Self {
-        NodeId {
-            offset: 0,
-            arena_type: ArenaType::Default,
-        }
-    }
-}
-
-/// Tuple tree build blocks.
-///
-/// A tuple describes a single portion of data moved among cluster nodes.
-/// It consists of the ordered, strictly typed expressions with names
-/// (columns) and additional information about data distribution policy.
-///
-/// Tuple is a tree with a `Row` top (level 0) and a list of the named
-/// `Alias` columns (level 1). This convention is used across the code
-/// and should not be changed. It ensures that we always know the
-/// name of any column in the tuple and therefore simplifies AST
-/// deserialization.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub enum Expression {
-    /// Expression name.
-    ///
-    /// Example: `42 as a`.
-    Alias {
-        /// Alias name.
-        name: SmolStr,
-        /// Child expression node index in the plan node arena.
-        child: NodeId,
-    },
-    /// Binary expression returning boolean result.
-    ///
-    /// Example: `a > 42`, `b in (select c from ...)`.
-    Bool {
-        /// Left branch expression node index in the plan node arena.
-        left: NodeId,
-        /// Boolean operator.
-        op: operator::Bool,
-        /// Right branch expression node index in the plan node arena.
-        right: NodeId,
-    },
-    /// Binary expression returning row result.
-    ///
-    /// Example: `a + b > 42`, `a + b < c + 1`, `1 + 2 != 2 * 2`.
-    ///
-    /// TODO: always cover children with parentheses (in to_sql).
-    Arithmetic {
-        /// Left branch expression node index in the plan node arena.
-        left: NodeId,
-        /// Arithmetic operator.
-        op: operator::Arithmetic,
-        /// Right branch expression node index in the plan node arena.
-        right: NodeId,
-    },
-    /// Type cast expression.
-    ///
-    /// Example: `cast(a as text)`.
-    Cast {
-        /// Target expression that must be casted to another type.
-        child: NodeId,
-        /// Cast type.
-        to: cast::Type,
-    },
-    /// String concatenation expression.
-    ///
-    /// Example: `a || 'hello'`.
-    Concat {
-        /// Left expression node id.
-        left: NodeId,
-        /// Right expression node id.
-        right: NodeId,
-    },
-    /// Constant expressions.
-    ///
-    /// Example: `42`.
-    Constant {
-        /// Contained value (boolean, number, string or null)
-        value: Value,
-    },
-    /// Reference to the position in the incoming tuple(s).
-    /// Uses a relative pointer as a coordinate system:
-    /// - relational node (containing this reference)
-    /// - target(s) in the relational nodes list of children
-    /// - column position in the child(ren) output tuple
-    Reference {
-        /// Relational node ID that contains current reference.
-        parent: Option<NodeId>,
-        /// Targets in the relational node children list.
-        /// - Leaf nodes (relation scans): None.
-        /// - Union nodes: two elements (left and right).
-        /// - Other: single element.
-        targets: Option<Vec<usize>>,
-        /// Expression position in the input tuple (i.e. `Alias` column).
-        position: usize,
-        /// Referred column type in the input tuple.
-        col_type: Type,
-    },
-    /// Top of the tuple tree.
-    ///
-    /// If the current tuple is the output for some relational operator, it should
-    /// consist of the list of aliases. Otherwise (rows in selection filter
-    /// or in join condition) we don't require aliases in the list.
-    ///
-    ///
-    ///  Example: (a, b, 1).
-    Row {
-        /// A list of the alias expression node indexes in the plan node arena.
-        list: Vec<NodeId>,
-        /// Resulting data distribution of the tuple. Should be filled as a part
-        /// of the last "add Motion" transformation.
-        distribution: Option<Distribution>,
-    },
-    /// Stable function cannot modify the database and
-    /// is guaranteed to return the same results given
-    /// the same arguments for all rows within a single
-    /// statement.
-    ///
-    /// Example: `bucket_id("1")` (the number of buckets can be
-    /// changed only after restarting the cluster).
-    StableFunction {
-        /// Function name.
-        name: SmolStr,
-        /// Function arguments.
-        children: Vec<NodeId>,
-        /// Optional function feature.
-        feature: Option<FunctionFeature>,
-        /// Function return type.
-        func_type: Type,
-        /// Whether function is provided by tarantool,
-        /// when referencing these funcs from local
-        /// sql we must not use quotes.
-        /// Examples: aggregates, substr
-        is_system: bool,
-    },
-    /// Trim expression.
-    Trim {
-        /// Trim kind.
-        kind: Option<TrimKind>,
-        /// Trim string pattern to remove (it can be an expression).
-        pattern: Option<NodeId>,
-        /// Target expression to trim.
-        target: NodeId,
-    },
-    /// Unary expression returning boolean result.
-    Unary {
-        /// Unary operator.
-        op: operator::Unary,
-        /// Child expression node index in the plan node arena.
-        child: NodeId,
-    },
-    /// Argument of `count` aggregate in `count(*)` expression
-    CountAsterisk,
-    ExprInParentheses {
-        child: NodeId,
-    },
-    Case {
-        search_expr: Option<NodeId>,
-        when_blocks: Vec<(NodeId, NodeId)>,
-        else_expr: Option<NodeId>,
-    },
-}
 
 #[derive(Clone, Debug, Hash, Deserialize, PartialEq, Eq, Serialize)]
 pub enum FunctionFeature {
@@ -234,171 +59,14 @@ impl TrimKind {
     }
 }
 
-#[allow(dead_code)]
-impl Expression {
-    /// Gets current row distribution.
-    ///
-    /// # Errors
-    /// Returns `SbroadError` when the function is called on expression
-    /// other than `Row` or a node doesn't know its distribution yet.
-    pub fn distribution(&self) -> Result<&Distribution, SbroadError> {
-        if let Expression::Row { distribution, .. } = self {
-            let Some(dist) = distribution else {
-                return Err(SbroadError::Invalid(
-                    Entity::Distribution,
-                    Some("distribution is uninitialized".into()),
-                ));
-            };
-            return Ok(dist);
-        }
-        Err(SbroadError::Invalid(Entity::Expression, None))
-    }
-
-    /// Clone the row children list.
-    ///
-    /// # Errors
-    /// - node isn't `Row`
-    pub fn clone_row_list(&self) -> Result<Vec<NodeId>, SbroadError> {
-        match self {
-            Expression::Row { list, .. } => Ok(list.clone()),
-            _ => Err(SbroadError::Invalid(
-                Entity::Expression,
-                Some("node isn't Row type".into()),
-            )),
-        }
-    }
-
-    #[must_use]
-    pub fn is_aggregate_name(name: &str) -> bool {
-        // currently we support only simple aggregates
-        AggregateKind::new(name).is_some()
-    }
-
-    #[must_use]
-    pub fn is_aggregate_fun(&self) -> bool {
-        match self {
-            Expression::StableFunction { name, .. } => Expression::is_aggregate_name(name),
-            _ => false,
-        }
-    }
-
-    /// Get a reference to the row children list.
-    ///
-    /// # Errors
-    /// - node isn't `Row`
-    pub fn get_row_list(&self) -> Result<&[NodeId], SbroadError> {
-        match self {
-            Expression::Row { ref list, .. } => Ok(list),
-            _ => Err(SbroadError::Invalid(
-                Entity::Expression,
-                Some("node isn't Row type".into()),
-            )),
-        }
-    }
-
-    /// Get a mut reference to the row children list.
-    ///
-    /// # Errors
-    /// - node isn't `Row`
-    pub fn get_mut_row_list(&mut self) -> Result<&mut Vec<NodeId>, SbroadError> {
-        match self {
-            Expression::Row { ref mut list, .. } => Ok(list),
-            _ => Err(SbroadError::Invalid(
-                Entity::Expression,
-                Some("node isn't Row type".into()),
-            )),
-        }
-    }
-
-    /// Get a mutable reference to the row children list.
-    ///
-    /// # Errors
-    /// - node isn't `Row`
-    pub fn get_row_list_mut(&mut self) -> Result<&mut Vec<NodeId>, SbroadError> {
-        match self {
-            Expression::Row { ref mut list, .. } => Ok(list),
-            _ => Err(SbroadError::Invalid(
-                Entity::Expression,
-                Some("node isn't Row type".into()),
-            )),
-        }
-    }
-
-    /// Gets alias node name.
-    ///
-    /// # Errors
-    /// - node isn't `Alias`
-    pub fn get_alias_name(&self) -> Result<&str, SbroadError> {
-        match self {
-            Expression::Alias { name, .. } => Ok(name.as_str()),
-            _ => Err(SbroadError::Invalid(
-                Entity::Node,
-                Some("node is not Alias type".into()),
-            )),
-        }
-    }
-
-    /// Checks for distribution determination
-    ///
-    /// # Errors
-    /// - distribution isn't set
-    pub fn has_unknown_distribution(&self) -> Result<bool, SbroadError> {
-        let d = self.distribution()?;
-        Ok(d.is_unknown())
-    }
-
-    /// Gets relational node id containing the reference.
-    ///
-    /// # Errors
-    /// - node isn't reference type
-    /// - reference doesn't have a parent
-    pub fn get_parent(&self) -> Result<NodeId, SbroadError> {
-        if let Expression::Reference { parent, .. } = self {
-            return parent.ok_or_else(|| {
-                SbroadError::Invalid(Entity::Expression, Some("Reference has no parent".into()))
-            });
-        }
-        Err(SbroadError::Invalid(
-            Entity::Expression,
-            Some("node is not Reference type".into()),
-        ))
-    }
-
-    /// The node is a row expression.
-    #[must_use]
-    pub fn is_row(&self) -> bool {
-        matches!(self, Expression::Row { .. })
-    }
-    #[must_use]
-    pub fn is_arithmetic(&self) -> bool {
-        matches!(self, Expression::Arithmetic { .. })
-    }
-
-    /// Replaces parent in the reference node with the new one.
-    pub fn replace_parent_in_reference(&mut self, from_id: Option<NodeId>, to_id: Option<NodeId>) {
-        if let Expression::Reference { parent, .. } = self {
-            if *parent == from_id {
-                *parent = to_id;
-            }
-        }
-    }
-
-    /// Flushes parent in the reference node.
-    pub fn flush_parent_in_reference(&mut self) {
-        if let Expression::Reference { parent, .. } = self {
-            *parent = None;
-        }
-    }
-}
-
 impl Nodes {
     /// Adds exression covered with parentheses node.
     ///
     /// # Errors
     /// - child node is invalid
     pub(crate) fn add_covered_with_parentheses(&mut self, child: NodeId) -> NodeId {
-        let covered_with_parentheses = Expression::ExprInParentheses { child };
-        self.push(Node::Expression(covered_with_parentheses))
+        let covered_with_parentheses = ExprInParentheses { child };
+        self.push(covered_with_parentheses.into())
     }
 
     /// Adds alias node.
@@ -407,11 +75,11 @@ impl Nodes {
     /// - child node is invalid
     /// - name is empty
     pub fn add_alias(&mut self, name: &str, child: NodeId) -> Result<NodeId, SbroadError> {
-        let alias = Expression::Alias {
+        let alias = Alias {
             name: SmolStr::from(name),
             child,
         };
-        Ok(self.push(Node::Expression(alias)))
+        Ok(self.push(alias.into()))
     }
 
     /// Adds boolean node.
@@ -436,7 +104,7 @@ impl Nodes {
                 format_smolstr!("(right child of boolean node) from arena with index {right}"),
             )
         })?;
-        Ok(self.push(Node::Expression(Expression::Bool { left, op, right })))
+        Ok(self.push(BoolExpr { left, op, right }.into()))
     }
 
     /// Adds arithmetic node.
@@ -461,7 +129,7 @@ impl Nodes {
                 format_smolstr!("(right child of Arithmetic node) from arena with index {right:?}"),
             )
         })?;
-        Ok(self.push(Node::Expression(Expression::Arithmetic { left, op, right })))
+        Ok(self.push(ArithmeticExpr { left, op, right }.into()))
     }
 
     /// Adds reference node.
@@ -472,18 +140,18 @@ impl Nodes {
         position: usize,
         col_type: Type,
     ) -> NodeId {
-        let r = Expression::Reference {
+        let r = Reference {
             parent,
             targets,
             position,
             col_type,
         };
-        self.push(Node::Expression(r))
+        self.push(r.into())
     }
 
     /// Adds row node.
     pub fn add_row(&mut self, list: Vec<NodeId>, distribution: Option<Distribution>) -> NodeId {
-        self.push(Node::Expression(Expression::Row { list, distribution }))
+        self.push(Row { list, distribution }.into())
     }
 
     /// Adds unary boolean node.
@@ -501,7 +169,7 @@ impl Nodes {
                 format_smolstr!("from arena with index {child}"),
             )
         })?;
-        Ok(self.push(Node::Expression(Expression::Unary { op, child })))
+        Ok(self.push(UnaryExpr { op, child }.into()))
     }
 }
 
@@ -592,41 +260,43 @@ impl<'plan> Comparator<'plan> {
         if let Node::Expression(left) = l {
             if let Node::Expression(right) = r {
                 match left {
-                    Expression::Alias { .. } => {}
-                    Expression::CountAsterisk => {
-                        return Ok(matches!(right, Expression::CountAsterisk))
+                    Expression::Alias(_) => {}
+                    Expression::CountAsterisk(_) => {
+                        return Ok(matches!(right, Expression::CountAsterisk(_)))
                     }
-                    Expression::ExprInParentheses { child: l_child } => {
-                        if let Expression::ExprInParentheses { child: r_child } = right {
+                    Expression::ExprInParentheses(ExprInParentheses { child: l_child }) => {
+                        if let Expression::ExprInParentheses(ExprInParentheses { child: r_child }) =
+                            right
+                        {
                             return self.are_subtrees_equal(*l_child, *r_child);
                         }
                     }
-                    Expression::Bool {
+                    Expression::Bool(BoolExpr {
                         left: left_left,
                         op: op_left,
                         right: right_left,
-                    } => {
-                        if let Expression::Bool {
+                    }) => {
+                        if let Expression::Bool(BoolExpr {
                             left: left_right,
                             op: op_right,
                             right: right_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(*op_left == *op_right
                                 && self.are_subtrees_equal(*left_left, *left_right)?
                                 && self.are_subtrees_equal(*right_left, *right_right)?);
                         }
                     }
-                    Expression::Case {
+                    Expression::Case(Case {
                         search_expr: search_expr_left,
                         when_blocks: when_blocks_left,
                         else_expr: else_expr_left,
-                    } => {
-                        if let Expression::Case {
+                    }) => {
+                        if let Expression::Case(Case {
                             search_expr: search_expr_right,
                             when_blocks: when_blocks_right,
                             else_expr: else_expr_right,
-                        } = right
+                        }) = right
                         {
                             let mut search_expr_equal = false;
                             if let (Some(search_expr_left), Some(search_expr_right)) =
@@ -654,58 +324,58 @@ impl<'plan> Comparator<'plan> {
                             return Ok(search_expr_equal && when_blocks_equal && else_expr_equal);
                         }
                     }
-                    Expression::Arithmetic {
+                    Expression::Arithmetic(ArithmeticExpr {
                         op: op_left,
                         left: l_left,
                         right: r_left,
-                    } => {
-                        if let Expression::Arithmetic {
+                    }) => {
+                        if let Expression::Arithmetic(ArithmeticExpr {
                             op: op_right,
                             left: l_right,
                             right: r_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(*op_left == *op_right
                                 && self.are_subtrees_equal(*l_left, *l_right)?
                                 && self.are_subtrees_equal(*r_left, *r_right)?);
                         }
                     }
-                    Expression::Cast {
+                    Expression::Cast(Cast {
                         child: child_left,
                         to: to_left,
-                    } => {
-                        if let Expression::Cast {
+                    }) => {
+                        if let Expression::Cast(Cast {
                             child: child_right,
                             to: to_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(*to_left == *to_right
                                 && self.are_subtrees_equal(*child_left, *child_right)?);
                         }
                     }
-                    Expression::Concat {
+                    Expression::Concat(Concat {
                         left: left_left,
                         right: right_left,
-                    } => {
-                        if let Expression::Concat {
+                    }) => {
+                        if let Expression::Concat(Concat {
                             left: left_right,
                             right: right_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(self.are_subtrees_equal(*left_left, *left_right)?
                                 && self.are_subtrees_equal(*right_left, *right_right)?);
                         }
                     }
-                    Expression::Trim {
+                    Expression::Trim(Trim {
                         kind: kind_left,
                         pattern: pattern_left,
                         target: target_left,
-                    } => {
-                        if let Expression::Trim {
+                    }) => {
+                        if let Expression::Trim(Trim {
                             kind: kind_right,
                             pattern: pattern_right,
                             target: target_right,
-                        } = right
+                        }) = right
                         {
                             match (pattern_left, pattern_right) {
                                 (Some(p_left), Some(p_right)) => {
@@ -723,31 +393,31 @@ impl<'plan> Comparator<'plan> {
                             }
                         }
                     }
-                    Expression::Constant { value: value_left } => {
-                        if let Expression::Constant { value: value_right } = right {
+                    Expression::Constant(Constant { value: value_left }) => {
+                        if let Expression::Constant(Constant { value: value_right }) = right {
                             return Ok(*value_left == *value_right);
                         }
                     }
-                    Expression::Reference { .. } => {
-                        if let Expression::Reference { .. } = right {
+                    Expression::Reference(_) => {
+                        if let Expression::Reference(_) = right {
                             return match self.policy {
                                 ReferencePolicy::ByAliases => {
                                     let alias_left =
-                                        self.plan.get_alias_from_reference_node(left)?;
+                                        self.plan.get_alias_from_reference_node(&left)?;
                                     let alias_right =
-                                        self.plan.get_alias_from_reference_node(right)?;
+                                        self.plan.get_alias_from_reference_node(&right)?;
                                     Ok(alias_left == alias_right)
                                 }
                                 ReferencePolicy::ByFields => Ok(left == right),
                             };
                         }
                     }
-                    Expression::Row {
+                    Expression::Row(Row {
                         list: list_left, ..
-                    } => {
-                        if let Expression::Row {
+                    }) => {
+                        if let Expression::Row(Row {
                             list: list_right, ..
-                        } = right
+                        }) = right
                         {
                             return Ok(list_left
                                 .iter()
@@ -755,20 +425,20 @@ impl<'plan> Comparator<'plan> {
                                 .all(|(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false)));
                         }
                     }
-                    Expression::StableFunction {
+                    Expression::StableFunction(StableFunction {
                         name: name_left,
                         children: children_left,
                         feature: feature_left,
                         func_type: func_type_left,
                         is_system: is_aggr_left,
-                    } => {
-                        if let Expression::StableFunction {
+                    }) => {
+                        if let Expression::StableFunction(StableFunction {
                             name: name_right,
                             children: children_right,
                             feature: feature_right,
                             func_type: func_type_right,
                             is_system: is_aggr_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(name_left == name_right
                                 && feature_left == feature_right
@@ -779,14 +449,14 @@ impl<'plan> Comparator<'plan> {
                                 ));
                         }
                     }
-                    Expression::Unary {
+                    Expression::Unary(UnaryExpr {
                         op: op_left,
                         child: child_left,
-                    } => {
-                        if let Expression::Unary {
+                    }) => {
+                        if let Expression::Unary(UnaryExpr {
                             op: op_right,
                             child: child_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(*op_left == *op_right
                                 && self.are_subtrees_equal(*child_left, *child_right)?);
@@ -819,18 +489,18 @@ impl<'plan> Comparator<'plan> {
             panic!("Hasher should have been set previously");
         };
         match node {
-            Expression::ExprInParentheses { child } => {
+            Expression::ExprInParentheses(ExprInParentheses { child }) => {
                 self.hash_for_child_expr(*child, depth);
             }
-            Expression::Alias { child, name } => {
+            Expression::Alias(Alias { child, name }) => {
                 name.hash(state);
                 self.hash_for_child_expr(*child, depth);
             }
-            Expression::Case {
+            Expression::Case(Case {
                 search_expr,
                 when_blocks,
                 else_expr,
-            } => {
+            }) => {
                 if let Some(search_expr) = search_expr {
                     self.hash_for_child_expr(*search_expr, depth);
                 }
@@ -842,47 +512,47 @@ impl<'plan> Comparator<'plan> {
                     self.hash_for_child_expr(*else_expr, depth);
                 }
             }
-            Expression::Bool { op, left, right } => {
+            Expression::Bool(BoolExpr { op, left, right }) => {
                 op.hash(state);
                 self.hash_for_child_expr(*left, depth);
                 self.hash_for_child_expr(*right, depth);
             }
-            Expression::Arithmetic { op, left, right } => {
+            Expression::Arithmetic(ArithmeticExpr { op, left, right }) => {
                 op.hash(state);
                 self.hash_for_child_expr(*left, depth);
                 self.hash_for_child_expr(*right, depth);
             }
-            Expression::Cast { child, to } => {
+            Expression::Cast(Cast { child, to }) => {
                 to.hash(state);
                 self.hash_for_child_expr(*child, depth);
             }
-            Expression::Concat { left, right } => {
+            Expression::Concat(Concat { left, right }) => {
                 self.hash_for_child_expr(*left, depth);
                 self.hash_for_child_expr(*right, depth);
             }
-            Expression::Trim {
+            Expression::Trim(Trim {
                 kind,
                 pattern,
                 target,
-            } => {
+            }) => {
                 kind.hash(state);
                 if let Some(pattern) = pattern {
                     self.hash_for_child_expr(*pattern, depth);
                 }
                 self.hash_for_child_expr(*target, depth);
             }
-            Expression::Constant { value } => {
+            Expression::Constant(Constant { value }) => {
                 value.hash(state);
             }
-            Expression::Reference {
+            Expression::Reference(Reference {
                 parent,
                 position,
                 targets,
                 col_type,
-            } => match self.policy {
+            }) => match self.policy {
                 ReferencePolicy::ByAliases => {
                     self.plan
-                        .get_alias_from_reference_node(node)
+                        .get_alias_from_reference_node(&node)
                         .unwrap_or("")
                         .hash(state);
                 }
@@ -893,18 +563,18 @@ impl<'plan> Comparator<'plan> {
                     col_type.hash(state);
                 }
             },
-            Expression::Row { list, .. } => {
+            Expression::Row(Row { list, .. }) => {
                 for child in list {
                     self.hash_for_child_expr(*child, depth);
                 }
             }
-            Expression::StableFunction {
+            Expression::StableFunction(StableFunction {
                 name,
                 children,
                 func_type,
                 feature,
                 is_system: is_aggr,
-            } => {
+            }) => {
                 feature.hash(state);
                 func_type.hash(state);
                 name.hash(state);
@@ -913,11 +583,11 @@ impl<'plan> Comparator<'plan> {
                     self.hash_for_child_expr(*child, depth);
                 }
             }
-            Expression::Unary { child, op } => {
+            Expression::Unary(UnaryExpr { child, op }) => {
                 op.hash(state);
                 self.hash_for_child_expr(*child, depth);
             }
-            Expression::CountAsterisk => {
+            Expression::CountAsterisk(_) => {
                 "CountAsterisk".hash(state);
             }
         }
@@ -980,7 +650,7 @@ impl ColumnPositionMap {
         for (pos, alias_id) in alias_ids.iter().enumerate() {
             let alias = plan.get_expression_node(*alias_id)?;
             let alias_name = SmolStr::from(alias.get_alias_name()?);
-            let scan_name = rel_node.scan_name(plan, pos)?.map(SmolStr::from);
+            let scan_name = plan.scan_name(rel_id, pos)?.map(SmolStr::from);
             // For query `select "a", "b" as "a" from (select "a", "b" from t)`
             // column entry "a" will have `Position::Multiple` so that if parent operator will
             // reference "a" we won't be able to identify which of these two columns
@@ -1296,7 +966,7 @@ impl Plan {
 
             let relational_op = self.get_relation_node(rel_child)?;
             let output_id = relational_op.output();
-            let child_node_row_list = self.get_row_list(output_id)?.to_vec();
+            let child_node_row_list = self.get_row_list(output_id)?.clone();
 
             let mut indices: Vec<usize> = Vec::new();
             match columns_spec {
@@ -1312,7 +982,7 @@ impl Plan {
                         indices.push(index);
                     }
                 }
-                ColumnsRetrievalSpec::Indices(idx) => indices = idx.clone(),
+                ColumnsRetrievalSpec::Indices(idx) => indices.clone_from(&idx),
             };
 
             let exclude_positions = column_positions_to_exclude(rel_child)?;
@@ -1359,7 +1029,6 @@ impl Plan {
             let alias_expr = self.get_expression_node(alias_node_id)?;
             let alias_name = SmolStr::from(alias_expr.get_alias_name()?);
             let col_type = alias_expr.calculate_type(self)?;
-
             let r_id = self.nodes.add_ref(None, Some(new_targets), pos, col_type);
             if need_aliases {
                 let a_id = self.nodes.add_alias(&alias_name, r_id)?;
@@ -1607,21 +1276,21 @@ impl Plan {
         &self,
         ref_id: NodeId,
     ) -> Result<&NodeId, SbroadError> {
-        if let Node::Expression(Expression::Reference {
+        if let Node::Expression(Expression::Reference(Reference {
             targets, parent, ..
-        }) = self.get_node(ref_id)?
+        })) = self.get_node(ref_id)?
         {
             let Some(referred_rel_id) = parent else {
                 return Err(SbroadError::NotFound(
                     Entity::Node,
-                    format_smolstr!("that is Reference ({ref_id:?}) parent"),
+                    format_smolstr!("that is Reference ({ref_id}) parent"),
                 ));
             };
             let rel = self.get_relation_node(*referred_rel_id)?;
             if let Relational::Insert { .. } = rel {
                 return Ok(referred_rel_id);
             }
-            let children = rel.children();
+            let children = self.children(*referred_rel_id);
             match targets {
                 None => {
                     return Err(SbroadError::UnexpectedNumberOfValues(
@@ -1667,7 +1336,7 @@ impl Plan {
         row_id: NodeId,
     ) -> Result<HashSet<NodeId, RandomState>, SbroadError> {
         let row = self.get_expression_node(row_id)?;
-        let capacity = if let Expression::Row { list, .. } = row {
+        let capacity = if let Expression::Row(Row { list, .. }) = row {
             list.len()
         } else {
             return Err(SbroadError::Invalid(
@@ -1691,17 +1360,16 @@ impl Plan {
         // We don't expect much relational references in a row (5 is a reasonable number).
         let mut rel_nodes: HashSet<NodeId, RandomState> =
             HashSet::with_capacity_and_hasher(5, RandomState::new());
-        for level_node in nodes {
-            let id = level_node.1;
+        for LevelNode(_, id) in nodes {
             let reference = self.get_expression_node(id)?;
-            if let Expression::Reference {
+            if let Expression::Reference(Reference {
                 targets, parent, ..
-            } = reference
+            }) = reference
             {
                 let referred_rel_id = parent.ok_or_else(|| {
                     SbroadError::NotFound(
                         Entity::Node,
-                        format_smolstr!("that is Reference ({id:?}) parent"),
+                        format_smolstr!("that is Reference ({id}) parent"),
                     )
                 })?;
                 let rel = self.get_relation_node(referred_rel_id)?;
@@ -1724,7 +1392,7 @@ impl Plan {
         let Ok(node) = self.get_expression_node(node_id) else {
             return false;
         };
-        if let Expression::Bool { left, op, right } = node {
+        if let Expression::Bool(BoolExpr { left, op, right }) = node {
             if *op != Bool::Eq {
                 return false;
             }
@@ -1752,15 +1420,17 @@ impl Plan {
     pub fn is_trivalent(&self, expr_id: NodeId) -> Result<bool, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
-            Expression::Bool { .. }
-            | Expression::Arithmetic { .. }
-            | Expression::Unary { .. }
-            | Expression::Constant {
+            Expression::Bool(_)
+            | Expression::Arithmetic(_)
+            | Expression::Unary(_)
+            | Expression::Constant(Constant {
                 value: Value::Boolean(_) | Value::Null,
                 ..
-            } => return Ok(true),
-            Expression::ExprInParentheses { child } => return self.is_trivalent(*child),
-            Expression::Row { list, .. } => {
+            }) => return Ok(true),
+            Expression::ExprInParentheses(ExprInParentheses { child }) => {
+                return self.is_trivalent(*child)
+            }
+            Expression::Row(Row { list, .. }) => {
                 if let (Some(inner_id), None) = (list.first(), list.get(1)) {
                     return self.is_trivalent(*inner_id);
                 }
@@ -1778,7 +1448,7 @@ impl Plan {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
             Expression::Reference { .. } => return Ok(true),
-            Expression::Row { list, .. } => {
+            Expression::Row(Row { list, .. }) => {
                 if let (Some(inner_id), None) = (list.first(), list.get(1)) {
                     return self.is_ref(*inner_id);
                 }
@@ -1801,7 +1471,7 @@ impl Plan {
         child_num: usize,
     ) -> Result<Value, SbroadError> {
         let node = self.get_expression_node(row_id)?;
-        if let Expression::Row { list, .. } = node {
+        if let Expression::Row(Row { list, .. }) = node {
             let const_node_id = list.get(child_num).ok_or_else(|| {
                 SbroadError::NotFound(Entity::Node, format_smolstr!("{child_num}"))
             })?;
@@ -1841,9 +1511,8 @@ impl Plan {
         subtree.populate_nodes(node_id);
         let references = subtree.take_nodes();
         drop(subtree);
-        for level_node in references {
-            let id = level_node.1;
-            let node = self.get_mut_expression_node(id)?;
+        for LevelNode(_, id) in references {
+            let mut node = self.get_mut_expression_node(id)?;
             node.replace_parent_in_reference(from_id, to_id);
         }
         Ok(())
@@ -1869,12 +1538,41 @@ impl Plan {
         subtree.populate_nodes(node_id);
         let references = subtree.take_nodes();
         drop(subtree);
-        for level_node in references {
-            let id = level_node.1;
-            let node = self.get_mut_expression_node(id)?;
+        for LevelNode(_, id) in references {
+            let mut node = self.get_mut_expression_node(id)?;
             node.flush_parent_in_reference();
         }
         Ok(())
+    }
+}
+
+impl Expression<'_> {
+    /// Get a reference to the row children list.
+    ///
+    /// # Errors
+    /// - node isn't `Row`
+    pub fn get_row_list(&self) -> Result<&Vec<NodeId>, SbroadError> {
+        match self {
+            Expression::Row(Row { ref list, .. }) => Ok(list),
+            _ => Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some("node isn't Row type".into()),
+            )),
+        }
+    }
+
+    /// Gets alias node name.
+    ///
+    /// # Errors
+    /// - node isn't `Alias`
+    pub fn get_alias_name(&self) -> Result<&str, SbroadError> {
+        match self {
+            Expression::Alias(Alias { name, .. }) => Ok(name.as_str()),
+            _ => Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("node is not Alias type".into()),
+            )),
+        }
     }
 }
 

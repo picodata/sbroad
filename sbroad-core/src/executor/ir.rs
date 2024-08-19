@@ -8,12 +8,19 @@ use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::Vshard;
 use crate::executor::vtable::{VirtualTable, VirtualTableMap};
-use crate::ir::expression::{Expression, NodeId};
-use crate::ir::operator::{OrderByElement, OrderByEntity, Relational};
+use crate::ir::node::expression::ExprOwned;
+use crate::ir::node::relational::{MutRelational, RelOwned, Relational};
+use crate::ir::node::{
+    Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Delete, ExprInParentheses,
+    GroupBy, Having, Insert, Join, Motion, Node, Node136, NodeId, NodeOwned, OrderBy, Reference,
+    Row, ScanCte, ScanRelation, ScanSubQuery, Selection, StableFunction, Trim, UnaryExpr, Update,
+    ValuesRow,
+};
+use crate::ir::operator::{OrderByElement, OrderByEntity};
 use crate::ir::relation::SpaceEngine;
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::{LevelNode, PostOrder};
-use crate::ir::{ArenaType, ExecuteOptions, Node, Plan};
+use crate::ir::{ExecuteOptions, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
@@ -156,7 +163,7 @@ impl ExecutionPlan {
         runtime: &impl Vshard,
     ) -> Result<(), SbroadError> {
         let mut vtable = vtable;
-        let program_len = if let Relational::Motion { program, .. } =
+        let program_len = if let Relational::Motion(Motion { program, .. }) =
             self.get_ir_plan().get_relation_node(*motion_id)?
         {
             program.0.len()
@@ -253,8 +260,8 @@ impl ExecutionPlan {
     /// nodes that are not referenced by actual plan tree.
     #[must_use]
     pub fn has_customization_opcodes(&self) -> bool {
-        for node in &self.get_ir_plan().nodes {
-            if let Node::Relational(Relational::Motion { program, .. }) = node {
+        for node in self.get_ir_plan().nodes.iter136() {
+            if let Node136::Motion(Motion { program, .. }) = node {
                 if program
                     .0
                     .iter()
@@ -273,7 +280,7 @@ impl ExecutionPlan {
     /// - node is not `Relation` type
     /// - node is not `Motion` type
     pub fn get_motion_policy(&self, node_id: NodeId) -> Result<MotionPolicy, SbroadError> {
-        if let Relational::Motion { policy, .. } = &self.plan.get_relation_node(node_id)? {
+        if let Relational::Motion(Motion { policy, .. }) = &self.plan.get_relation_node(node_id)? {
             return Ok(policy.clone());
         }
 
@@ -291,8 +298,8 @@ impl ExecutionPlan {
         let child_id = &self.get_motion_child(node_id)?;
         let child_rel = self.get_ir_plan().get_relation_node(*child_id)?;
         match child_rel {
-            Relational::ScanSubQuery { alias, .. } => Ok(alias.clone()),
-            Relational::ScanCte { alias, .. } => Ok(Some(alias.clone())),
+            Relational::ScanSubQuery(ScanSubQuery { alias, .. }) => Ok(alias.clone()),
+            Relational::ScanCte(ScanCte { alias, .. }) => Ok(Some(alias.clone())),
             _ => Ok(None),
         }
     }
@@ -368,9 +375,9 @@ impl ExecutionPlan {
     /// - not a motion node
     pub fn unlink_motion_subtree(&mut self, motion_id: NodeId) -> Result<(), SbroadError> {
         let motion = self.get_mut_ir_plan().get_mut_relation_node(motion_id)?;
-        if let Relational::Motion {
+        if let MutRelational::Motion(Motion {
             ref mut children, ..
-        } = motion
+        }) = motion
         {
             *children = vec![];
         } else {
@@ -408,7 +415,7 @@ impl ExecutionPlan {
             .filter(|id| {
                 matches!(
                     plan.get_node(*id),
-                    Ok(Node::Relational(Relational::ScanCte { .. }))
+                    Ok(Node::Relational(Relational::ScanCte(_)))
                 )
             })
             .collect::<Vec<_>>();
@@ -420,15 +427,13 @@ impl ExecutionPlan {
         let mut cte_amount = 0;
         for cte_id in &cte_scans {
             let cte_node = plan.get_relation_node(*cte_id)?;
-            let Relational::ScanCte { child, .. } = cte_node else {
+            let Relational::ScanCte(ScanCte { child, .. }) = cte_node else {
                 unreachable!("Expected CTE scan node.");
             };
             let child_id = *child;
-            let offset = usize::try_from(child_id.offset).unwrap();
-            if all_cte_nodes_capacity < offset {
-                all_cte_nodes_capacity = offset;
+            if all_cte_nodes_capacity < child_id.offset as usize {
+                all_cte_nodes_capacity = child_id.offset as usize;
             }
-
             cte_amount += 1;
         }
         all_cte_nodes_capacity += 1;
@@ -461,7 +466,6 @@ impl ExecutionPlan {
             HashMap::with_capacity(vtables_capacity);
 
         let mut new_plan = Plan::new();
-        new_plan.nodes.reserve(nodes.len());
         for LevelNode(_, node_id) in nodes {
             // We have already processed this node (sub-queries in BETWEEN
             // and CTEs can be referred twice).
@@ -469,33 +473,33 @@ impl ExecutionPlan {
                 continue;
             }
 
-            // Node from original plan that we'll take and replace with mock parameter node.
-            let dst_node = self.get_mut_ir_plan().get_mut_node(node_id)?;
-            let next_id = new_plan.nodes.next_id(ArenaType::Default);
+            let mut_plan = self.get_mut_ir_plan();
 
             // Replace the node with some invalid value.
-            // TODO: introduce some new enum variant for this purpose.
-            let mut node: Node = if cte_ids.contains(&node_id) {
-                dst_node.clone()
+            let mut node: NodeOwned = if cte_ids.contains(&node_id) {
+                mut_plan.get_mut_node(node_id)?.get_common_node()
             } else {
-                std::mem::replace(dst_node, Node::Parameter(None))
+                mut_plan.replace_with_stub(node_id)
             };
+
+            let mut relational_output_id: Option<NodeId> = None;
             let ir_plan = self.get_ir_plan();
             match node {
-                Node::Relational(ref mut rel) => {
+                NodeOwned::Relational(ref mut rel) => {
                     match rel {
-                        Relational::Selection {
+                        RelOwned::Selection(Selection {
                             filter: ref mut expr_id,
                             ..
-                        }
-                        | Relational::Having {
+                        })
+                        | RelOwned::Having(Having {
                             filter: ref mut expr_id,
                             ..
-                        }
-                        | Relational::Join {
+                        })
+                        | RelOwned::Join(Join {
                             condition: ref mut expr_id,
                             ..
-                        } => {
+                        }) => {
+                            let next_id = new_plan.nodes.next_id(ArenaType::Arena64);
                             // We transform selection's, having's filter and join's condition to DNF for a better bucket calculation.
                             // But as a result we can produce an extremely verbose SQL query from such a plan (tarantool's
                             // parser can fail to parse such SQL).
@@ -506,10 +510,10 @@ impl ExecutionPlan {
                             *expr_id = subtree_map.get_id(*undo_expr_id);
                             new_plan.replace_parent_in_subtree(*expr_id, None, Some(next_id))?;
                         }
-                        Relational::ScanRelation { relation, .. }
-                        | Relational::Insert { relation, .. }
-                        | Relational::Delete { relation, .. }
-                        | Relational::Update { relation, .. } => {
+                        RelOwned::ScanRelation(ScanRelation { relation, .. })
+                        | RelOwned::Insert(Insert { relation, .. })
+                        | RelOwned::Delete(Delete { relation, .. })
+                        | RelOwned::Update(Update { relation, .. }) => {
                             let table = ir_plan
                                 .relations
                                 .get(relation)
@@ -521,12 +525,13 @@ impl ExecutionPlan {
                                 .clone();
                             new_plan.add_rel(table);
                         }
-                        Relational::Motion {
+                        RelOwned::Motion(Motion {
                             children, policy, ..
-                        } => {
+                        }) => {
                             if let Some(vtable) =
                                 self.get_vtables().map_or_else(|| None, |v| v.get(&node_id))
                             {
+                                let next_id = new_plan.nodes.next_id(ArenaType::Arena136);
                                 new_vtables.insert(next_id, Rc::clone(vtable));
                             }
                             // We should not remove the child of a local motion node.
@@ -535,7 +540,8 @@ impl ExecutionPlan {
                                 *children = Vec::new();
                             }
                         }
-                        Relational::GroupBy { gr_cols, .. } => {
+                        RelOwned::GroupBy(GroupBy { gr_cols, .. }) => {
+                            let next_id = new_plan.nodes.next_id(ArenaType::Arena64);
                             let mut new_cols: Vec<NodeId> = Vec::with_capacity(gr_cols.len());
                             for col_id in gr_cols.iter() {
                                 let new_col_id = subtree_map.get_id(*col_id);
@@ -548,9 +554,10 @@ impl ExecutionPlan {
                             }
                             *gr_cols = new_cols;
                         }
-                        Relational::OrderBy {
+                        RelOwned::OrderBy(OrderBy {
                             order_by_elements, ..
-                        } => {
+                        }) => {
+                            let next_id = new_plan.nodes.next_id(ArenaType::Arena64);
                             let mut new_elements: Vec<OrderByElement> =
                                 Vec::with_capacity(order_by_elements.len());
                             for element in order_by_elements.iter() {
@@ -577,84 +584,84 @@ impl ExecutionPlan {
                             }
                             *order_by_elements = new_elements;
                         }
-                        Relational::ValuesRow { data, .. } => {
+                        RelOwned::ValuesRow(ValuesRow { data, .. }) => {
                             *data = subtree_map.get_id(*data);
                         }
-                        Relational::Except { .. }
-                        | Relational::Intersect { .. }
-                        | Relational::Projection { .. }
-                        | Relational::ScanSubQuery { .. }
-                        | Relational::ScanCte { .. }
-                        | Relational::Union { .. }
-                        | Relational::UnionAll { .. }
-                        | Relational::Values { .. }
-                        | Relational::Limit { .. } => {}
+                        RelOwned::Except { .. }
+                        | RelOwned::Intersect { .. }
+                        | RelOwned::Projection { .. }
+                        | RelOwned::ScanSubQuery { .. }
+                        | RelOwned::ScanCte { .. }
+                        | RelOwned::Union { .. }
+                        | RelOwned::UnionAll { .. }
+                        | RelOwned::Values { .. }
+                        | RelOwned::Limit { .. } => {}
                     }
 
                     for child_id in rel.mut_children() {
                         *child_id = subtree_map.get_id(*child_id);
                     }
 
-                    let output = rel.output();
-                    *rel.mut_output() = subtree_map.get_id(output);
-                    new_plan.replace_parent_in_subtree(rel.output(), None, Some(next_id))?;
+                    let output = rel.mut_output();
+                    *rel.mut_output() = subtree_map.get_id(*output);
+                    relational_output_id = Some(*rel.mut_output());
                 }
-                Node::Expression(ref mut expr) => match expr {
-                    Expression::Alias { ref mut child, .. }
-                    | Expression::ExprInParentheses { ref mut child }
-                    | Expression::Cast { ref mut child, .. }
-                    | Expression::Unary { ref mut child, .. } => {
+                NodeOwned::Expression(ref mut expr) => match expr {
+                    ExprOwned::Alias(Alias { ref mut child, .. })
+                    | ExprOwned::ExprInParentheses(ExprInParentheses { ref mut child })
+                    | ExprOwned::Cast(Cast { ref mut child, .. })
+                    | ExprOwned::Unary(UnaryExpr { ref mut child, .. }) => {
                         *child = subtree_map.get_id(*child);
                     }
-                    Expression::Bool {
+                    ExprOwned::Bool(BoolExpr {
                         ref mut left,
                         ref mut right,
                         ..
-                    }
-                    | Expression::Arithmetic {
+                    })
+                    | ExprOwned::Arithmetic(ArithmeticExpr {
                         ref mut left,
                         ref mut right,
                         ..
-                    }
-                    | Expression::Concat {
+                    })
+                    | ExprOwned::Concat(Concat {
                         ref mut left,
                         ref mut right,
                         ..
-                    } => {
+                    }) => {
                         *left = subtree_map.get_id(*left);
                         *right = subtree_map.get_id(*right);
                     }
-                    Expression::Trim {
+                    ExprOwned::Trim(Trim {
                         ref mut pattern,
                         ref mut target,
                         ..
-                    } => {
+                    }) => {
                         if let Some(pattern) = pattern {
                             *pattern = subtree_map.get_id(*pattern);
                         }
                         *target = subtree_map.get_id(*target);
                     }
-                    Expression::Reference { ref mut parent, .. } => {
+                    ExprOwned::Reference(Reference { ref mut parent, .. }) => {
                         // The new parent node id MUST be set while processing the relational nodes.
                         *parent = None;
                     }
-                    Expression::Row {
+                    ExprOwned::Row(Row {
                         list: ref mut children,
                         ..
-                    }
-                    | Expression::StableFunction {
+                    })
+                    | ExprOwned::StableFunction(StableFunction {
                         ref mut children, ..
-                    } => {
+                    }) => {
                         for child in children {
                             *child = subtree_map.get_id(*child);
                         }
                     }
-                    Expression::Constant { .. } | Expression::CountAsterisk => {}
-                    Expression::Case {
+                    ExprOwned::Constant { .. } | ExprOwned::CountAsterisk { .. } => {}
+                    ExprOwned::Case(Case {
                         search_expr,
                         when_blocks,
                         else_expr,
-                    } => {
+                    }) => {
                         if let Some(search_expr) = search_expr {
                             *search_expr = subtree_map.get_id(*search_expr);
                         }
@@ -667,15 +674,23 @@ impl ExecutionPlan {
                         }
                     }
                 },
-                Node::Parameter { .. } => {}
-                Node::Ddl { .. } | Node::Acl { .. } | Node::Block { .. } => {
+                NodeOwned::Parameter { .. } => {}
+                NodeOwned::Invalid { .. }
+                | NodeOwned::Ddl { .. }
+                | NodeOwned::Acl { .. }
+                | NodeOwned::Block { .. } => {
                     panic!("Unexpected node in `take_subtree`: {node:?}")
                 }
             }
-            new_plan.nodes.push(node);
-            subtree_map.insert(node_id, next_id);
+
+            let id = new_plan.nodes.push(node.into());
+            if let Some(output_id) = relational_output_id {
+                new_plan.replace_parent_in_subtree(output_id, None, Some(id))?;
+            }
+
+            subtree_map.insert(node_id, id);
             if top_id == node_id {
-                new_plan.set_top(next_id)?;
+                new_plan.set_top(id)?;
             }
         }
 
@@ -694,7 +709,6 @@ impl ExecutionPlan {
         };
         Ok(new_exec_plan)
     }
-
     /// # Errors
     /// - execution plan is invalid
     pub fn query_type(&self) -> Result<QueryType, SbroadError> {

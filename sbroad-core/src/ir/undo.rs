@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::expression::NodeId;
+use crate::ir::node::NodeId;
 
 /// Transformation log keep the history of the plan subtree modifications.
 /// When we modify the plan subtree, we add a new entry to the log, where

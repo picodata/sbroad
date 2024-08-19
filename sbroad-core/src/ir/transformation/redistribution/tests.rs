@@ -1,5 +1,5 @@
 use super::*;
-use crate::ir::operator::Relational;
+use crate::ir::node::Motion;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::Plan;
 use crate::ir::Slices;
@@ -69,7 +69,7 @@ fn join_inner_sq_less_for_keys() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
@@ -87,7 +87,7 @@ fn join_inner_sq_eq_no_keys() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
@@ -105,7 +105,7 @@ fn join_inner_sq_eq_no_outer_keys() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
@@ -124,7 +124,7 @@ fn inner_join_full_policy_sq_in_filter() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
@@ -184,7 +184,7 @@ fn join_inner_or_local_full_policies() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");

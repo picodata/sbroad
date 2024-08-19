@@ -7,8 +7,8 @@ use crate::{
     errors::{Entity, SbroadError},
     ir::{
         distribution::Distribution,
-        expression::NodeId,
-        operator::{JoinKind, Relational},
+        node::{relational::MutRelational, Join, NodeId},
+        operator::JoinKind,
         Plan,
     },
 };
@@ -34,7 +34,7 @@ impl Plan {
             return Ok(None);
         }
 
-        if let Relational::Join { kind, .. } = self.get_mut_relation_node(join_id)? {
+        if let MutRelational::Join(Join { kind, .. }) = self.get_mut_relation_node(join_id)? {
             *kind = JoinKind::Inner;
         }
         self.set_distribution(self.get_relational_output(join_id)?)?;
@@ -58,7 +58,6 @@ impl Plan {
         let outer_child_motion_id = {
             let child = self.get_relation_node(outer_id)?;
             let mut motion_child_id = None;
-
             // Check if there is already motion under outer child
             if child.is_subquery_or_cte() {
                 let sq_child = self.get_relational_child(outer_id, 0)?;

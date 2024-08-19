@@ -1,5 +1,10 @@
 use crate::debug;
 use crate::executor::protocol::VTablesMeta;
+use crate::ir::node::expression::Expression;
+use crate::ir::node::relational::Relational;
+use crate::ir::node::{
+    Constant, Insert, Join, Motion, Node, NodeId, Reference, ScanRelation, StableFunction,
+};
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::traversal::{LevelNode, PostOrderWithFilter};
@@ -14,10 +19,8 @@ use tarantool::tuple::{FunctionArgs, Tuple};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::helpers::table_name;
 use crate::executor::ir::ExecutionPlan;
-use crate::ir::expression::{Expression, NodeId};
-use crate::ir::operator::{OrderByType, Relational};
+use crate::ir::operator::OrderByType;
 use crate::ir::value::{LuaValue, Value};
-use crate::ir::Node;
 use crate::otm::{child_span, current_id, deserialize_context, inject_context, query_id};
 
 use super::space::{create_table, TableGuard};
@@ -173,7 +176,8 @@ impl ExecutionPlan {
         let nodes = tree.take_nodes();
         let mut params: Vec<Value> = Vec::with_capacity(nodes.len());
         for LevelNode(_, param_id) in nodes {
-            let Expression::Constant { value } = plan.get_expression_node(param_id)? else {
+            let Expression::Constant(Constant { value }) = plan.get_expression_node(param_id)?
+            else {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
                     Some(format_smolstr!(
@@ -209,10 +213,10 @@ impl ExecutionPlan {
                 let motion = ir.get_relation_node(motion_id)?;
                 if !matches!(
                     motion,
-                    Relational::Motion {
+                    Relational::Motion(Motion {
                         policy: MotionPolicy::LocalSegment { .. } | MotionPolicy::Local,
                         ..
-                    }
+                    })
                 ) {
                     reserved_motion_id = Some(motion_id);
                 }
@@ -369,6 +373,15 @@ impl ExecutionPlan {
                                     ),
                                 ));
                             }
+                            Node::Invalid(..) => {
+                                return Err(SbroadError::Unsupported(
+                                    Entity::Node,
+                                    Some(
+                                        "Invalid nodes are not supported in the generated SQL"
+                                            .into(),
+                                    ),
+                                ));
+                            }
                             Node::Relational(rel) => match rel {
                                 Relational::Except { .. } => sql.push_str("EXCEPT"),
                                 Relational::GroupBy { .. } => sql.push_str("GROUP BY"),
@@ -384,15 +397,15 @@ impl ExecutionPlan {
                                         ),
                                     ));
                                 }
-                                Relational::Insert { relation, .. } => {
+                                Relational::Insert(Insert { relation, .. }) => {
                                     sql.push_str("INSERT INTO ");
                                     push_identifier(&mut sql, relation);
                                 }
-                                Relational::Join { kind, .. } => sql.push_str(
+                                Relational::Join(Join { kind, .. }) => sql.push_str(
                                     format!("{} JOIN", kind.to_string().to_uppercase()).as_str(),
                                 ),
                                 Relational::Projection { .. } => sql.push_str("SELECT"),
-                                Relational::ScanRelation { relation, .. } => {
+                                Relational::ScanRelation(ScanRelation { relation, .. }) => {
                                     push_identifier(&mut sql, relation);
                                 }
                                 Relational::ScanSubQuery { .. }
@@ -418,7 +431,7 @@ impl ExecutionPlan {
                                     | Expression::Row { .. }
                                     | Expression::Trim { .. }
                                     | Expression::Unary { .. } => {}
-                                    Expression::Constant { value, .. } => {
+                                    Expression::Constant(Constant { value, .. }) => {
                                         write!(sql, "{value}").map_err(|e| {
                                             SbroadError::FailedTo(
                                                 Action::Put,
@@ -427,7 +440,7 @@ impl ExecutionPlan {
                                             )
                                         })?;
                                     }
-                                    Expression::Reference { position, .. } => {
+                                    Expression::Reference(Reference { position, .. }) => {
                                         let rel_id =
                                             *ir_plan.get_relational_from_reference_node(*id)?;
                                         let rel_node = ir_plan.get_relation_node(rel_id)?;
@@ -455,16 +468,15 @@ impl ExecutionPlan {
                                             }
                                         }
 
-                                        let alias = &ir_plan.get_alias_from_reference_node(expr)?;
+                                        let alias =
+                                            &ir_plan.get_alias_from_reference_node(&expr)?;
                                         if rel_node.is_insert() {
                                             // We expect `INSERT INTO t(a, b) VALUES(1, 2)`
                                             // rather then `INSERT INTO t(t.a, t.b) VALUES(1, 2)`.
                                             push_identifier(&mut sql, alias);
                                             continue;
                                         }
-                                        if let Some(name) =
-                                            rel_node.scan_name(ir_plan, *position)?
-                                        {
+                                        if let Some(name) = ir_plan.scan_name(rel_id, *position)? {
                                             push_identifier(&mut sql, name);
                                             sql.push('.');
                                             push_identifier(&mut sql, alias);
@@ -473,16 +485,18 @@ impl ExecutionPlan {
                                         }
                                         push_identifier(&mut sql, alias);
                                     }
-                                    Expression::StableFunction {
-                                        name, is_system, ..
-                                    } => {
+                                    Expression::StableFunction(StableFunction {
+                                        name,
+                                        is_system,
+                                        ..
+                                    }) => {
                                         if *is_system {
                                             sql.push_str(name);
                                         } else {
                                             push_identifier(&mut sql, name);
                                         }
                                     }
-                                    Expression::CountAsterisk => {
+                                    Expression::CountAsterisk { .. } => {
                                         sql.push('*');
                                     }
                                 }
@@ -492,7 +506,7 @@ impl ExecutionPlan {
                     SyntaxData::Parameter(id) => {
                         sql.push('?');
                         let value = ir_plan.get_expression_node(*id)?;
-                        if let Expression::Constant { value, .. } = value {
+                        if let Expression::Constant(Constant { value, .. }) = value {
                             params.push(value.clone());
                         } else {
                             return Err(SbroadError::Invalid(

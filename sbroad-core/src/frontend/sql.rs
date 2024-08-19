@@ -26,29 +26,35 @@ use crate::frontend::sql::ast::{
 };
 use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
-use crate::ir::ddl::{AlterSystemType, ColumnDef, Ddl, SetParamScopeType, SetParamValue};
+use crate::ir::ddl::{AlterSystemType, ColumnDef, SetParamScopeType, SetParamValue};
 use crate::ir::ddl::{Language, ParamDef};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::{
-    ColumnPositionMap, ColumnWithScan, ColumnsRetrievalSpec, Expression, ExpressionId,
-    FunctionFeature, NodeId, Position, TrimKind,
+    ColumnPositionMap, ColumnWithScan, ColumnsRetrievalSpec, ExpressionId, FunctionFeature,
+    Position, TrimKind,
+};
+use crate::ir::node::expression::{Expression, MutExpression};
+use crate::ir::node::relational::Relational;
+use crate::ir::node::{
+    AlterSystem, AlterUser, BoolExpr, Constant, CountAsterisk, CreateIndex, CreateProc, CreateRole,
+    CreateTable, CreateUser, DropIndex, DropProc, DropRole, DropTable, DropUser, GrantPrivilege,
+    Node, NodeId, Procedure, RenameRoutine, RevokePrivilege, ScanCte, ScanRelation, SetParam,
+    SetTransaction, Trim,
 };
 use crate::ir::operator::{
-    Arithmetic, Bool, ConflictStrategy, JoinKind, OrderByElement, OrderByEntity, OrderByType,
-    Relational, Unary,
+    Arithmetic, Bool, ConflictStrategy, JoinKind, OrderByElement, OrderByEntity, OrderByType, Unary,
 };
 use crate::ir::relation::{Column, ColumnRole, TableKind, Type as RelationType};
-use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
+use crate::ir::tree::traversal::{LevelNode, PostOrder, EXPR_CAPACITY};
 use crate::ir::value::Value;
-use crate::ir::{Node, OptionKind, OptionParamValue, OptionSpec, Plan};
+use crate::ir::{OptionKind, OptionParamValue, OptionSpec, Plan};
 use crate::otm::child_span;
 
 use crate::errors::Entity::AST;
 use crate::executor::engine::helpers::{normalize_name_from_sql, to_user};
 use crate::ir::acl::AlterOption;
-use crate::ir::acl::{Acl, GrantRevokeType, Privilege};
+use crate::ir::acl::{GrantRevokeType, Privilege};
 use crate::ir::aggregates::AggregateKind;
-use crate::ir::block::Block;
 use crate::ir::expression::NewColumnsSource;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::transformation::redistribution::ColumnPosition;
@@ -189,7 +195,7 @@ fn parse_call_proc<M: Metadata>(
     pairs_map: &mut ParsingPairsMap,
     worker: &mut ExpressionsWorker<M>,
     plan: &mut Plan,
-) -> Result<Block, SbroadError> {
+) -> Result<Procedure, SbroadError> {
     let proc_name_ast_id = node.children.first().expect("Expected to get Proc name");
     let proc_name = parse_identifier(ast, *proc_name_ast_id)?;
 
@@ -216,14 +222,17 @@ fn parse_call_proc<M: Metadata>(
         values.push(plan_value_id);
     }
 
-    let call_proc = Block::Procedure {
+    let call_proc = Procedure {
         name: proc_name,
         values,
     };
     Ok(call_proc)
 }
 
-fn parse_rename_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+fn parse_rename_proc(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+) -> Result<RenameRoutine, SbroadError> {
     if node.rule != Rule::RenameProc {
         return Err(SbroadError::Invalid(
             Entity::Type,
@@ -253,7 +262,7 @@ fn parse_rename_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
             _ => panic!("Unexpected node: {child_node:?}"),
         }
     }
-    Ok(Ddl::RenameRoutine {
+    Ok(RenameRoutine {
         old_name,
         new_name,
         params,
@@ -261,7 +270,10 @@ fn parse_rename_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
     })
 }
 
-fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+fn parse_create_proc(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+) -> Result<CreateProc, SbroadError> {
     let proc_name_id = node.children.first().expect("Expected to get Proc name");
     let proc_name = parse_identifier(ast, *proc_name_id)?;
 
@@ -291,7 +303,7 @@ fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
             _ => unreachable!("Unexpected node: {child_node:?}"),
         }
     }
-    let create_proc = Ddl::CreateProc {
+    let create_proc = CreateProc {
         name: proc_name,
         params,
         language,
@@ -307,7 +319,7 @@ fn parse_alter_system<M: Metadata>(
     pairs_map: &mut ParsingPairsMap,
     worker: &mut ExpressionsWorker<M>,
     plan: &mut Plan,
-) -> Result<Ddl, SbroadError> {
+) -> Result<AlterSystem, SbroadError> {
     let alter_system_type_node_id = node
         .children
         .first()
@@ -335,7 +347,7 @@ fn parse_alter_system<M: Metadata>(
                 let expr_pair = pairs_map.remove_pair(*param_value_node_id);
                 let expr_plan_node_id = parse_expr(Pairs::single(expr_pair), &[], worker, plan)?;
                 let value_node = plan.get_node(expr_plan_node_id)?;
-                if let Node::Expression(Expression::Constant { value }) = value_node {
+                if let Node::Expression(Expression::Constant(Constant { value })) = value_node {
                     AlterSystemType::AlterSystemSet {
                         param_name,
                         param_value: value.clone(),
@@ -383,7 +395,7 @@ fn parse_alter_system<M: Metadata>(
         None
     };
 
-    Ok(Ddl::AlterSystem {
+    Ok(AlterSystem {
         ty,
         tier_name,
         timeout: get_default_timeout(),
@@ -407,7 +419,7 @@ fn parse_proc_with_optional_params(
     Ok((proc_name, params))
 }
 
-fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropProc, SbroadError> {
     let proc_with_optional_params_id = node
         .children
         .first()
@@ -421,7 +433,7 @@ fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, Sb
         get_default_timeout()
     };
 
-    Ok(Ddl::DropProc {
+    Ok(DropProc {
         name,
         params,
         timeout,
@@ -429,7 +441,10 @@ fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, Sb
 }
 
 #[allow(clippy::too_many_lines)]
-fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+fn parse_create_index(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+) -> Result<CreateIndex, SbroadError> {
     assert_eq!(node.rule, Rule::CreateIndex);
     let mut name = SmolStr::default();
     let mut table_name = SmolStr::default();
@@ -545,7 +560,7 @@ fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
             _ => panic!("Unexpected index rule: {child_node:?}"),
         }
     }
-    let index = Ddl::CreateIndex {
+    let index = CreateIndex {
         name,
         table_name,
         columns,
@@ -564,7 +579,7 @@ fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     Ok(index)
 }
 
-fn parse_drop_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+fn parse_drop_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropIndex, SbroadError> {
     assert_eq!(node.rule, Rule::DropIndex);
     let mut name = SmolStr::default();
     let mut timeout = get_default_timeout();
@@ -576,12 +591,15 @@ fn parse_drop_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, S
             _ => panic!("Unexpected drop index node: {child_node:?}"),
         }
     }
-    Ok(Ddl::DropIndex { name, timeout })
+    Ok(DropIndex { name, timeout })
 }
 
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::uninlined_format_args)]
-fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+fn parse_create_table(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+) -> Result<CreateTable, SbroadError> {
     assert_eq!(
         node.rule,
         Rule::CreateTable,
@@ -862,8 +880,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                 Some("global spaces can use only memtx engine".into()),
             ));
         }
-
-        Ddl::CreateTable {
+        CreateTable {
             name: table_name,
             format: columns,
             primary_key: pk_keys,
@@ -873,7 +890,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
             tier,
         }
     } else {
-        Ddl::CreateTable {
+        CreateTable {
             name: table_name,
             format: columns,
             primary_key: pk_keys,
@@ -886,7 +903,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     Ok(create_sharded_table)
 }
 
-fn parse_set_param(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+fn parse_set_param(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<SetParam, SbroadError> {
     let mut scope_type = SetParamScopeType::Session;
     let mut param_value = None;
     for child_id in &node.children {
@@ -926,7 +943,7 @@ fn parse_set_param(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, Sb
             _ => panic!("Unexpected rule met under SetParam."),
         }
     }
-    Ok(Ddl::SetParam {
+    Ok(SetParam {
         scope_type,
         param_value: param_value.unwrap(),
         timeout: get_default_timeout(),
@@ -1543,10 +1560,13 @@ where
     }
 
     fn build_columns_map(&mut self, plan: &Plan, rel_id: NodeId) -> Result<(), SbroadError> {
-        if self.column_positions_cache.get(&rel_id).is_none() {
+        if let std::collections::hash_map::Entry::Vacant(e) =
+            self.column_positions_cache.entry(rel_id)
+        {
             let new_map = ColumnPositionMap::new(plan, rel_id)?;
-            self.column_positions_cache.insert(rel_id, new_map);
+            e.insert(new_map);
         }
+
         Ok(())
     }
 
@@ -1707,7 +1727,7 @@ impl ParseExpression {
                 let child_plan_id = child.populate_plan(plan, worker)?;
 
                 let child_expr = plan.get_node(child_plan_id)?;
-                if let Node::Expression(Expression::Bool { op, .. }) = child_expr {
+                if let Node::Expression(Expression::Bool(BoolExpr { op, .. })) = child_expr {
                     // We don't want simple infix comparisons to be covered with parentheses
                     // as soon as it breaks logic of conflicts resolving which currently
                     // work adequately only with ROWs.
@@ -1766,12 +1786,12 @@ impl ParseExpression {
                     Some(p) => Some(p.populate_plan(plan, worker)?),
                     None => None,
                 };
-                let trim_expr = Expression::Trim {
+                let trim_expr = Trim {
                     kind: kind.clone(),
                     pattern,
                     target: target.populate_plan(plan, worker)?,
                 };
-                plan.nodes.push(Node::Expression(trim_expr))
+                plan.nodes.push(trim_expr.into())
             }
             ParseExpression::FinalBetween {
                 is_not,
@@ -1849,18 +1869,18 @@ impl ParseExpression {
                     let right_expr = plan.get_node(right_plan_id)?;
                     matches!(
                         right_expr,
-                        Node::Expression(Expression::Bool { op: Bool::And, .. })
+                        Node::Expression(Expression::Bool(BoolExpr { op: Bool::And, .. }))
                     )
                 };
                 if matches!(op, ParseExpressionInfixOperator::InfixBool(Bool::And))
                     && right_plan_is_and
                 {
                     let right_expr = plan.get_expression_node(right_plan_id)?;
-                    let fixed_left_and_id = if let Expression::Bool {
+                    let fixed_left_and_id = if let Expression::Bool(BoolExpr {
                         op: Bool::And,
                         left,
                         ..
-                    } = right_expr
+                    }) = right_expr
                     {
                         plan.add_cond(left_row_id, Bool::And, *left)?
                     } else {
@@ -1868,11 +1888,11 @@ impl ParseExpression {
                     };
 
                     let right_expr_mut = plan.get_mut_expression_node(right_plan_id)?;
-                    if let Expression::Bool {
+                    if let MutExpression::Bool(BoolExpr {
                         op: Bool::And,
                         left,
                         ..
-                    } = right_expr_mut
+                    }) = right_expr_mut
                     {
                         *left = fixed_left_and_id;
                         return Ok(right_plan_id);
@@ -2144,7 +2164,7 @@ where
                                                     ))
                                                 ));
                                             }
-                                            let count_asterisk_plan_id = plan.nodes.push(Node::Expression(Expression::CountAsterisk));
+                                            let count_asterisk_plan_id = plan.nodes.push(CountAsterisk{}.into());
                                             parse_exprs_args.push(ParseExpression::PlanId { plan_id: count_asterisk_plan_id });
                                         }
                                         Rule::FunctionArgs => {
@@ -2241,9 +2261,7 @@ where
                             Err(e) => return Err(e)
                         };
                         let child = plan.get_relation_node(*plan_left_id)?;
-                        let child_alias_ids = plan.get_expression_node(
-                            child.output()
-                        )?.get_row_list()?;
+                        let child_alias_ids = plan.get_row_list(child.output())?;
                         let child_alias_id = child_alias_ids
                             .get(col_position)
                             .expect("column position is invalid");
@@ -2398,7 +2416,7 @@ where
                     ParseExpression::PlanId { plan_id }
                 }
                 Rule::CountAsterisk => {
-                    let plan_id = plan.nodes.push(Node::Expression(Expression::CountAsterisk));
+                    let plan_id = plan.nodes.push(CountAsterisk{}.into());
                     ParseExpression::PlanId { plan_id }
                 }
                 rule      => unreachable!("Expr::parse expected atomic rule, found {:?}", rule),
@@ -2747,7 +2765,7 @@ impl AbstractSyntaxTree {
 
             let entity = match expr {
                 Node::Expression(expr) => {
-                    if let Expression::Constant {value: Value::Unsigned(index)} = expr {
+                    if let Expression::Constant(Constant {value: Value::Unsigned(index)}) = expr {
                         let index_usize = usize::try_from(*index).map_err(|_| {
                             SbroadError::Invalid(
                                 Entity::Expression,
@@ -2769,8 +2787,7 @@ impl AbstractSyntaxTree {
                         let mut expr_tree =
                             PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
                         let mut reference_met = false;
-                        for level_node in expr_tree.iter(expr_plan_node_id) {
-                            let node_id = level_node.1;
+                        for LevelNode(_, node_id) in expr_tree.iter(expr_plan_node_id) {
                             if let Expression::Reference { .. } = plan.get_expression_node(node_id)? {
                                 reference_met = true;
                                 break;
@@ -2860,7 +2877,7 @@ impl AbstractSyntaxTree {
                         .expect("could not find first child id in scan node");
                     let rel_child_id_plan = map.get(*rel_child_id_ast)?;
                     let rel_child_node = plan.get_relation_node(rel_child_id_plan)?;
-                    if let Relational::ScanSubQuery { .. } = rel_child_node {
+                    if let Relational::ScanSubQuery(_) = rel_child_node {
                         // We want `SubQuery` ids to be used only during expressions parsing.
                         worker.subquery_ids_queue.pop_back();
                     }
@@ -2870,11 +2887,11 @@ impl AbstractSyntaxTree {
                         let alias_name = parse_normalized_identifier(self, *ast_alias_id)?;
                         // CTE scans can have different aliases, so clone the CTE scan node,
                         // preserving its subtree.
-                        if let Relational::ScanCte { child, .. } = rel_child_node {
+                        if let Relational::ScanCte(ScanCte { child, .. }) = rel_child_node {
                             let scan_id = plan.add_cte(*child, alias_name, vec![])?;
                             map.add(id, scan_id);
                         } else {
-                            let scan = plan.get_mut_relation_node(rel_child_id_plan)?;
+                            let mut scan = plan.get_mut_relation_node(rel_child_id_plan)?;
                             scan.set_scan_name(Some(alias_name.to_smolstr()))?;
                         }
                     }
@@ -3094,7 +3111,7 @@ impl AbstractSyntaxTree {
                                         parse_normalized_identifier(self, *alias_ast_node_id)?
                                     } else {
                                         // We don't use `get_expression_node` here, because we may encounter a `Parameter`.
-                                        if let Node::Expression(Expression::Reference { .. }) =
+                                        if let Node::Expression(Expression::Reference(_)) =
                                             plan.get_node(expr_plan_node_id)?
                                         {
                                             let (col_name, _) = worker
@@ -3179,7 +3196,9 @@ impl AbstractSyntaxTree {
                     let plan_scan_id = map.get(*ast_scan_table_id)?;
                     let plan_scan_node = plan.get_relation_node(plan_scan_id)?;
                     let scan_relation =
-                        if let Relational::ScanRelation { relation, .. } = plan_scan_node {
+                        if let Relational::ScanRelation(ScanRelation { relation, .. }) =
+                            plan_scan_node
+                        {
                             relation.clone()
                         } else {
                             unreachable!("Scan expected under Update")
@@ -3305,7 +3324,9 @@ impl AbstractSyntaxTree {
                         Rule::ScanTable => {
                             let plan_scan_id = map.get(*first_child_id)?;
                             let plan_scan_node = plan.get_relation_node(plan_scan_id)?;
-                            let Relational::ScanRelation { relation, .. } = plan_scan_node else {
+                            let Relational::ScanRelation(ScanRelation { relation, .. }) =
+                                plan_scan_node
+                            else {
                                 unreachable!("Scan expected under ScanTable")
                             };
                             (plan_scan_id, relation.clone())
@@ -3318,7 +3339,9 @@ impl AbstractSyntaxTree {
                             let plan_scan_id = map.get(*ast_table_id)?;
                             let plan_scan_node = plan.get_relation_node(plan_scan_id)?;
                             let relation_name =
-                                if let Relational::ScanRelation { relation, .. } = plan_scan_node {
+                                if let Relational::ScanRelation(ScanRelation { relation, .. }) =
+                                    plan_scan_node
+                                {
                                     relation.clone()
                                 } else {
                                     unreachable!("Scan expected under DeleteFilter")
@@ -3493,53 +3516,53 @@ impl AbstractSyntaxTree {
                 }
                 Rule::CallProc => {
                     let call_proc = parse_call_proc(self, node, pairs_map, &mut worker, &mut plan)?;
-                    let plan_id = plan.nodes.push(Node::Block(call_proc));
+                    let plan_id = plan.nodes.push(call_proc.into());
                     map.add(id, plan_id);
                 }
                 Rule::CreateIndex => {
                     let create_index = parse_create_index(self, node)?;
-                    let plan_id = plan.nodes.push(Node::Ddl(create_index));
+                    let plan_id = plan.nodes.push(create_index.into());
                     map.add(id, plan_id);
                 }
                 Rule::AlterSystem => {
                     let alter_system =
                         parse_alter_system(self, node, pairs_map, &mut worker, &mut plan)?;
-                    let plan_id = plan.nodes.push(Node::Ddl(alter_system));
+                    let plan_id = plan.nodes.push(alter_system.into());
                     map.add(id, plan_id);
                 }
                 Rule::CreateProc => {
                     let create_proc = parse_create_proc(self, node)?;
-                    let plan_id = plan.nodes.push(Node::Ddl(create_proc));
+                    let plan_id = plan.nodes.push(create_proc.into());
                     map.add(id, plan_id);
                 }
                 Rule::CreateTable => {
                     let create_sharded_table = parse_create_table(self, node)?;
-                    let plan_id = plan.nodes.push(Node::Ddl(create_sharded_table));
+                    let plan_id = plan.nodes.push(create_sharded_table.into());
                     map.add(id, plan_id);
                 }
                 Rule::GrantPrivilege => {
                     let (grant_type, grantee_name, timeout) = parse_grant_revoke(node, self)?;
-                    let grant_privilege = Acl::GrantPrivilege {
+                    let grant_privilege = GrantPrivilege {
                         grant_type,
                         grantee_name,
                         timeout,
                     };
-                    let plan_id = plan.nodes.push(Node::Acl(grant_privilege));
+                    let plan_id = plan.nodes.push(grant_privilege.into());
                     map.add(id, plan_id);
                 }
                 Rule::RevokePrivilege => {
                     let (revoke_type, grantee_name, timeout) = parse_grant_revoke(node, self)?;
-                    let revoke_privilege = Acl::RevokePrivilege {
+                    let revoke_privilege = RevokePrivilege {
                         revoke_type,
                         grantee_name,
                         timeout,
                     };
-                    let plan_id = plan.nodes.push(Node::Acl(revoke_privilege));
+                    let plan_id = plan.nodes.push(revoke_privilege.into());
                     map.add(id, plan_id);
                 }
                 Rule::DropIndex => {
                     let drop_index = parse_drop_index(self, node)?;
-                    let plan_id = plan.nodes.push(Node::Ddl(drop_index));
+                    let plan_id = plan.nodes.push(drop_index.into());
                     map.add(id, plan_id);
                 }
                 Rule::DropRole => {
@@ -3553,11 +3576,11 @@ impl AbstractSyntaxTree {
                     if let Some(timeout_child_id) = node.children.get(1) {
                         timeout = get_timeout(self, *timeout_child_id)?;
                     }
-                    let drop_role = Acl::DropRole {
+                    let drop_role = DropRole {
                         name: role_name,
                         timeout,
                     };
-                    let plan_id = plan.nodes.push(Node::Acl(drop_role));
+                    let plan_id = plan.nodes.push(drop_role.into());
                     map.add(id, plan_id);
                 }
                 Rule::DropTable => {
@@ -3583,21 +3606,21 @@ impl AbstractSyntaxTree {
                             }
                         }
                     }
-                    let drop_table = Ddl::DropTable {
+                    let drop_table = DropTable {
                         name: table_name,
                         timeout,
                     };
-                    let plan_id = plan.nodes.push(Node::Ddl(drop_table));
+                    let plan_id = plan.nodes.push(drop_table.into());
                     map.add(id, plan_id);
                 }
                 Rule::DropProc => {
                     let drop_proc = parse_drop_proc(self, node)?;
-                    let plan_id = plan.nodes.push(Node::Ddl(drop_proc));
+                    let plan_id = plan.nodes.push(drop_proc.into());
                     map.add(id, plan_id);
                 }
                 Rule::RenameProc => {
                     let rename_proc = parse_rename_proc(self, node)?;
-                    let plan_id = plan.nodes.push(Node::Ddl(rename_proc));
+                    let plan_id = plan.nodes.push(rename_proc.into());
                     map.add(id, plan_id);
                 }
                 Rule::AlterUser => {
@@ -3663,12 +3686,12 @@ impl AbstractSyntaxTree {
                         timeout = get_timeout(self, *timeout_node_id)?;
                     }
 
-                    let alter_user = Acl::AlterUser {
+                    let alter_user = AlterUser {
                         name: user_name,
                         alter_option,
                         timeout,
                     };
-                    let plan_id = plan.nodes.push(Node::Acl(alter_user));
+                    let plan_id = plan.nodes.push(alter_user.into());
                     map.add(id, plan_id);
                 }
                 Rule::CreateUser => {
@@ -3718,13 +3741,13 @@ impl AbstractSyntaxTree {
                         }
                     }
 
-                    let create_user = Acl::CreateUser {
+                    let create_user = CreateUser {
                         name: user_name,
                         password,
                         auth_method,
                         timeout,
                     };
-                    let plan_id = plan.nodes.push(Node::Acl(create_user));
+                    let plan_id = plan.nodes.push(create_user.into());
                     map.add(id, plan_id);
                 }
                 Rule::DropUser => {
@@ -3738,11 +3761,11 @@ impl AbstractSyntaxTree {
                     if let Some(timeout_child_id) = node.children.get(1) {
                         timeout = get_timeout(self, *timeout_child_id)?;
                     }
-                    let drop_user = Acl::DropUser {
+                    let drop_user = DropUser {
                         name: user_name,
                         timeout,
                     };
-                    let plan_id = plan.nodes.push(Node::Acl(drop_user));
+                    let plan_id = plan.nodes.push(drop_user.into());
                     map.add(id, plan_id);
                 }
                 Rule::CreateRole => {
@@ -3756,23 +3779,23 @@ impl AbstractSyntaxTree {
                     if let Some(timeout_child_id) = node.children.get(1) {
                         timeout = get_timeout(self, *timeout_child_id)?;
                     }
-                    let create_role = Acl::CreateRole {
+                    let create_role = CreateRole {
                         name: role_name,
                         timeout,
                     };
-                    let plan_id = plan.nodes.push(Node::Acl(create_role));
+                    let plan_id = plan.nodes.push(create_role.into());
                     map.add(id, plan_id);
                 }
                 Rule::SetParam => {
                     let set_param_node = parse_set_param(self, node)?;
-                    let plan_id = plan.nodes.push(Node::Ddl(set_param_node));
+                    let plan_id = plan.nodes.push(set_param_node.into());
                     map.add(id, plan_id);
                 }
                 Rule::SetTransaction => {
-                    let set_transaction_node = Ddl::SetTransaction {
+                    let set_transaction_node = SetTransaction {
                         timeout: get_default_timeout(),
                     };
-                    let plan_id = plan.nodes.push(Node::Ddl(set_transaction_node));
+                    let plan_id = plan.nodes.push(set_transaction_node.into());
                     map.add(id, plan_id);
                 }
                 _ => {}
@@ -3836,11 +3859,11 @@ impl Plan {
     /// Used for unification of expression nodes transformations (e.g. dnf).
     fn row(&mut self, expr_id: NodeId) -> Result<NodeId, SbroadError> {
         let row_id = if let Node::Expression(
-            Expression::Reference { .. }
-            | Expression::Constant { .. }
-            | Expression::Cast { .. }
-            | Expression::Concat { .. }
-            | Expression::StableFunction { .. },
+            Expression::Reference(_)
+            | Expression::Constant(_)
+            | Expression::Cast(_)
+            | Expression::Concat(_)
+            | Expression::StableFunction(_),
         ) = self.get_node(expr_id)?
         {
             self.nodes.add_row(vec![expr_id], None)

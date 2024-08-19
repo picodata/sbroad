@@ -4,6 +4,14 @@
 
 use crate::executor::engine::helpers::to_user;
 use crate::frontend::sql::get_unnamed_column_alias;
+use crate::ir::api::children::Children;
+use crate::ir::expression::PlanExpr;
+use crate::ir::node::{
+    Alias, Delete, Except, GroupBy, Having, Insert, Intersect, Join, Motion, MutNode, Node64,
+    NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation, ScanSubQuery, Selection,
+    Union, UnionAll, Update, Values, ValuesRow,
+};
+use crate::ir::Plan;
 use ahash::RandomState;
 
 use crate::collection;
@@ -16,13 +24,13 @@ use std::fmt::{Display, Formatter};
 
 use crate::errors::{Action, Entity, SbroadError};
 
-use super::api::children::{Children, MutChildren};
-use super::expression::{ColumnPositionMap, Expression, NodeId};
+use super::expression::{ColumnPositionMap, ExpressionId};
+use super::node::expression::{Expression, MutExpression};
+use super::node::relational::Relational;
+use super::node::{ArenaType, Limit, Node, SizeNode};
 use super::transformation::redistribution::{MotionPolicy, Program};
 use super::tree::traversal::{LevelNode, PostOrderWithFilter, EXPR_CAPACITY};
-use super::{ArenaType, Node, Plan};
 use crate::ir::distribution::{Distribution, Key, KeySet};
-use crate::ir::expression::{ExpressionId, PlanExpr};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, ColumnRole};
 use crate::ir::transformation::redistribution::{ColumnPosition, JoinChild};
@@ -312,605 +320,13 @@ pub struct OrderByElement {
     pub order_type: Option<OrderByType>,
 }
 
-/// Relational algebra operator returning a new tuple.
-///
-/// Transforms input tuple(s) into the output one using the
-/// relation algebra logic.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub enum Relational {
-    ScanCte {
-        /// CTE's name.
-        alias: SmolStr,
-        /// Contains exactly one single element (projection node index).
-        child: NodeId,
-        /// An output tuple with aliases.
-        output: NodeId,
-    },
-    Except {
-        /// Left child id
-        left: NodeId,
-        /// Right child id
-        right: NodeId,
-        /// Outputs tuple node index in the plan node arena.
-        output: NodeId,
-    },
-    Delete {
-        /// Relation name.
-        relation: SmolStr,
-        /// Contains exactly one single element.
-        children: Vec<NodeId>,
-        /// The output tuple (reserved for `delete returning`).
-        output: NodeId,
-    },
-    Insert {
-        /// Relation name.
-        relation: SmolStr,
-        /// Target column positions for data insertion from
-        /// the child's tuple.
-        columns: Vec<usize>,
-        /// Contains exactly one single element.
-        children: Vec<NodeId>,
-        /// The output tuple (reserved for `insert returning`).
-        output: NodeId,
-        /// What to do in case there is a conflict during insert on storage
-        conflict_strategy: ConflictStrategy,
-    },
-    Intersect {
-        left: NodeId,
-        right: NodeId,
-        // id of the output tuple
-        output: NodeId,
-    },
-    Update {
-        /// Relation name.
-        relation: SmolStr,
-        /// Children ids. Update has exactly one child.
-        children: Vec<NodeId>,
-        /// Maps position of column being updated in table to corresponding position
-        /// in `Projection` below `Update`.
-        ///
-        /// For sharded `Update`, it will contain every table column except `bucket_id`
-        /// column. For local `Update` it will contain only update table columns.
-        update_columns_map: HashMap<ColumnPosition, ColumnPosition, RepeatableState>,
-        /// How this update must be executed.
-        strategy: UpdateStrategy,
-        /// Positions of primary columns in `Projection`
-        /// below `Update`.
-        pk_positions: Vec<ColumnPosition>,
-        /// Output id.
-        output: NodeId,
-    },
-    Join {
-        /// Contains at least two elements: left and right node indexes
-        /// from the plan node arena. Every element other than those
-        /// two should be treated as a `SubQuery` node.
-        children: Vec<NodeId>,
-        /// Left and right tuple comparison condition.
-        /// In fact it is an expression tree top index from the plan node arena.
-        condition: NodeId,
-        /// Outputs tuple node index from the plan node arena.
-        output: NodeId,
-        /// inner or left
-        kind: JoinKind,
-    },
-    Motion {
-        // Scan name.
-        alias: Option<SmolStr>,
-        /// Contains exactly one single element: child node index
-        /// from the plan node arena.
-        children: Vec<NodeId>,
-        /// Motion policy - the amount of data to be moved.
-        policy: MotionPolicy,
-        /// A sequence of opcodes that transform the data.
-        program: Program,
-        /// Outputs tuple node index in the plan node arena.
-        output: NodeId,
-        /// A helper field indicating whether first element of
-        /// `children` vec is a `Relational::SubQuery`.
-        /// We need it on the stage of translating Plan to SQL, because
-        /// by that moment we've already erased `children` information using
-        /// `unlink_motion_subtree` function.
-        is_child_subquery: bool,
-    },
-    Projection {
-        /// Contains at least one single element: child node index
-        /// from the plan node arena. Every element other than the
-        /// first one should be treated as a `SubQuery` node from
-        /// the output tree.
-        children: Vec<NodeId>,
-        /// Outputs tuple node index in the plan node arena.
-        output: NodeId,
-        /// Wheter the select was marked with `distinct` keyword
-        is_distinct: bool,
-    },
-    ScanRelation {
-        // Scan name.
-        alias: Option<SmolStr>,
-        /// Outputs tuple node index in the plan node arena.
-        output: NodeId,
-        /// Relation name.
-        relation: SmolStr,
-    },
-    ScanSubQuery {
-        /// SubQuery name.
-        alias: Option<SmolStr>,
-        /// Contains exactly one single element: child node index
-        /// from the plan node arena.
-        children: Vec<NodeId>,
-        /// Outputs tuple node index in the plan node arena.
-        output: NodeId,
-    },
-    Selection {
-        /// Contains at least one single element: child node index
-        /// from the plan node arena. Every element other than the
-        /// first one should be treated as a `SubQuery` node from
-        /// the filter tree.
-        children: Vec<NodeId>,
-        /// Filters expression node index in the plan node arena.
-        filter: NodeId,
-        /// Outputs tuple node index in the plan node arena.
-        output: NodeId,
-    },
-    GroupBy {
-        /// The first child is a relational operator before group by
-        children: Vec<NodeId>,
-        gr_cols: Vec<NodeId>,
-        output: NodeId,
-        is_final: bool,
-    },
-    Having {
-        children: Vec<NodeId>,
-        output: NodeId,
-        filter: NodeId,
-    },
-    OrderBy {
-        child: NodeId,
-        output: NodeId,
-        order_by_elements: Vec<OrderByElement>,
-    },
-    UnionAll {
-        /// Left child id
-        left: NodeId,
-        /// Right child id
-        right: NodeId,
-        /// Outputs tuple node index in the plan node arena.
-        output: NodeId,
-    },
-    Union {
-        /// Left child id
-        left: NodeId,
-        /// Right child id
-        right: NodeId,
-        /// Outputs tuple node index in the plan node arena.
-        output: NodeId,
-    },
-    Values {
-        /// Output tuple.
-        output: NodeId,
-        /// Non-empty list of value rows.
-        children: Vec<NodeId>,
-    },
-    ValuesRow {
-        /// Output tuple of aliases.
-        output: NodeId,
-        /// The data tuple.
-        data: NodeId,
-        /// A list of children is required for the rows containing
-        /// sub-queries. For example, the row `(1, (select a from t))`
-        /// requires `children` to keep projection node. If the row
-        /// contains only constants (i.e. `(1, 2)`), then `children`
-        /// should be empty.
-        children: Vec<NodeId>,
-    },
-    Limit {
-        /// Output tuple.
-        output: NodeId,
-        // The limit value constant that comes after LIMIT keyword.
-        limit: u64,
-        /// Select statement that is being limited.
-        /// Note that it can be a complex statement, like SELECT .. UNION ALL SELECT .. LIMIT 100,
-        /// in that case limit is applied to the result of union.
-        child: NodeId,
-    },
-}
-
-#[allow(dead_code)]
-impl Relational {
-    /// Gets an immutable id of the output tuple node of the plan's arena.
-    #[must_use]
-    pub fn output(&self) -> NodeId {
-        match self {
-            Relational::ScanCte { output, .. }
-            | Relational::Except { output, .. }
-            | Relational::GroupBy { output, .. }
-            | Relational::OrderBy { output, .. }
-            | Relational::Having { output, .. }
-            | Relational::Update { output, .. }
-            | Relational::Join { output, .. }
-            | Relational::Delete { output, .. }
-            | Relational::Insert { output, .. }
-            | Relational::Intersect { output, .. }
-            | Relational::Motion { output, .. }
-            | Relational::Projection { output, .. }
-            | Relational::ScanRelation { output, .. }
-            | Relational::ScanSubQuery { output, .. }
-            | Relational::Selection { output, .. }
-            | Relational::Union { output, .. }
-            | Relational::UnionAll { output, .. }
-            | Relational::Values { output, .. }
-            | Relational::ValuesRow { output, .. }
-            | Relational::Limit { output, .. } => *output,
-        }
-    }
-
-    /// Gets an immutable reference to the output tuple node id.
-    #[must_use]
-    pub fn mut_output(&mut self) -> &mut NodeId {
-        match self {
-            Relational::ScanCte { output, .. }
-            | Relational::Except { output, .. }
-            | Relational::GroupBy { output, .. }
-            | Relational::OrderBy { output, .. }
-            | Relational::Update { output, .. }
-            | Relational::Having { output, .. }
-            | Relational::Join { output, .. }
-            | Relational::Delete { output, .. }
-            | Relational::Insert { output, .. }
-            | Relational::Intersect { output, .. }
-            | Relational::Motion { output, .. }
-            | Relational::Projection { output, .. }
-            | Relational::ScanRelation { output, .. }
-            | Relational::ScanSubQuery { output, .. }
-            | Relational::Selection { output, .. }
-            | Relational::Union { output, .. }
-            | Relational::UnionAll { output, .. }
-            | Relational::Values { output, .. }
-            | Relational::ValuesRow { output, .. }
-            | Relational::Limit { output, .. } => output,
-        }
-    }
-
-    // Gets an immutable reference to the children nodes.
-    #[must_use]
-    pub fn children(&self) -> Children<'_> {
-        match self {
-            Relational::OrderBy { child, .. }
-            | Relational::ScanCte { child, .. }
-            | Relational::Limit { child, .. } => Children::Single(child),
-            Relational::Except { left, right, .. }
-            | Relational::Intersect { left, right, .. }
-            | Relational::UnionAll { left, right, .. }
-            | Relational::Union { left, right, .. } => Children::Couple(left, right),
-            Relational::GroupBy { children, .. }
-            | Relational::Update { children, .. }
-            | Relational::Join { children, .. }
-            | Relational::Having { children, .. }
-            | Relational::Delete { children, .. }
-            | Relational::Insert { children, .. }
-            | Relational::Motion { children, .. }
-            | Relational::Projection { children, .. }
-            | Relational::ScanSubQuery { children, .. }
-            | Relational::Selection { children, .. }
-            | Relational::ValuesRow { children, .. }
-            | Relational::Values { children, .. } => Children::Many(children),
-            Relational::ScanRelation { .. } => Children::None,
-        }
-    }
-
-    // Gets a mutable reference to the children nodes.
-    #[must_use]
-    pub fn mut_children(&mut self) -> MutChildren<'_> {
-        // return MutChildren { node: self };
-        match self {
-            Relational::OrderBy { child, .. }
-            | Relational::ScanCte { child, .. }
-            | Relational::Limit { child, .. } => MutChildren::Single(child),
-            Relational::Except { left, right, .. }
-            | Relational::Intersect { left, right, .. }
-            | Relational::UnionAll { left, right, .. }
-            | Relational::Union { left, right, .. } => MutChildren::Couple(left, right),
-            Relational::GroupBy {
-                ref mut children, ..
-            }
-            | Relational::Update {
-                ref mut children, ..
-            }
-            | Relational::Having {
-                ref mut children, ..
-            }
-            | Relational::Join {
-                ref mut children, ..
-            }
-            | Relational::Delete {
-                ref mut children, ..
-            }
-            | Relational::Insert {
-                ref mut children, ..
-            }
-            | Relational::Motion {
-                ref mut children, ..
-            }
-            | Relational::Projection {
-                ref mut children, ..
-            }
-            | Relational::ScanSubQuery {
-                ref mut children, ..
-            }
-            | Relational::Selection {
-                ref mut children, ..
-            }
-            | Relational::ValuesRow {
-                ref mut children, ..
-            }
-            | Relational::Values {
-                ref mut children, ..
-            } => MutChildren::Many(children),
-            Relational::ScanRelation { .. } => MutChildren::None,
-        }
-    }
-
-    /// Checks if the node is deletion.
-    #[must_use]
-    pub fn is_delete(&self) -> bool {
-        matches!(self, Relational::Delete { .. })
-    }
-    /// Checks if the node is an insertion.
-    #[must_use]
-    pub fn is_insert(&self) -> bool {
-        matches!(self, Relational::Insert { .. })
-    }
-
-    /// Checks if the node is dml node
-    #[must_use]
-    pub fn is_dml(&self) -> bool {
-        matches!(
-            self,
-            Relational::Insert { .. } | Relational::Update { .. } | Relational::Delete { .. }
-        )
-    }
-
-    /// Checks that the node is a motion.
-    #[must_use]
-    pub fn is_motion(&self) -> bool {
-        matches!(self, &Relational::Motion { .. })
-    }
-
-    /// Checks that the node is a sub-query or CTE scan.
-    #[must_use]
-    pub fn is_subquery_or_cte(&self) -> bool {
-        matches!(
-            self,
-            &Relational::ScanSubQuery { .. } | &Relational::ScanCte { .. }
-        )
-    }
-
-    /// Sets new children to relational node.
-    ///
-    /// # Panics
-    /// - wrong number of children for the given node
-    pub fn set_children(&mut self, children: Vec<NodeId>) {
-        match self {
-            Relational::Join {
-                children: ref mut old,
-                ..
-            }
-            | Relational::Delete {
-                children: ref mut old,
-                ..
-            }
-            | Relational::Update {
-                children: ref mut old,
-                ..
-            }
-            | Relational::Insert {
-                children: ref mut old,
-                ..
-            }
-            | Relational::Motion {
-                children: ref mut old,
-                ..
-            }
-            | Relational::Projection {
-                children: ref mut old,
-                ..
-            }
-            | Relational::ScanSubQuery {
-                children: ref mut old,
-                ..
-            }
-            | Relational::Selection {
-                children: ref mut old,
-                ..
-            }
-            | Relational::Values {
-                children: ref mut old,
-                ..
-            }
-            | Relational::GroupBy {
-                children: ref mut old,
-                ..
-            }
-            | Relational::Having {
-                children: ref mut old,
-                ..
-            }
-            | Relational::ValuesRow {
-                children: ref mut old,
-                ..
-            } => {
-                *old = children;
-            }
-            Relational::Except { left, right, .. }
-            | Relational::UnionAll { left, right, .. }
-            | Relational::Intersect { left, right, .. }
-            | Relational::Union { left, right, .. } => {
-                if children.len() != 2 {
-                    unreachable!("Node has only two children!");
-                }
-                *left = children[0];
-                *right = children[1];
-            }
-            Relational::OrderBy { ref mut child, .. } => {
-                if children.len() != 1 {
-                    unreachable!("ORDER BY may have only a single relational child");
-                }
-                // It is safe to unwrap here, because the length is already checked above.
-                *child = children[0];
-            }
-            Relational::ScanCte { ref mut child, .. } => {
-                if children.len() != 1 {
-                    unreachable!("CTE may have only a single relational child");
-                }
-                // It is safe to unwrap here, because the length is already checked above.
-                *child = children[0];
-            }
-            Relational::Limit { ref mut child, .. } => {
-                if children.len() != 1 {
-                    unreachable!("LIMIT may have only a single relational child");
-                }
-                // It is safe to unwrap here, because the length is already checked above.
-                *child = children[0];
-            }
-            Relational::ScanRelation { .. } => {
-                assert!(children.is_empty(), "scan must have no children!");
-            }
-        }
-    }
-
-    /// Get relational Scan name that given `output_alias_position` (`Expression::Alias`)
-    /// references to.
-    ///
-    /// # Errors
-    /// - plan tree is invalid (failed to retrieve child nodes)
-    pub fn scan_name<'n>(
-        &'n self,
-        plan: &'n Plan,
-        output_alias_position: usize,
-    ) -> Result<Option<&'n str>, SbroadError> {
-        match self {
-            Relational::Insert { relation, .. } | Relational::Delete { relation, .. } => {
-                Ok(Some(relation.as_str()))
-            }
-            Relational::ScanRelation {
-                alias, relation, ..
-            } => Ok(alias.as_deref().or(Some(relation.as_str()))),
-            Relational::Projection { .. }
-            | Relational::GroupBy { .. }
-            | Relational::OrderBy { .. }
-            | Relational::Intersect { .. }
-            | Relational::Having { .. }
-            | Relational::Selection { .. }
-            | Relational::Update { .. }
-            | Relational::Join { .. } => {
-                let output_row = plan.get_expression_node(self.output())?;
-                let list = output_row.get_row_list()?;
-                let col_id = *list.get(output_alias_position).ok_or_else(|| {
-                    SbroadError::NotFound(
-                        Entity::Column,
-                        format_smolstr!(
-                            "at position {output_alias_position} of Row, {self:?}, {output_row:?}"
-                        ),
-                    )
-                })?;
-                let col_node = plan.get_expression_node(col_id)?;
-                if let Expression::Alias { child, .. } = col_node {
-                    let child_node = plan.get_expression_node(*child)?;
-                    if let Expression::Reference { position: pos, .. } = child_node {
-                        let rel_id = *plan.get_relational_from_reference_node(*child)?;
-                        let rel_node = plan.get_relation_node(rel_id)?;
-                        if rel_node == self {
-                            return Err(SbroadError::DuplicatedValue(format_smolstr!(
-                                "Reference to the same node {rel_node:?} at position {output_alias_position}"
-                            )));
-                        }
-                        return rel_node.scan_name(plan, *pos);
-                    }
-                } else {
-                    return Err(SbroadError::Invalid(
-                        Entity::Expression,
-                        Some("expected an alias in the output row".into()),
-                    ));
-                }
-                Ok(None)
-            }
-            Relational::ScanCte { alias, .. } => Ok(Some(alias)),
-            Relational::ScanSubQuery { alias, .. } | Relational::Motion { alias, .. } => {
-                if let Some(name) = alias.as_ref() {
-                    if !name.is_empty() {
-                        return Ok(alias.as_deref());
-                    }
-                }
-                Ok(None)
-            }
-            Relational::Except { .. }
-            | Relational::Union { .. }
-            | Relational::UnionAll { .. }
-            | Relational::Values { .. }
-            | Relational::ValuesRow { .. }
-            | Relational::Limit { .. } => Ok(None),
-        }
-    }
-
-    #[must_use]
-    pub fn name(&self) -> &str {
-        match self {
-            Relational::Except { .. } => "Except",
-            Relational::Delete { .. } => "Delete",
-            Relational::Insert { .. } => "Insert",
-            Relational::Intersect { .. } => "Intersect",
-            Relational::Update { .. } => "Update",
-            Relational::Join { .. } => "Join",
-            Relational::Motion { .. } => "Motion",
-            Relational::Projection { .. } => "Projection",
-            Relational::ScanCte { .. } => "CTE",
-            Relational::ScanRelation { .. } => "Scan",
-            Relational::ScanSubQuery { .. } => "Subquery",
-            Relational::Selection { .. } => "Selection",
-            Relational::GroupBy { .. } => "GroupBy",
-            Relational::OrderBy { .. } => "OrderBy",
-            Relational::Having { .. } => "Having",
-            Relational::Union { .. } => "Union",
-            Relational::UnionAll { .. } => "UnionAll",
-            Relational::Values { .. } => "Values",
-            Relational::ValuesRow { .. } => "ValuesRow",
-            Relational::Limit { .. } => "Limit",
-        }
-    }
-
-    /// Sets new scan name to relational node.
-    ///
-    /// # Errors
-    /// - relational node is not a scan.
-    ///
-    /// # Panics
-    /// - CTE must have a name.
-    pub fn set_scan_name(&mut self, name: Option<SmolStr>) -> Result<(), SbroadError> {
-        match self {
-            Relational::ScanRelation { ref mut alias, .. }
-            | Relational::ScanSubQuery { ref mut alias, .. } => {
-                *alias = name;
-                Ok(())
-            }
-            Relational::ScanCte { ref mut alias, .. } => {
-                let name = name.expect("CTE must have a name");
-                *alias = name;
-                Ok(())
-            }
-            _ => Err(SbroadError::Invalid(
-                Entity::Relational,
-                Some("Relational node is not a Scan.".into()),
-            )),
-        }
-    }
-}
-
 impl Plan {
     /// Add relational node to plan arena and update shard columns info.
     ///
     /// # Errors
     /// - failed to oupdate shard columns info due to invalid plan subtree
-    pub fn add_relational(&mut self, node: Relational) -> Result<NodeId, SbroadError> {
-        let rel_id = self.nodes.push(Node::Relational(node));
+    pub fn add_relational(&mut self, node: SizeNode) -> Result<NodeId, SbroadError> {
+        let rel_id = self.nodes.push(node);
         let mut context = self.context_mut();
         context.shard_col_info.update_node(rel_id, self)?;
         Ok(rel_id)
@@ -922,12 +338,12 @@ impl Plan {
     /// - child id pointes to non-existing or non-relational node.
     pub fn add_delete(&mut self, table: SmolStr, child_id: NodeId) -> Result<NodeId, SbroadError> {
         let output = self.add_row_for_output(child_id, &[], true)?;
-        let delete = Relational::Delete {
+        let delete = Delete {
             relation: table,
             children: vec![child_id],
             output,
         };
-        let delete_id = self.add_relational(delete)?;
+        let delete_id = self.add_relational(delete.into())?;
         self.replace_parent_in_subtree(output, None, Some(delete_id))?;
         Ok(delete_id)
     }
@@ -956,13 +372,13 @@ impl Plan {
         }
 
         let output = self.add_row_for_union_except(left, right)?;
-        let except = Relational::Except {
+        let except = Except {
             left,
             right,
             output,
         };
 
-        let except_id = self.add_relational(except)?;
+        let except_id = self.add_relational(except.into())?;
         self.replace_parent_in_subtree(output, None, Some(except_id))?;
         Ok(except_id)
     }
@@ -1056,7 +472,7 @@ impl Plan {
                 )
             })?;
             let col_type = col.r#type.clone();
-            let node = Expression::Reference {
+            let node = Reference {
                 // It will be updated using `replace_parent_in_subtree`
                 // in the end of the function.
                 parent: None,
@@ -1064,7 +480,7 @@ impl Plan {
                 position: output_pos,
                 col_type,
             };
-            let id = plan.nodes.push(Node::Expression(node));
+            let id = plan.nodes.push(node.into());
             Ok(id)
         }
 
@@ -1201,22 +617,25 @@ impl Plan {
         // it is assumed that any projection column always has an alias.
         for (pos, expr_id) in projection_cols.iter_mut().enumerate() {
             let alias = get_unnamed_column_alias(pos);
-            let alias_id = self.nodes.push(Node::Expression(Expression::Alias {
-                child: *expr_id,
-                name: alias,
-            }));
+            let alias_id = self.nodes.push(
+                Alias {
+                    child: *expr_id,
+                    name: alias,
+                }
+                .into(),
+            );
             *expr_id = alias_id;
         }
         let proj_output = self.nodes.add_row(projection_cols, None);
-        let proj_node = Relational::Projection {
+        let proj_node = Projection {
             children: vec![rel_child_id],
             output: proj_output,
             is_distinct: false,
         };
-        let proj_id = self.add_relational(proj_node)?;
+        let proj_id = self.add_relational(proj_node.into())?;
         self.replace_parent_in_subtree(proj_output, None, Some(proj_id))?;
         let upd_output = self.add_row_for_output(proj_id, &[], false)?;
-        let update_node = Relational::Update {
+        let update_node = Update {
             relation: relation.to_smolstr(),
             pk_positions: primary_key_positions,
             children: vec![proj_id],
@@ -1224,7 +643,7 @@ impl Plan {
             output: upd_output,
             strategy: update_kind,
         };
-        let update_id = self.add_relational(update_node)?;
+        let update_id = self.add_relational(update_node.into())?;
         self.replace_parent_in_subtree(upd_output, None, Some(update_id))?;
 
         Ok(update_id)
@@ -1280,7 +699,7 @@ impl Plan {
         };
         let child_rel = self.get_relation_node(child)?;
         let child_output = self.get_expression_node(child_rel.output())?;
-        let child_output_list_len = if let Expression::Row { list, .. } = child_output {
+        let child_output_list_len = if let Expression::Row(Row { list, .. }) = child_output {
             list.len()
         } else {
             return Err(SbroadError::Invalid(
@@ -1313,14 +732,14 @@ impl Plan {
             }
         };
         let output = self.nodes.add_row(refs, Some(dist));
-        let insert = Node::Relational(Relational::Insert {
+        let insert = Insert {
             relation: relation.into(),
             columns,
             children: vec![child],
             output,
             conflict_strategy,
-        });
-        let insert_id = self.nodes.push(insert);
+        };
+        let insert_id = self.nodes.push(insert.into());
         self.replace_parent_in_subtree(output, None, Some(insert_id))?;
         Ok(insert_id)
     }
@@ -1341,13 +760,13 @@ impl Plan {
             }
 
             let output_id = nodes.add_row(refs, None);
-            let scan = Relational::ScanRelation {
+            let scan = ScanRelation {
                 output: output_id,
                 relation: SmolStr::from(table),
                 alias: alias.map(SmolStr::from),
             };
 
-            let scan_id = self.add_relational(scan)?;
+            let scan_id = self.add_relational(scan.into())?;
             self.replace_parent_in_subtree(output_id, None, Some(scan_id))?;
             return Ok(scan_id);
         }
@@ -1387,9 +806,9 @@ impl Plan {
         let mut children: Vec<NodeId> = Vec::with_capacity(2);
         for (child, join_child) in &[(left, JoinChild::Outer), (right, JoinChild::Inner)] {
             let child_node = self.get_relation_node(*child)?;
-            if let Relational::ScanRelation {
+            if let Relational::ScanRelation(ScanRelation {
                 relation, alias, ..
-            } = child_node
+            }) = child_node
             {
                 // We'll need it later to update the condition expression (borrow checker).
                 let table = self.get_relation_or_error(relation)?;
@@ -1399,10 +818,7 @@ impl Plan {
                 // Update references to the sub-query's output in the condition.
                 let condition_nodes = {
                     let filter = |id| -> bool {
-                        matches!(
-                            self.get_expression_node(id),
-                            Ok(Expression::Reference { .. })
-                        )
+                        matches!(self.get_expression_node(id), Ok(Expression::Reference(_)))
                     };
                     let mut condition_tree = PostOrderWithFilter::with_capacity(
                         |node| self.nodes.expr_iter(node, false),
@@ -1420,9 +836,9 @@ impl Plan {
                 let mut refs = Vec::with_capacity(condition_nodes.len());
                 for LevelNode(_, id) in condition_nodes {
                     let expr = self.get_expression_node(id)?;
-                    if let Expression::Reference {
+                    if let Expression::Reference(Reference {
                         position, targets, ..
-                    } = expr
+                    }) = expr
                     {
                         if *targets == current_target {
                             if Some(*position) == sharding_column_pos {
@@ -1450,9 +866,9 @@ impl Plan {
                 if let Some(sharding_column_pos) = sharding_column_pos {
                     for ref_id in refs {
                         let expr = self.get_mut_expression_node(ref_id)?;
-                        if let Expression::Reference {
+                        if let MutExpression::Reference(Reference {
                             position, targets, ..
-                        } = expr
+                        }) = expr
                         {
                             if current_target == *targets && *position > sharding_column_pos {
                                 *position -= 1;
@@ -1466,14 +882,14 @@ impl Plan {
         }
         if let (Some(left_id), Some(right_id)) = (children.first(), children.get(1)) {
             let output = self.add_row_for_join(*left_id, *right_id)?;
-            let join = Relational::Join {
+            let join = Join {
                 children: vec![*left_id, *right_id],
                 condition,
                 output,
                 kind,
             };
 
-            let join_id = self.add_relational(join)?;
+            let join_id = self.add_relational(join.into())?;
             self.replace_parent_in_subtree(condition, None, Some(join_id))?;
             self.replace_parent_in_subtree(output, None, Some(join_id))?;
             return Ok(join_id);
@@ -1495,8 +911,9 @@ impl Plan {
         policy: &MotionPolicy,
         program: Program,
     ) -> Result<NodeId, SbroadError> {
-        let alias = if let Node::Relational(rel) = self.get_node(child_id)? {
-            rel.scan_name(self, 0)?.map(SmolStr::from)
+        let rel_node = self.get_node(child_id)?;
+        let alias = if let Node::Relational(_) = rel_node {
+            self.scan_name(child_id, 0)?.map(SmolStr::from)
         } else {
             return Err(SbroadError::Invalid(Entity::Relational, None));
         };
@@ -1527,9 +944,9 @@ impl Plan {
         }
 
         let child = self.get_relation_node(child_id)?;
-        let is_child_subquery = matches!(child, Relational::ScanSubQuery { .. });
+        let is_child_subquery = matches!(child, Relational::ScanSubQuery(_));
 
-        let motion = Relational::Motion {
+        let motion = Motion {
             alias,
             children: vec![child_id],
             policy: policy.clone(),
@@ -1537,7 +954,7 @@ impl Plan {
             output,
             is_child_subquery,
         };
-        let motion_id = self.add_relational(motion)?;
+        let motion_id = self.add_relational(motion.into())?;
         self.replace_parent_in_subtree(output, None, Some(motion_id))?;
         let mut context = self.context_mut();
         context
@@ -1563,13 +980,13 @@ impl Plan {
         needs_shard_col: bool,
     ) -> Result<NodeId, SbroadError> {
         let output = self.add_row_for_output(child, col_names, needs_shard_col)?;
-        let proj = Relational::Projection {
+        let proj = Projection {
             children: vec![child],
             output,
             is_distinct,
         };
 
-        let proj_id = self.add_relational(proj)?;
+        let proj_id = self.add_relational(proj.into())?;
         self.replace_parent_in_subtree(output, None, Some(proj_id))?;
         Ok(proj_id)
     }
@@ -1587,13 +1004,13 @@ impl Plan {
         is_distinct: bool,
     ) -> Result<NodeId, SbroadError> {
         let output = self.nodes.add_row(columns.to_vec(), None);
-        let proj = Relational::Projection {
+        let proj = Projection {
             children: vec![child],
             output,
             is_distinct,
         };
 
-        let proj_id = self.add_relational(proj)?;
+        let proj_id = self.add_relational(proj.into())?;
         self.replace_parent_in_subtree(output, None, Some(proj_id))?;
         Ok(proj_id)
     }
@@ -1625,13 +1042,13 @@ impl Plan {
         }
 
         let output = self.add_row_for_output(first_child, &[], true)?;
-        let select = Relational::Selection {
+        let select = Selection {
             children: children.into(),
             filter,
             output,
         };
 
-        let select_id = self.add_relational(select)?;
+        let select_id = self.add_relational(select.into())?;
         self.replace_parent_in_subtree(filter, None, Some(select_id))?;
         self.replace_parent_in_subtree(output, None, Some(select_id))?;
         Ok(select_id)
@@ -1673,13 +1090,13 @@ impl Plan {
         }
 
         let output = self.add_row_for_output(first_child, &[], true)?;
-        let having = Relational::Having {
+        let having = Having {
             children: children.into(),
             filter,
             output,
         };
 
-        let having_id = self.add_relational(having)?;
+        let having_id = self.add_relational(having.into())?;
         self.replace_parent_in_subtree(filter, None, Some(having_id))?;
         self.replace_parent_in_subtree(output, None, Some(having_id))?;
         Ok(having_id)
@@ -1699,13 +1116,13 @@ impl Plan {
         order_by_elements: Vec<OrderByElement>,
     ) -> Result<NodeId, SbroadError> {
         let output = self.add_row_for_output(child, &[], true)?;
-        let order_by = Relational::OrderBy {
+        let order_by = OrderBy {
             child,
             output,
             order_by_elements: order_by_elements.clone(),
         };
 
-        let plan_order_by_id = self.add_relational(order_by)?;
+        let plan_order_by_id = self.add_relational(order_by.into())?;
         for order_by_element in order_by_elements {
             if let OrderByElement {
                 entity: OrderByEntity::Expression { expr_id },
@@ -1733,13 +1150,13 @@ impl Plan {
         let name: Option<SmolStr> = alias.map(SmolStr::from);
 
         let output = self.add_row_for_output(child, &[], true)?;
-        let sq = Relational::ScanSubQuery {
+        let sq = ScanSubQuery {
             alias: name,
             children: vec![child],
             output,
         };
 
-        let sq_id = self.add_relational(sq)?;
+        let sq_id = self.add_relational(sq.into())?;
         self.replace_parent_in_subtree(output, None, Some(sq_id))?;
         Ok(sq_id)
     }
@@ -1795,7 +1212,7 @@ impl Plan {
                 let col_alias = self
                     .get_mut_expression_node(col_id)
                     .expect("column expression");
-                if let Expression::Alias { name, .. } = col_alias {
+                if let MutExpression::Alias(Alias { name, .. }) = col_alias {
                     *name = col_name;
                 } else {
                     panic!("Expected a row of aliases in the output tuple");
@@ -1806,12 +1223,12 @@ impl Plan {
         let output = self
             .add_row_for_output(child_id, &[], true)
             .expect("output row for CTE");
-        let cte = Relational::ScanCte {
+        let cte = ScanCte {
             alias,
             child: child_id,
             output,
         };
-        let cte_id = self.add_relational(cte)?;
+        let cte_id = self.add_relational(cte.into())?;
         Ok(cte_id)
     }
 
@@ -1844,18 +1261,20 @@ impl Plan {
         }
 
         let output = self.add_row_for_union_except(left, right)?;
-        let union_all = if remove_duplicates {
-            Relational::Union {
+        let union_all: SizeNode = if remove_duplicates {
+            Union {
                 left,
                 right,
                 output,
             }
+            .into()
         } else {
-            Relational::UnionAll {
+            UnionAll {
                 left,
                 right,
                 output,
             }
+            .into()
         };
 
         let union_id = self.add_relational(union_all)?;
@@ -1869,13 +1288,13 @@ impl Plan {
     /// - Row node is not of a row type
     pub fn add_limit(&mut self, select: NodeId, limit: u64) -> Result<NodeId, SbroadError> {
         let output = self.add_row_for_output(select, &[], true)?;
-        let limit = Relational::Limit {
+        let limit = Limit {
             output,
             limit,
             child: select,
         };
 
-        let limit_id = self.add_relational(limit)?;
+        let limit_id = self.add_relational(limit.into())?;
         self.replace_parent_in_subtree(output, None, Some(limit_id))?;
         Ok(limit_id)
     }
@@ -1902,12 +1321,12 @@ impl Plan {
         }
         let output = self.nodes.add_row(aliases, None);
 
-        let values_row = Relational::ValuesRow {
+        let values_row = ValuesRow {
             output,
             data: row_id,
             children: vec![],
         };
-        let values_row_id = self.add_relational(values_row)?;
+        let values_row_id = self.add_relational(values_row.into())?;
         self.replace_parent_in_subtree(row_id, None, Some(values_row_id))?;
         Ok(values_row_id)
     }
@@ -1933,7 +1352,8 @@ impl Plan {
             ));
         };
         let value_row_last = self.get_relation_node(last_id)?;
-        let last_output_id = if let Relational::ValuesRow { output, .. } = value_row_last {
+        let last_output_id = if let Relational::ValuesRow(ValuesRow { output, .. }) = value_row_last
+        {
             *output
         } else {
             return Err(SbroadError::UnexpectedNumberOfValues(
@@ -1941,11 +1361,11 @@ impl Plan {
             ));
         };
         let last_output = self.get_expression_node(last_output_id)?;
-        let names = if let Expression::Row { list, .. } = last_output {
+        let names = if let Expression::Row(Row { list, .. }) = last_output {
             let mut aliases: Vec<SmolStr> = Vec::with_capacity(list.len());
             for alias_id in list {
                 let alias = self.get_expression_node(*alias_id)?;
-                if let Expression::Alias { name, .. } = alias {
+                if let Expression::Alias(Alias { name, .. }) = alias {
                     aliases.push(name.clone());
                 } else {
                     return Err(SbroadError::Invalid(
@@ -1983,11 +1403,11 @@ impl Plan {
         }
         let output = self.nodes.add_row(aliases, None);
 
-        let values = Relational::Values {
+        let values = Values {
             output,
             children: value_rows,
         };
-        let values_id = self.add_relational(values)?;
+        let values_id = self.add_relational(values.into())?;
         self.replace_parent_in_subtree(output, None, Some(values_id))?;
         Ok(values_id)
     }
@@ -2012,7 +1432,7 @@ impl Plan {
     /// - any node in the output tuple is not `Expression::Alias`
     pub fn get_relational_aliases(&self, rel_id: NodeId) -> Result<Vec<SmolStr>, SbroadError> {
         let output = self.get_relational_output(rel_id)?;
-        if let Expression::Row { list, .. } = self.get_expression_node(output)? {
+        if let Expression::Row(Row { list, .. }) = self.get_expression_node(output)? {
             return list
                 .iter()
                 .map(|alias_id| {
@@ -2035,8 +1455,8 @@ impl Plan {
     /// # Errors
     /// - node is not relational
     pub fn get_relational_children(&self, rel_id: NodeId) -> Result<Children<'_>, SbroadError> {
-        if let Node::Relational(rel) = self.get_node(rel_id)? {
-            Ok(rel.children())
+        if let Node::Relational(_) = self.get_node(rel_id)? {
+            Ok(self.children(rel_id))
         } else {
             Err(SbroadError::Invalid(
                 Entity::Node,
@@ -2067,7 +1487,7 @@ impl Plan {
         }
         Err(SbroadError::NotFound(
             Entity::Relational,
-            format_smolstr!("with id ({rel_id:?})"),
+            format_smolstr!("with id ({rel_id})"),
         ))
     }
 
@@ -2086,7 +1506,7 @@ impl Plan {
                 return Err(SbroadError::Invalid(
                     Entity::Node,
                     Some(format_smolstr!(
-                        "expected Join, Having or Selection on id ({node_id:?})"
+                        "expected Join, Having or Selection on id ({node_id})"
                     )),
                 ))
             }
@@ -2095,29 +1515,96 @@ impl Plan {
     }
 
     /// Finds the parent of the given relational node.
-    ///
     /// # Panics
     /// # Errors
     /// - node is not relational
     /// - Plan has no top
     pub fn find_parent_rel(&self, target_id: NodeId) -> Result<Option<NodeId>, SbroadError> {
-        for (id, node) in self.nodes.iter().enumerate() {
-            if !matches!(node, Node::Relational(_)) {
+        for (id, _) in self.nodes.arena32.iter().enumerate() {
+            let parent_id = NodeId {
+                offset: u32::try_from(id).unwrap(),
+                arena_type: ArenaType::Arena32,
+            };
+
+            if !matches!(self.get_node(parent_id)?, Node::Relational(_)) {
                 continue;
             }
 
-            let rel_id = NodeId {
-                offset: u32::try_from(id).unwrap(),
-                arena_type: ArenaType::Default,
-            };
-
-            // It will work with one arena but fails with many. Needs to be refactored.
-            for child_id in self.nodes.rel_iter(rel_id) {
+            for child_id in self.nodes.rel_iter(parent_id) {
                 if child_id == target_id {
-                    return Ok(Some(rel_id));
+                    return Ok(Some(parent_id));
                 }
             }
         }
+
+        for (id, _) in self.nodes.arena64.iter().enumerate() {
+            let parent_id = NodeId {
+                offset: u32::try_from(id).unwrap(),
+                arena_type: ArenaType::Arena64,
+            };
+
+            if !matches!(self.get_node(parent_id)?, Node::Relational(_)) {
+                continue;
+            }
+
+            for child_id in self.nodes.rel_iter(parent_id) {
+                if child_id == target_id {
+                    return Ok(Some(parent_id));
+                }
+            }
+        }
+
+        for (id, _) in self.nodes.arena96.iter().enumerate() {
+            let parent_id = NodeId {
+                offset: u32::try_from(id).unwrap(),
+                arena_type: ArenaType::Arena96,
+            };
+
+            if !matches!(self.get_node(parent_id)?, Node::Relational(_)) {
+                continue;
+            }
+
+            for child_id in self.nodes.rel_iter(parent_id) {
+                if child_id == target_id {
+                    return Ok(Some(parent_id));
+                }
+            }
+        }
+
+        for (id, _) in self.nodes.arena136.iter().enumerate() {
+            let parent_id = NodeId {
+                offset: u32::try_from(id).unwrap(),
+                arena_type: ArenaType::Arena136,
+            };
+
+            if !matches!(self.get_node(parent_id)?, Node::Relational(_)) {
+                continue;
+            }
+
+            for child_id in self.nodes.rel_iter(parent_id) {
+                if child_id == target_id {
+                    return Ok(Some(parent_id));
+                }
+            }
+        }
+
+        for (id, _) in self.nodes.arena224.iter().enumerate() {
+            let parent_id = NodeId {
+                offset: u32::try_from(id).unwrap(),
+                arena_type: ArenaType::Arena224,
+            };
+
+            if !matches!(self.get_node(parent_id)?, Node::Relational(_)) {
+                continue;
+            }
+
+            for child_id in self.nodes.rel_iter(parent_id) {
+                if child_id == target_id {
+                    return Ok(Some(parent_id));
+                }
+            }
+        }
+
         Ok(None)
     }
 
@@ -2132,7 +1619,7 @@ impl Plan {
         old_child_id: NodeId,
         new_child_id: NodeId,
     ) -> Result<(), SbroadError> {
-        let node = self.get_mut_relation_node(parent_id)?;
+        let mut node = self.get_mut_relation_node(parent_id)?;
         let children = node.mut_children();
         for child_id in children {
             if *child_id == old_child_id {
@@ -2187,11 +1674,86 @@ impl Plan {
         rel_id: NodeId,
         children: Vec<NodeId>,
     ) -> Result<(), SbroadError> {
-        if let Some(Node::Relational(ref mut rel)) = self.nodes.get_mut(rel_id) {
+        if let MutNode::Relational(ref mut rel) = self.get_mut_node(rel_id)? {
             rel.set_children(children);
             return Ok(());
         }
         Err(SbroadError::Invalid(Entity::Relational, None))
+    }
+
+    /// Get relational Scan name that given `output_alias_position` (`Expression::Alias`)
+    /// references to.
+    ///
+    /// # Errors
+    /// - plan tree is invalid (failed to retrieve child nodes)
+    pub fn scan_name(
+        &self,
+        id: NodeId,
+        output_alias_position: usize,
+    ) -> Result<Option<&str>, SbroadError> {
+        let node = self.get_relation_node(id)?;
+        match node {
+            Relational::Insert(Insert { relation, .. })
+            | Relational::Delete(Delete { relation, .. }) => Ok(Some(relation.as_str())),
+            Relational::ScanRelation(ScanRelation {
+                alias, relation, ..
+            }) => Ok(alias.as_deref().or(Some(relation.as_str()))),
+            Relational::Projection { .. }
+            | Relational::GroupBy { .. }
+            | Relational::OrderBy { .. }
+            | Relational::Intersect { .. }
+            | Relational::Having { .. }
+            | Relational::Selection { .. }
+            | Relational::Update { .. }
+            | Relational::Join { .. } => {
+                let output_row = self.get_expression_node(node.output())?;
+                let list = output_row.get_row_list()?;
+                let col_id = *list.get(output_alias_position).ok_or_else(|| {
+                    SbroadError::NotFound(
+                        Entity::Column,
+                        format_smolstr!(
+                            "at position {output_alias_position} of Row, {self:?}, {output_row:?}"
+                        ),
+                    )
+                })?;
+                let col_node = self.get_expression_node(col_id)?;
+                if let Expression::Alias(Alias { child, .. }) = col_node {
+                    let child_node = self.get_expression_node(*child)?;
+                    if let Expression::Reference(Reference { position: pos, .. }) = child_node {
+                        let rel_id = *self.get_relational_from_reference_node(*child)?;
+                        let rel_node = self.get_relation_node(rel_id)?;
+                        if rel_node == node {
+                            return Err(SbroadError::DuplicatedValue(format_smolstr!(
+                                "Reference to the same node {rel_node:?} at position {output_alias_position}"
+                            )));
+                        }
+                        return self.scan_name(rel_id, *pos);
+                    }
+                } else {
+                    return Err(SbroadError::Invalid(
+                        Entity::Expression,
+                        Some("expected an alias in the output row".into()),
+                    ));
+                }
+                Ok(None)
+            }
+            Relational::ScanCte(ScanCte { alias, .. }) => Ok(Some(alias)),
+            Relational::ScanSubQuery(ScanSubQuery { alias, .. })
+            | Relational::Motion(Motion { alias, .. }) => {
+                if let Some(name) = alias.as_ref() {
+                    if !name.is_empty() {
+                        return Ok(alias.as_deref());
+                    }
+                }
+                Ok(None)
+            }
+            Relational::Except { .. }
+            | Relational::Union { .. }
+            | Relational::UnionAll { .. }
+            | Relational::Values { .. }
+            | Relational::Limit { .. }
+            | Relational::ValuesRow { .. } => Ok(None),
+        }
     }
 
     /// Checks if the node is an additional child of some relational node.
@@ -2203,16 +1765,15 @@ impl Plan {
     /// - Failed to get plan top
     /// - Node returned by the relational iterator is not relational (bug)
     pub fn is_additional_child(&self, node_id: NodeId) -> Result<bool, SbroadError> {
-        for node in &self.nodes {
+        for node in &self.nodes.arena64 {
             match node {
-                Node::Relational(
-                    Relational::Selection { children, .. } | Relational::Having { children, .. },
-                ) => {
+                Node64::Selection(Selection { children, .. })
+                | Node64::Having(Having { children, .. }) => {
                     if children.iter().skip(1).any(|&c| c == node_id) {
                         return Ok(true);
                     }
                 }
-                Node::Relational(Relational::Join { children, .. }) => {
+                Node64::Join(Join { children, .. }) => {
                     if children.iter().skip(2).any(|&c| c == node_id) {
                         return Ok(true);
                     }
@@ -2250,13 +1811,42 @@ impl Plan {
     /// - node is not motion
     pub fn get_motion_policy(&self, motion_id: NodeId) -> Result<&MotionPolicy, SbroadError> {
         let node = self.get_relation_node(motion_id)?;
-        if let Relational::Motion { policy, .. } = node {
+        if let Relational::Motion(Motion { policy, .. }) = node {
             return Ok(policy);
         }
         Err(SbroadError::Invalid(
             Entity::Node,
             Some(format_smolstr!("expected Motion, got: {node:?}")),
         ))
+    }
+
+    // Gets an immutable reference to the children nodes.
+    /// # Panics
+    #[must_use]
+    pub fn children(&self, rel_id: NodeId) -> Children<'_> {
+        let node = self.get_relation_node(rel_id).unwrap();
+        match node {
+            Relational::Limit(Limit { child, .. })
+            | Relational::OrderBy(OrderBy { child, .. })
+            | Relational::ScanCte(ScanCte { child, .. }) => Children::Single(child),
+            Relational::Except(Except { left, right, .. })
+            | Relational::Intersect(Intersect { left, right, .. })
+            | Relational::UnionAll(UnionAll { left, right, .. })
+            | Relational::Union(Union { left, right, .. }) => Children::Couple(left, right),
+            Relational::GroupBy(GroupBy { children, .. })
+            | Relational::Update(Update { children, .. })
+            | Relational::Join(Join { children, .. })
+            | Relational::Having(Having { children, .. })
+            | Relational::Delete(Delete { children, .. })
+            | Relational::Insert(Insert { children, .. })
+            | Relational::Motion(Motion { children, .. })
+            | Relational::Projection(Projection { children, .. })
+            | Relational::ScanSubQuery(ScanSubQuery { children, .. })
+            | Relational::Selection(Selection { children, .. })
+            | Relational::ValuesRow(ValuesRow { children, .. })
+            | Relational::Values(Values { children, .. }) => Children::Many(children),
+            Relational::ScanRelation(_) => Children::None,
+        }
     }
 }
 

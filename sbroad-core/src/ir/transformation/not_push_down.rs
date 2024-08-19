@@ -5,7 +5,8 @@
 //! * To:   `select * from "t" where "a" = 1 and "b" = 2`
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::{Expression, NodeId};
+use crate::ir::node::expression::{Expression, MutExpression};
+use crate::ir::node::{BoolExpr, Constant, ExprInParentheses, NodeId, Row, UnaryExpr};
 use crate::ir::operator::{Bool, Unary};
 use crate::ir::transformation::{OldNewExpressionMap, OldNewTopIdPair};
 use crate::ir::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
@@ -55,7 +56,6 @@ fn call_expr_tree_not_push_down(
     let mut old_new_expression_map = OldNewExpressionMap::new();
     let new_top_id =
         plan.push_down_not_for_expression(top_id, NotState::Off, &mut old_new_expression_map)?;
-
     let (old_top_id, new_top_id) = if new_top_id == top_id && old_new_expression_map.is_empty() {
         (top_id, top_id)
     } else {
@@ -64,9 +64,7 @@ fn call_expr_tree_not_push_down(
             matches!(
                 plan.get_node(node_id),
                 Ok(Node::Expression(
-                    Expression::ExprInParentheses { .. }
-                        | Expression::Bool { .. }
-                        | Expression::Row { .. }
+                    Expression::ExprInParentheses(_) | Expression::Bool(_) | Expression::Row(_)
                 ))
             )
         };
@@ -82,14 +80,14 @@ fn call_expr_tree_not_push_down(
             let id = level_node.1;
             let expr = plan.get_mut_expression_node(id)?;
             match expr {
-                Expression::ExprInParentheses { child } => {
+                MutExpression::ExprInParentheses(ExprInParentheses { child }) => {
                     old_new_expression_map.replace(child);
                 }
-                Expression::Bool { left, right, .. } => {
+                MutExpression::Bool(BoolExpr { left, right, .. }) => {
                     old_new_expression_map.replace(left);
                     old_new_expression_map.replace(right);
                 }
-                Expression::Row { list, .. } => {
+                MutExpression::Row(Row { list, .. }) => {
                     for id in list {
                         old_new_expression_map.replace(id);
                     }
@@ -138,10 +136,10 @@ impl Plan {
         if let NotState::On { parent_not_op } = not_state {
             if let Some(parent_not_op) = parent_not_op {
                 let parent_not_expr = self.get_mut_expression_node(*parent_not_op)?;
-                if let Expression::Unary {
+                if let MutExpression::Unary(UnaryExpr {
                     op: Unary::Not,
                     child,
-                } = parent_not_expr
+                }) = parent_not_expr
                 {
                     *child = expr_id;
                     Ok(*parent_not_op)
@@ -173,7 +171,7 @@ impl Plan {
     ) -> Result<NodeId, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         let new_expr_id = match expr {
-            Expression::ExprInParentheses { child } => {
+            Expression::ExprInParentheses(ExprInParentheses { child }) => {
                 // In case we have expression `true and not (true and false)` we would like to
                 // save parentheses over not child:
                 // `true and false or true` != `true and (false or true)`.
@@ -184,7 +182,7 @@ impl Plan {
                 }
                 expr_id
             }
-            Expression::Constant { value } => {
+            Expression::Constant(Constant { value }) => {
                 if let NotState::Off = not_state {
                     expr_id
                 } else {
@@ -205,7 +203,7 @@ impl Plan {
                     }
                 }
             }
-            Expression::Bool { op, left, right } => {
+            Expression::Bool(BoolExpr { op, left, right }) => {
                 let (remember_left, remember_right) = (*left, *right);
 
                 if let NotState::On { .. } = not_state {
@@ -235,10 +233,10 @@ impl Plan {
                     expr_id
                 }
             }
-            Expression::StableFunction { .. }
-            | Expression::Cast { .. }
-            | Expression::Reference { .. } => self.cover_with_not(expr_id, &not_state)?,
-            Expression::Row { list, .. } => {
+            Expression::StableFunction(_) | Expression::Cast(_) | Expression::Reference(_) => {
+                self.cover_with_not(expr_id, &not_state)?
+            }
+            Expression::Row(Row { list, .. }) => {
                 let list_len = list.len();
                 if list_len == 1 {
                     let child_id = *list.first().ok_or_else(|| {
@@ -256,7 +254,7 @@ impl Plan {
                     self.cover_with_not(expr_id, &not_state)?
                 }
             }
-            Expression::Unary { op, child } => match op {
+            Expression::Unary(UnaryExpr { op, child }) => match op {
                 Unary::Not => {
                     if let NotState::On { .. } = not_state {
                         self.push_down_not_for_expression(*child, NotState::Off, map)?

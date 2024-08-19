@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 
 use super::TreeIterator;
-use crate::ir::expression::{Expression, NodeId};
+use crate::ir::node::expression::Expression;
+use crate::ir::node::{NodeId, Row, StableFunction};
 use crate::ir::{Node, Nodes};
 
 trait ExpressionTreeIterator<'nodes>: TreeIterator<'nodes> {
@@ -39,13 +40,15 @@ impl<'n> Nodes {
 
     #[must_use]
     pub fn aggregate_iter(&'n self, current: NodeId, make_row_leaf: bool) -> AggregateIterator<'n> {
-        let must_stop = if let Some(Node::Expression(Expression::StableFunction { name, .. })) =
-            self.get(current)
-        {
-            Expression::is_aggregate_name(name)
-        } else {
-            false
-        };
+        let must_stop =
+            if let Some(Node::Expression(Expression::StableFunction(StableFunction {
+                name, ..
+            }))) = self.get(current)
+            {
+                Expression::is_aggregate_name(name)
+            } else {
+                false
+            };
         AggregateIterator {
             inner: ExpressionIterator {
                 current,
@@ -82,7 +85,7 @@ impl<'n> Iterator for ExpressionIterator<'n> {
     type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
-        expression_next(self).copied()
+        expression_next(self)
     }
 }
 
@@ -93,14 +96,12 @@ impl<'n> Iterator for AggregateIterator<'n> {
         if self.must_stop {
             return None;
         }
-        expression_next(&mut self.inner).copied()
+        expression_next(&mut self.inner)
     }
 }
 
 #[allow(clippy::too_many_lines)]
-fn expression_next<'nodes>(
-    iter: &mut impl ExpressionTreeIterator<'nodes>,
-) -> Option<&'nodes NodeId> {
+fn expression_next<'nodes>(iter: &mut impl ExpressionTreeIterator<'nodes>) -> Option<NodeId> {
     let node = iter.get_nodes().get(iter.get_current());
     match node {
         Some(node) => {
@@ -114,7 +115,7 @@ fn expression_next<'nodes>(
                         Expression::Bool { .. }
                         | Expression::Arithmetic { .. }
                         | Expression::Concat { .. } => iter.handle_left_right_children(expr),
-                        Expression::Row { list, .. } => {
+                        Expression::Row(Row { list, .. }) => {
                             let child_step = *iter.get_child().borrow();
                             let mut is_leaf = false;
 
@@ -142,20 +143,20 @@ fn expression_next<'nodes>(
                                     None => return None,
                                     Some(child) => {
                                         *iter.get_child().borrow_mut() += 1;
-                                        return Some(child);
+                                        return Some(*child);
                                     }
                                 }
                             }
 
                             None
                         }
-                        Expression::StableFunction { children, .. } => {
+                        Expression::StableFunction(StableFunction { children, .. }) => {
                             let child_step = *iter.get_child().borrow();
                             match children.get(child_step) {
                                 None => None,
                                 Some(child) => {
                                     *iter.get_child().borrow_mut() += 1;
-                                    Some(child)
+                                    Some(*child)
                                 }
                             }
                         }
@@ -163,14 +164,15 @@ fn expression_next<'nodes>(
                         Expression::Case { .. } => iter.handle_case_iter(expr),
                         Expression::Constant { .. }
                         | Expression::Reference { .. }
-                        | Expression::CountAsterisk => None,
+                        | Expression::CountAsterisk { .. } => None,
                     }
                 }
                 Node::Acl(_)
                 | Node::Block(_)
                 | Node::Ddl(_)
                 | Node::Relational(_)
-                | Node::Parameter(..) => None,
+                | Node::Invalid(_)
+                | Node::Parameter(_) => None,
             }
         }
         None => None,

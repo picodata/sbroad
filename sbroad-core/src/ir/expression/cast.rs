@@ -2,13 +2,13 @@ use std::fmt::{Display, Formatter};
 
 use crate::errors::{Entity, SbroadError};
 use crate::frontend::sql::ast::Rule;
-use crate::ir::expression::Expression;
+use crate::ir::node::Cast;
 use crate::ir::relation::Type as RelationType;
-use crate::ir::{Node, Plan};
+use crate::ir::Plan;
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
-use super::NodeId;
+use super::{MutNode, NodeId};
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -133,15 +133,15 @@ impl Plan {
     /// # Errors
     /// - Child node is not of the expression type.
     pub fn add_cast(&mut self, expr_id: NodeId, to_type: Type) -> Result<NodeId, SbroadError> {
-        let cast_expr = Expression::Cast {
+        let cast_expr = Cast {
             child: expr_id,
             to: to_type,
         };
-        let cast_id = self.nodes.push(Node::Expression(cast_expr));
+        let cast_id = self.nodes.push(cast_expr.into());
 
         let child_plan_node = self.get_mut_node(expr_id)?;
-        if let Node::Parameter(ref mut ty) = child_plan_node {
-            *ty = Some(to_type.as_relation_type());
+        if let MutNode::Parameter(ty) = child_plan_node {
+            ty.param_type = Some(to_type.as_relation_type());
         }
 
         Ok(cast_id)

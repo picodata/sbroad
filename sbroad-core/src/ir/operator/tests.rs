@@ -7,7 +7,7 @@ use crate::ir::expression::ColumnWithScan;
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tests::{column_user_non_null, sharding_column};
 use crate::ir::value::Value;
-use crate::ir::{Node, Plan};
+use crate::ir::Plan;
 
 use super::*;
 
@@ -31,12 +31,12 @@ fn scan_rel() {
     plan.add_rel(t);
 
     let scan_output = NodeId {
-        offset: 8,
-        arena_type: ArenaType::Default,
+        offset: 4,
+        arena_type: ArenaType::Arena64,
     };
     let scan_node = NodeId {
-        offset: 9,
-        arena_type: ArenaType::Default,
+        offset: 5,
+        arena_type: ArenaType::Arena64,
     };
 
     let scan_id = plan.add_scan("t", None).unwrap();
@@ -44,10 +44,11 @@ fn scan_rel() {
     plan.top = Some(scan_node);
 
     plan.set_distribution(scan_output).unwrap();
-    if let Node::Expression(row) = plan.get_node(scan_output).unwrap() {
+    let row = plan.get_node(scan_output).unwrap();
+    if let Node::Expression(expr) = row {
         let keys: HashSet<_, RepeatableState> = collection! { Key::new(vec![1, 0]) };
         assert_eq!(
-            row.distribution().unwrap(),
+            expr.distribution().unwrap(),
             &Distribution::Segment { keys: keys.into() }
         );
     } else {
@@ -84,15 +85,17 @@ fn projection() {
     );
 
     let mut test_node = NodeId {
-        offset: 1,
-        arena_type: ArenaType::Default,
+        offset: 0,
+        arena_type: ArenaType::Arena32,
     };
 
     // Expression node instead of relational one
     assert_eq!(
         SbroadError::Invalid(
             Entity::Node,
-            Some("node is not Relational type: Expression(Alias { name: \"a\", child: NodeId { offset: 0, arena_type: Default } })".into())
+            Some(
+                "node is not Relational type: Expression(Alias(Alias { name: \"a\", child: NodeId { offset: 0, arena_type: Arena64 } }))".into()
+            )
         ),
         plan.add_proj(test_node, &["a"], false, false).unwrap_err()
     );
@@ -101,10 +104,7 @@ fn projection() {
 
     // Try to build projection from the non-existing node
     assert_eq!(
-        SbroadError::NotFound(
-            Entity::Node,
-            "from Default arena with index 42".to_smolstr()
-        ),
+        SbroadError::NotFound(Entity::Node, "from Arena32 with index 42".to_smolstr()),
         plan.add_proj(test_node, &["a"], false, false).unwrap_err()
     );
 }
@@ -368,13 +368,13 @@ fn sub_query() {
 
     // Non-relational child node
     let a = NodeId {
-        offset: 1,
-        arena_type: ArenaType::Default,
+        offset: 0,
+        arena_type: ArenaType::Arena32,
     };
     assert_eq!(
         SbroadError::Invalid(
             Entity::Node,
-            Some("node is not Relational type: Expression(Alias { name: \"a\", child: NodeId { offset: 0, arena_type: Default } })".into())
+            Some("node is not Relational type: Expression(Alias(Alias { name: \"a\", child: NodeId { offset: 0, arena_type: Arena64 } }))".into())
         ),
         plan.add_sub_query(a, Some("sq")).unwrap_err()
     );

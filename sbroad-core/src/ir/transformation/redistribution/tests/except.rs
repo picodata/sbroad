@@ -1,9 +1,10 @@
-use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::{Key, MotionPolicy};
 use crate::ir::Slices;
 use pretty_assertions::assert_eq;
+
+use super::{Motion, Relational};
 
 #[test]
 fn except1() {
@@ -15,7 +16,7 @@ fn except1() {
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
@@ -43,7 +44,7 @@ fn except3() {
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(
@@ -72,7 +73,7 @@ fn except4() {
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(
@@ -101,7 +102,7 @@ fn except5() {
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(

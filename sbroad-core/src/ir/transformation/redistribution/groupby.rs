@@ -4,18 +4,21 @@ use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::to_user;
 use crate::ir::aggregates::{generate_local_alias_for_aggr, AggregateKind, SimpleAggregate};
 use crate::ir::distribution::Distribution;
-use crate::ir::expression::Expression::StableFunction;
 use crate::ir::expression::{
-    ColumnPositionMap, Comparator, Expression, FunctionFeature, NodeId, ReferencePolicy,
-    EXPR_HASH_DEPTH,
+    ColumnPositionMap, Comparator, FunctionFeature, ReferencePolicy, EXPR_HASH_DEPTH,
 };
-use crate::ir::operator::Relational;
+use crate::ir::node::expression::Expression;
+use crate::ir::node::relational::{MutRelational, Relational};
+use crate::ir::node::{
+    Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, ExprInParentheses,
+    GroupBy, Having, NodeId, Projection, Reference, Row, StableFunction, Trim, UnaryExpr,
+};
 use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
     MotionKey, MotionPolicy, Program, Strategy, Target,
 };
 use crate::ir::tree::traversal::{BreadthFirst, PostOrderWithFilter, EXPR_CAPACITY};
-use crate::ir::{ArenaType, Node, Plan};
+use crate::ir::{Node, Plan};
 use std::collections::{HashMap, HashSet};
 
 use crate::ir::function::{Behavior, Function};
@@ -131,6 +134,7 @@ impl<'plan, 'args> PartialEq<Self> for AggregateSignature<'plan, 'args> {
 
 impl<'plan, 'args> Eq for AggregateSignature<'plan, 'args> {}
 
+#[derive(Debug)]
 struct GroupingExpression<'plan> {
     pub id: NodeId,
     pub plan: &'plan Plan,
@@ -194,7 +198,7 @@ impl<'plan> AggrCollector<'plan> {
 
     fn find(&mut self, current: NodeId, parent: Option<NodeId>) -> Result<(), SbroadError> {
         let expr = self.plan.get_expression_node(current)?;
-        if let StableFunction { name, feature, .. } = expr {
+        if let Expression::StableFunction(StableFunction { name, feature, .. }) = expr {
             let is_distinct = matches!(feature, Some(FunctionFeature::Distinct));
             if let Some(aggr) = SimpleAggregate::new(name, current) {
                 let Some(parent_rel) = self.parent_rel else {
@@ -290,7 +294,7 @@ impl<'plan> ExpressionMapper<'plan> {
         };
         let is_ref = matches!(
             self.plan.get_expression_node(current),
-            Ok(Expression::Reference { .. })
+            Ok(Expression::Reference(_))
         );
         let is_sq_ref = is_ref
             && self.plan.is_additional_child_of_rel(
@@ -327,7 +331,7 @@ impl<'plan> ExpressionMapper<'plan> {
             let column_name = {
                 let node = self.plan.get_expression_node(current)?;
                 self.plan
-                    .get_alias_from_reference_node(node)
+                    .get_alias_from_reference_node(&node)
                     .unwrap_or("'failed to get column name'")
             };
             return Err(SbroadError::Invalid(
@@ -393,25 +397,27 @@ impl Plan {
             if let Node::Expression(right) = r {
                 match left {
                     Expression::Alias { .. } => {}
-                    Expression::ExprInParentheses { child: l_child } => {
+                    Expression::ExprInParentheses(ExprInParentheses { child: l_child }) => {
                         // TODO: Should we compare expressions ignoring parentheses?
-                        if let Expression::ExprInParentheses { child: r_child } = right {
+                        if let Expression::ExprInParentheses(ExprInParentheses { child: r_child }) =
+                            right
+                        {
                             return self.are_aggregate_subtrees_equal(*l_child, *r_child);
                         }
                     }
-                    Expression::CountAsterisk => {
-                        return Ok(matches!(right, Expression::CountAsterisk))
+                    Expression::CountAsterisk(_) => {
+                        return Ok(matches!(right, Expression::CountAsterisk(_)))
                     }
-                    Expression::Bool {
+                    Expression::Bool(BoolExpr {
                         left: left_left,
                         op: op_left,
                         right: right_left,
-                    } => {
-                        if let Expression::Bool {
+                    }) => {
+                        if let Expression::Bool(BoolExpr {
                             left: left_right,
                             op: op_right,
                             right: right_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(*op_left == *op_right
                                 && self.are_aggregate_subtrees_equal(*left_left, *left_right)?
@@ -419,16 +425,16 @@ impl Plan {
                                     .are_aggregate_subtrees_equal(*right_left, *right_right)?);
                         }
                     }
-                    Expression::Case {
+                    Expression::Case(Case {
                         search_expr: search_expr_left,
                         when_blocks: when_blocks_left,
                         else_expr: else_expr_left,
-                    } => {
-                        if let Expression::Case {
+                    }) => {
+                        if let Expression::Case(Case {
                             search_expr: search_expr_right,
                             when_blocks: when_blocks_right,
                             else_expr: else_expr_right,
-                        } = right
+                        }) = right
                         {
                             let mut search_expr_equal = false;
                             if let (Some(search_expr_left), Some(search_expr_right)) =
@@ -463,46 +469,46 @@ impl Plan {
                             return Ok(search_expr_equal && when_blocks_equal && else_expr_equal);
                         }
                     }
-                    Expression::Arithmetic {
+                    Expression::Arithmetic(ArithmeticExpr {
                         op: op_left,
                         left: l_left,
                         right: r_left,
-                    } => {
-                        if let Expression::Arithmetic {
+                    }) => {
+                        if let Expression::Arithmetic(ArithmeticExpr {
                             op: op_right,
                             left: l_right,
                             right: r_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(*op_left == *op_right
                                 && self.are_aggregate_subtrees_equal(*l_left, *l_right)?
                                 && self.are_aggregate_subtrees_equal(*r_left, *r_right)?);
                         }
                     }
-                    Expression::Cast {
+                    Expression::Cast(Cast {
                         child: child_left,
                         to: to_left,
-                    } => {
-                        if let Expression::Cast {
+                    }) => {
+                        if let Expression::Cast(Cast {
                             child: child_right,
                             to: to_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(*to_left == *to_right
                                 && self
                                     .are_aggregate_subtrees_equal(*child_left, *child_right)?);
                         }
                     }
-                    Expression::Trim {
+                    Expression::Trim(Trim {
                         kind: kind_left,
                         pattern: pattern_left,
                         target: target_left,
-                    } => {
-                        if let Expression::Trim {
+                    }) => {
+                        if let Expression::Trim(Trim {
                             kind: kind_right,
                             pattern: pattern_right,
                             target: target_right,
-                        } = right
+                        }) = right
                         {
                             match (pattern_left, pattern_right) {
                                 (Some(p_left), Some(p_right)) => {
@@ -525,14 +531,14 @@ impl Plan {
                             }
                         }
                     }
-                    Expression::Concat {
+                    Expression::Concat(Concat {
                         left: left_left,
                         right: right_left,
-                    } => {
-                        if let Expression::Concat {
+                    }) => {
+                        if let Expression::Concat(Concat {
                             left: left_right,
                             right: right_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(self
                                 .are_aggregate_subtrees_equal(*left_left, *left_right)?
@@ -540,44 +546,44 @@ impl Plan {
                                     .are_aggregate_subtrees_equal(*right_left, *right_right)?);
                         }
                     }
-                    Expression::Constant { value: value_left } => {
-                        if let Expression::Constant { value: value_right } = right {
+                    Expression::Constant(Constant { value: value_left }) => {
+                        if let Expression::Constant(Constant { value: value_right }) = right {
                             return Ok(*value_left == *value_right);
                         }
                     }
                     Expression::Reference { .. } => {
                         if let Expression::Reference { .. } = right {
-                            let alias_left = self.get_alias_from_reference_node(left)?;
-                            let alias_right = self.get_alias_from_reference_node(right)?;
+                            let alias_left = self.get_alias_from_reference_node(&left)?;
+                            let alias_right = self.get_alias_from_reference_node(&right)?;
                             return Ok(alias_left == alias_right);
                         }
                     }
-                    Expression::Row {
+                    Expression::Row(Row {
                         list: list_left, ..
-                    } => {
-                        if let Expression::Row {
+                    }) => {
+                        if let Expression::Row(Row {
                             list: list_right, ..
-                        } = right
+                        }) = right
                         {
                             return Ok(list_left.iter().zip(list_right.iter()).all(|(l, r)| {
                                 self.are_aggregate_subtrees_equal(*l, *r).unwrap_or(false)
                             }));
                         }
                     }
-                    Expression::StableFunction {
+                    Expression::StableFunction(StableFunction {
                         name: name_left,
                         children: children_left,
                         feature: feature_left,
                         func_type: func_type_left,
                         is_system: is_aggr_left,
-                    } => {
-                        if let Expression::StableFunction {
+                    }) => {
+                        if let Expression::StableFunction(StableFunction {
                             name: name_right,
                             children: children_right,
                             feature: feature_right,
                             func_type: func_type_right,
                             is_system: is_aggr_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(name_left == name_right
                                 && feature_left == feature_right
@@ -590,14 +596,14 @@ impl Plan {
                                 ));
                         }
                     }
-                    Expression::Unary {
+                    Expression::Unary(UnaryExpr {
                         op: op_left,
                         child: child_left,
-                    } => {
-                        if let Expression::Unary {
+                    }) => {
+                        if let Expression::Unary(UnaryExpr {
                             op: op_right,
                             child: child_right,
-                        } = right
+                        }) = right
                         {
                             return Ok(*op_left == *op_right
                                 && self
@@ -636,7 +642,7 @@ impl Plan {
                 matches!(
                     self.get_node(node_id),
                     Ok(Node::Expression(
-                        Expression::StableFunction { .. } | Expression::Reference { .. }
+                        Expression::StableFunction(_) | Expression::Reference(_)
                     ))
                 )
             };
@@ -650,10 +656,12 @@ impl Plan {
                 let node_id = level_node.1;
                 let node = self.get_node(node_id)?;
                 match node {
-                    Node::Expression(Expression::Reference { .. }) => {
+                    Node::Expression(Expression::Reference(_)) => {
                         contains_at_least_one_col = true;
                     }
-                    Node::Expression(Expression::StableFunction { name, .. }) => {
+                    Node::Expression(Expression::StableFunction(StableFunction {
+                        name, ..
+                    })) => {
                         if Expression::is_aggregate_name(name) {
                             return Err(SbroadError::Invalid(
                                 Entity::Query,
@@ -689,14 +697,14 @@ impl Plan {
         expr_parent: Option<NodeId>,
     ) -> Result<NodeId, SbroadError> {
         let final_output = self.add_row_for_output(child_id, &[], true)?;
-        let groupby = Relational::GroupBy {
+        let groupby = GroupBy {
             children: [child_id].to_vec(),
             gr_cols: grouping_exprs.to_vec(),
             output: final_output,
             is_final,
         };
 
-        let groupby_id = self.add_relational(groupby)?;
+        let groupby_id = self.add_relational(groupby.into())?;
 
         self.replace_parent_in_subtree(final_output, None, Some(groupby_id))?;
         for expr in grouping_exprs {
@@ -719,12 +727,12 @@ impl Plan {
         for node_id in finals {
             let node = self.get_relation_node(*node_id)?;
             match node {
-                Relational::Projection { output, .. } => {
+                Relational::Projection(Projection { output, .. }) => {
                     for col in self.get_row_list(*output)? {
                         collector.collect_aggregates(*col, *node_id)?;
                     }
                 }
-                Relational::Having { filter, .. } => {
+                Relational::Having(Having { filter, .. }) => {
                     collector.collect_aggregates(*filter, *node_id)?;
                 }
                 _ => {
@@ -795,7 +803,7 @@ impl Plan {
         let max_reduce_nodes = 2;
         for _ in 0..=max_reduce_nodes {
             match self.get_relation_node(next)? {
-                Relational::Projection { .. } | Relational::Having { .. } => {
+                Relational::Projection(_) | Relational::Having(_) => {
                     finals.push(next);
                     next = get_first_child(next)?;
                 }
@@ -849,22 +857,22 @@ impl Plan {
         let mut gr_expr_map: GroupbyExpressionsMap = HashMap::new();
         let mut upper = upper;
 
-        let mut has_groupby = matches!(self.get_relation_node(upper)?, Relational::GroupBy { .. });
+        let mut has_groupby = matches!(self.get_relation_node(upper)?, Relational::GroupBy(_));
 
         if !has_groupby && !has_aggregates {
             if let Some(proj_id) = finals.first() {
-                if let Relational::Projection {
+                if let Relational::Projection(Projection {
                     is_distinct,
                     output,
                     ..
-                } = self.get_relation_node(*proj_id)?
+                }) = self.get_relation_node(*proj_id)?
                 {
                     if *is_distinct {
                         let proj_cols_len = self.get_row_list(*output)?.len();
                         let mut grouping_exprs: Vec<NodeId> = Vec::with_capacity(proj_cols_len);
                         for i in 0..proj_cols_len {
                             let aliased_col = self.get_proj_col(*proj_id, i)?;
-                            let proj_col_id = if let Expression::Alias { child, .. } =
+                            let proj_col_id = if let Expression::Alias(Alias { child, .. }) =
                                 self.get_expression_node(aliased_col)?
                             {
                                 *child
@@ -901,12 +909,12 @@ impl Plan {
             let mut mapper = ExpressionMapper::new(&grouping_expr, self);
             for node_id in finals {
                 match self.get_relation_node(*node_id)? {
-                    Relational::Projection { output, .. } => {
+                    Relational::Projection(Projection { output, .. }) => {
                         for col in self.get_row_list(*output)? {
                             mapper.find_matches(*col, *node_id)?;
                         }
                     }
-                    Relational::Having { filter, .. } => {
+                    Relational::Having(Having { filter, .. }) => {
                         mapper.find_matches(*filter, *node_id)?;
                     }
                     _ => {}
@@ -920,12 +928,12 @@ impl Plan {
             for id in finals {
                 let node = self.get_relation_node(*id)?;
                 match node {
-                    Relational::Projection { output, .. } => {
+                    Relational::Projection(Projection { output, .. }) => {
                         for col in self.get_row_list(*output)? {
                             let filter = |node_id: NodeId| -> bool {
                                 matches!(
                                     self.get_node(node_id),
-                                    Ok(Node::Expression(Expression::Reference { .. }))
+                                    Ok(Node::Expression(Expression::Reference(_)))
                                 )
                             };
                             let mut dfs = PostOrderWithFilter::with_capacity(
@@ -938,8 +946,8 @@ impl Plan {
                             for level_node in nodes {
                                 let id = level_node.1;
                                 let n = self.get_expression_node(id)?;
-                                if let Expression::Reference { .. } = n {
-                                    let alias = match self.get_alias_from_reference_node(n) {
+                                if let Expression::Reference(_) = n {
+                                    let alias = match self.get_alias_from_reference_node(&n) {
                                         Ok(v) => v.to_smolstr(),
                                         Err(e) => e.to_smolstr(),
                                     };
@@ -949,7 +957,7 @@ impl Plan {
                             }
                         }
                     }
-                    Relational::Having { filter, .. } => {
+                    Relational::Having(Having { filter, .. }) => {
                         let mut bfs = BreadthFirst::with_capacity(
                             |x| self.nodes.aggregate_iter(x, false),
                             EXPR_CAPACITY,
@@ -959,7 +967,7 @@ impl Plan {
                         let nodes = bfs.take_nodes();
                         for level_node in nodes {
                             let id = level_node.1;
-                            if let Expression::Reference { .. } = self.get_expression_node(id)? {
+                            if let Expression::Reference(_) = self.get_expression_node(id)? {
                                 return Err(SbroadError::Invalid(
                                     Entity::Query,
                                     Some("HAVING argument must appear in the GROUP BY clause or be used in an aggregate function".into())
@@ -988,7 +996,7 @@ impl Plan {
     ) -> Result<NodeId, SbroadError> {
         let mut local_proj_child_id = upper;
         if !additional_grouping_exprs.is_empty() {
-            if let Relational::GroupBy { gr_cols, .. } =
+            if let MutRelational::GroupBy(GroupBy { gr_cols, .. }) =
                 self.get_mut_relation_node(local_proj_child_id)?
             {
                 gr_cols.extend(additional_grouping_exprs);
@@ -1068,12 +1076,13 @@ impl Plan {
         let (child_id, proj_output_cols, groupby_local_aliases, grouping_positions) =
             self.create_columns_for_local_proj(aggr_infos, child_id, grouping_exprs)?;
         let proj_output = self.nodes.add_row(proj_output_cols, None);
-        let proj = Relational::Projection {
+        let proj = Projection {
             output: proj_output,
             children: vec![child_id],
             is_distinct: false,
         };
-        let proj_id = self.add_relational(proj)?;
+        let proj_id = self.add_relational(proj.into())?;
+
         for info in aggr_infos {
             // We take expressions inside aggregate functions from Final projection,
             // so we need to update parent
@@ -1216,6 +1225,7 @@ impl Plan {
 
         let mut alias_to_pos: HashMap<Rc<String>, usize> = HashMap::new();
         // add grouping expressions to local projection
+
         for (pos, (gr_expr, local_alias)) in
             unique_grouping_exprs_for_local_stage.iter().enumerate()
         {
@@ -1282,7 +1292,7 @@ impl Plan {
                 continue;
             }
             let arguments = {
-                if let StableFunction { children, .. } =
+                if let Expression::StableFunction(StableFunction { children, .. }) =
                     self.get_expression_node(info.aggr.fun_id)?
                 {
                     children
@@ -1395,31 +1405,31 @@ impl Plan {
                     )),
                 ));
             }
-            let new_col = Expression::Reference {
+            let new_col = Reference {
                 position,
                 parent: None,
                 targets: Some(vec![0]),
                 col_type,
             };
-            nodes.push(Node::Expression(new_col));
+            nodes.push(new_col);
         }
         for node in nodes {
-            let new_col_id = self.nodes.push(node);
+            let new_col_id = self.nodes.push(node.into());
             gr_cols.push(new_col_id);
         }
         let output = self.add_row_for_output(child_id, &[], true)?;
-        let final_id = self.nodes.next_id(ArenaType::Default);
+        let final_id = self.nodes.next_id(ArenaType::Arena64);
         for col in &gr_cols {
             self.replace_parent_in_subtree(*col, None, Some(final_id))?;
         }
-        let final_groupby = Relational::GroupBy {
+        let final_groupby = GroupBy {
             gr_cols,
             children: vec![child_id],
             is_final: true,
             output,
         };
         self.replace_parent_in_subtree(output, None, Some(final_id))?;
-        self.add_relational(final_groupby)?;
+        self.add_relational(final_groupby.into())?;
 
         Ok(final_id)
     }
@@ -1488,21 +1498,21 @@ impl Plan {
                         )),
                     ));
                 };
-                let new_ref = Expression::Reference {
+                let new_ref = Reference {
                     parent: Some(rel_id),
                     targets: Some(vec![0]),
                     position,
                     col_type,
                 };
-                nodes.push((parent, expr_id, gr_expr_id, Node::Expression(new_ref)));
+                nodes.push((parent, expr_id, gr_expr_id, new_ref));
             }
             for (parent, expr_id, gr_expr_id, node) in nodes {
-                let ref_id = self.nodes.push(node);
+                let ref_id = self.nodes.push(node.into());
                 if let Some(parent_expr_id) = parent {
                     self.replace_expression(parent_expr_id, expr_id, ref_id)?;
                 } else {
                     match self.get_mut_relation_node(rel_id)? {
-                        Relational::Projection { .. } => {
+                        MutRelational::Projection(_) => {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
                                 Some(format_smolstr!(
@@ -1513,7 +1523,7 @@ impl Plan {
                                 )),
                             ))
                         }
-                        Relational::Having { filter, .. } => {
+                        MutRelational::Having(Having { filter, .. }) => {
                             *filter = ref_id;
                         }
                         _ => {
@@ -1575,8 +1585,8 @@ impl Plan {
                 // Projection node is the top node in finals: its aliases
                 // must not be changed (because those are user aliases), so
                 // nothing to do here
-                Relational::Projection { .. } => {}
-                Relational::Having { children, .. } => {
+                Relational::Projection(_) => {}
+                Relational::Having(Having { children, .. }) => {
                     let child_id = *children.first().ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Node,
@@ -1608,7 +1618,7 @@ impl Plan {
         }
         for (parent, infos) in parent_to_infos {
             let child_id = {
-                let children = self.get_relation_node(parent)?.children();
+                let children = self.get_relational_children(parent)?;
                 *children.get(0).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Node,
@@ -1661,7 +1671,7 @@ impl Plan {
         let proj_id = *finals.first().ok_or_else(|| {
             SbroadError::Invalid(Entity::Plan, Some("no nodes in Reduce stage!".into()))
         })?;
-        if let Relational::Projection { .. } = self.get_relation_node(proj_id)? {
+        if let Relational::Projection(_) = self.get_relation_node(proj_id)? {
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Plan,
@@ -1680,7 +1690,7 @@ impl Plan {
             self.set_dist(self.get_relational_output(proj_id)?, Distribution::Single)?;
         } else {
             // we have GroupBy, then finals_child_id is final GroupBy
-            let child_id = if let Relational::GroupBy { children, .. } =
+            let child_id = if let Relational::GroupBy(GroupBy { children, .. }) =
                 self.get_relation_node(motion_parent)?
             {
                 *children.first().ok_or_else(|| {
@@ -1747,7 +1757,8 @@ impl Plan {
         if !grouping_exprs.is_empty() {
             // let shard_col_info = self.track_shard_column_pos(final_proj_id)?;
             for expr_id in &grouping_exprs {
-                let Expression::Reference { position, .. } = self.get_expression_node(*expr_id)?
+                let Expression::Reference(Reference { position, .. }) =
+                    self.get_expression_node(*expr_id)?
                 else {
                     continue;
                 };
@@ -1783,14 +1794,14 @@ impl Plan {
         // skip Projection
         for node_id in finals.iter().skip(1).rev() {
             self.set_distribution(self.get_relational_output(*node_id)?)?;
-            if let Relational::Having { .. } = self.get_relation_node(*node_id)? {
+            if let Relational::Having(_) = self.get_relation_node(*node_id)? {
                 having_id = Some(*node_id);
             }
         }
 
         if matches!(
             self.get_relation_node(finals_child_id)?,
-            Relational::GroupBy { .. }
+            Relational::GroupBy(_)
         ) {
             self.set_distribution(self.get_relational_output(final_proj_id)?)?;
         } else {
@@ -1802,7 +1813,7 @@ impl Plan {
 
         // resolve subquery conflicts in HAVING
         if let Some(having_id) = having_id {
-            if let Relational::Having { filter, .. } = self.get_relation_node(having_id)? {
+            if let Relational::Having(Having { filter, .. }) = self.get_relation_node(having_id)? {
                 let strategy = self.resolve_sub_query_conflicts(having_id, *filter)?;
                 self.create_motion_nodes(strategy)?;
             }

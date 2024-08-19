@@ -3,12 +3,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::ir::Node;
-
-use super::expression::NodeId;
+use crate::ir::node::{Node64, NodeId};
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct Parameters(HashMap<NodeId, Node>);
+pub struct Parameters(HashMap<NodeId, Node64>);
 
 impl Default for Parameters {
     fn default() -> Self {
@@ -22,16 +20,16 @@ impl Parameters {
         Self(HashMap::new())
     }
 
-    pub fn insert(&mut self, index: NodeId, node: Node) {
+    pub fn insert(&mut self, index: NodeId, node: Node64) {
         self.0.insert(index, node);
     }
 
     #[must_use]
-    pub fn get(&self, index: NodeId) -> Option<&Node> {
+    pub fn get(&self, index: NodeId) -> Option<&Node64> {
         self.0.get(&index)
     }
 
-    pub fn drain(&mut self) -> HashMap<NodeId, Node> {
+    pub fn drain(&mut self) -> HashMap<NodeId, Node64> {
         std::mem::take(&mut self.0)
     }
 }

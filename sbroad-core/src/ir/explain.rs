@@ -9,19 +9,26 @@ use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::to_user;
 use crate::ir::expression::cast::Type as CastType;
-use crate::ir::expression::{Expression, TrimKind};
-use crate::ir::operator::{
-    ConflictStrategy, JoinKind, OrderByElement, OrderByEntity, OrderByType, Relational,
+use crate::ir::expression::TrimKind;
+use crate::ir::node::{
+    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Constant, Delete, GroupBy as GroupByRel, Having,
+    Insert, Join, Motion as MotionRel, NodeId, OrderBy as OrderByRel, Projection as ProjectionRel,
+    Reference, Row as RowExpr, ScanCte, ScanRelation, ScanSubQuery, Selection, StableFunction,
+    Trim, UnaryExpr, Update as UpdateRel, Values, ValuesRow,
 };
+use crate::ir::operator::{ConflictStrategy, JoinKind, OrderByElement, OrderByEntity, OrderByType};
 use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
     MotionKey as IrMotionKey, MotionPolicy as IrMotionPolicy, Target as IrTarget,
 };
 use crate::ir::{OptionKind, Plan};
 
-use super::expression::{FunctionFeature, NodeId};
+use super::expression::FunctionFeature;
+use super::node::expression::Expression;
+use super::node::relational::Relational;
+use super::node::Limit;
 use super::operator::{Arithmetic, Bool, Unary};
-use super::tree::traversal::{PostOrder, EXPR_CAPACITY, REL_CAPACITY};
+use super::tree::traversal::{LevelNode, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use super::value::Value;
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -130,12 +137,11 @@ impl ColExpr {
         let mut dft_post =
             PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
 
-        for level_node in dft_post.iter(subtree_top) {
-            let id = level_node.1;
+        for LevelNode(_, id) in dft_post.iter(subtree_top) {
             let current_node = plan.get_expression_node(id)?;
 
             match &current_node {
-                Expression::Cast { to, .. } => {
+                Expression::Cast(Cast { to, .. }) => {
                     let (expr, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing CAST expression".to_smolstr(),
@@ -144,11 +150,11 @@ impl ColExpr {
                     let cast_expr = ColExpr::Cast(Box::new(expr), *to);
                     stack.push((cast_expr, id));
                 }
-                Expression::Case {
+                Expression::Case(Case {
                     search_expr,
                     when_blocks,
                     else_expr,
-                } => {
+                }) => {
                     let else_expr_col = if else_expr.is_some() {
                         let (expr, _) = stack
                             .pop()
@@ -185,25 +191,24 @@ impl ColExpr {
                     let cast_expr = ColExpr::Case(search_expr_col, match_expr_cols, else_expr_col);
                     stack.push((cast_expr, id));
                 }
-                Expression::CountAsterisk => {
+                Expression::CountAsterisk(_) => {
                     let count_asterisk_expr =
                         ColExpr::Column("*".to_string(), current_node.calculate_type(plan)?);
                     stack.push((count_asterisk_expr, id));
                 }
-                Expression::Reference { position, .. } => {
+                Expression::Reference(Reference { position, .. }) => {
                     let mut col_name = String::new();
 
-                    let rel_id = *plan.get_relational_from_reference_node(id)?;
-                    let rel_node = plan.get_relation_node(rel_id)?;
+                    let rel_id: NodeId = *plan.get_relational_from_reference_node(id)?;
 
-                    if let Some(name) = rel_node.scan_name(plan, *position)? {
+                    if let Some(name) = plan.scan_name(rel_id, *position)? {
                         col_name.push('"');
                         col_name.push_str(name);
                         col_name.push('"');
                         col_name.push('.');
                     }
 
-                    let alias = plan.get_alias_from_reference_node(current_node)?;
+                    let alias = plan.get_alias_from_reference_node(&current_node)?;
                     col_name.push('"');
                     col_name.push_str(alias);
                     col_name.push('"');
@@ -211,7 +216,7 @@ impl ColExpr {
                     let ref_expr = ColExpr::Column(col_name, current_node.calculate_type(plan)?);
                     stack.push((ref_expr, id));
                 }
-                Expression::Concat { .. } => {
+                Expression::Concat(_) => {
                     let (right, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing CONCAT expression".to_smolstr(),
@@ -225,12 +230,12 @@ impl ColExpr {
                     let concat_expr = ColExpr::Concat(Box::new(left), Box::new(right));
                     stack.push((concat_expr, id));
                 }
-                Expression::Constant { value } => {
+                Expression::Constant(Constant { value }) => {
                     let expr =
                         ColExpr::Column(value.to_string(), current_node.calculate_type(plan)?);
                     stack.push((expr, id));
                 }
-                Expression::Trim { kind, .. } => {
+                Expression::Trim(Trim { kind, .. }) => {
                     let (target, _) = stack
                         .pop()
                         .expect("stack is empty while processing TRIM expression");
@@ -238,14 +243,14 @@ impl ColExpr {
                     let trim_expr = ColExpr::Trim(kind.clone(), pattern, Box::new(target));
                     stack.push((trim_expr, id));
                 }
-                Expression::StableFunction {
+                Expression::StableFunction(StableFunction {
                     name,
                     children,
                     feature,
                     func_type,
                     is_system: is_aggr,
                     ..
-                } => {
+                }) => {
                     let mut len = children.len();
                     let mut args: Vec<ColExpr> = Vec::with_capacity(len);
                     while len > 0 {
@@ -267,7 +272,7 @@ impl ColExpr {
                     );
                     stack.push((func_expr, id));
                 }
-                Expression::Row { list, .. } => {
+                Expression::Row(RowExpr { list, .. }) => {
                     let mut len = list.len();
                     let mut row: Vec<(ColExpr, NodeId)> = Vec::with_capacity(len);
                     while len > 0 {
@@ -284,11 +289,11 @@ impl ColExpr {
                     let row_expr = ColExpr::Row(row);
                     stack.push((row_expr, id));
                 }
-                Expression::Arithmetic {
+                Expression::Arithmetic(ArithmeticExpr {
                     left: _,
                     op,
                     right: _,
-                } => {
+                }) => {
                     let (right, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing ARITHMETIC expression".to_smolstr(),
@@ -314,7 +319,7 @@ impl ColExpr {
                     let parentheses_expr = ColExpr::Parentheses(Box::new(child_expr));
                     stack.push((parentheses_expr, id));
                 }
-                Expression::Alias { name, .. } => {
+                Expression::Alias(Alias { name, .. }) => {
                     let (expr, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing ALIAS expression".to_smolstr(),
@@ -323,7 +328,7 @@ impl ColExpr {
                     let alias_expr = ColExpr::Alias(Box::new(expr), name.clone());
                     stack.push((alias_expr, id));
                 }
-                Expression::Bool { op, .. } => {
+                Expression::Bool(BoolExpr { op, .. }) => {
                     let (right, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing BOOL expression".to_smolstr(),
@@ -340,7 +345,7 @@ impl ColExpr {
 
                     stack.push((bool_expr, id));
                 }
-                Expression::Unary { op, .. } => {
+                Expression::Unary(UnaryExpr { op, .. }) => {
                     let (expr, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing UNARY expression".to_smolstr(),
@@ -549,12 +554,12 @@ struct Update {
 impl Update {
     #[allow(dead_code)]
     fn new(plan: &Plan, update_id: NodeId) -> Result<Self, SbroadError> {
-        if let Relational::Update {
+        if let Relational::Update(UpdateRel {
             relation: ref rel,
             update_columns_map,
             output: ref output_id,
             ..
-        } = plan.get_relation_node(update_id)?
+        }) = plan.get_relation_node(update_id)?
         {
             let mut update_statements: Vec<(SmolStr, SmolStr)> =
                 Vec::with_capacity(update_columns_map.len());
@@ -588,7 +593,7 @@ impl Update {
                         )
                     })?;
                     let node = plan.get_expression_node(alias_id)?;
-                    if let Expression::Alias { name, .. } = node {
+                    if let Expression::Alias(Alias { name, .. }) = node {
                         to_user(name)
                     } else {
                         return Err(SbroadError::Invalid(
@@ -610,7 +615,7 @@ impl Update {
         Err(SbroadError::Invalid(
             Entity::Node,
             Some(format_smolstr!(
-                "explain: expected Update node on id: {update_id:?}"
+                "explain: expected Update node on id: {update_id}"
             )),
         ))
     }
@@ -712,7 +717,6 @@ impl Row {
     fn add_col(&mut self, row: RowVal) {
         self.cols.push(row);
     }
-
     fn from_col_exprs_with_ids(
         plan: &Plan,
         exprs_with_ids: &mut Vec<(ColExpr, NodeId)>,
@@ -725,7 +729,7 @@ impl Row {
 
             match &current_node {
                 Expression::Reference { .. } => {
-                    let rel_id = *plan.get_relational_from_reference_node(expr_id)?;
+                    let rel_id: NodeId = *plan.get_relational_from_reference_node(expr_id)?;
 
                     let rel_node = plan.get_relation_node(rel_id)?;
                     if plan.is_additional_child(rel_id)? {
@@ -735,7 +739,7 @@ impl Row {
                             let sq_offset = sq_ref_map.get(&rel_id).ok_or_else(|| {
                                 SbroadError::NotFound(
                                     Entity::SubQuery,
-                                    format_smolstr!("with index {rel_id:?} in the map"),
+                                    format_smolstr!("with index {rel_id} in the map"),
                                 )
                             })?;
                             row.add_col(RowVal::SqRef(Ref::new(*sq_offset)));
@@ -743,7 +747,7 @@ impl Row {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
                                 Some(format_smolstr!(
-                                    "additional child ({rel_id:?}) is not SQ or Motion: {rel_node:?}"
+                                    "additional child ({rel_id}) is not SQ or Motion: {rel_node:?}"
                                 )),
                             ));
                         }
@@ -1032,7 +1036,7 @@ impl FullExplain {
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
     pub fn new(ir: &Plan, top_id: NodeId) -> Result<Self, SbroadError> {
-        let mut stack: Vec<ExplainTreePart> = Vec::with_capacity(ir.nodes.relation_node_amount());
+        let mut stack: Vec<ExplainTreePart> = Vec::new();
         let mut result = FullExplain::default();
         result
             .exec_options
@@ -1043,9 +1047,7 @@ impl FullExplain {
         ));
 
         let mut dft_post = PostOrder::with_capacity(|node| ir.nodes.rel_iter(node), REL_CAPACITY);
-        for level_node in dft_post.iter(top_id) {
-            let level = level_node.0;
-            let id = level_node.1;
+        for LevelNode(level, id) in dft_post.iter(top_id) {
             let mut current_node = ExplainTreePart::with_level(level);
             let node = ir.get_relation_node(id)?;
             current_node.current = match &node {
@@ -1071,9 +1073,9 @@ impl FullExplain {
                     }
                     Some(ExplainNode::Except)
                 }
-                Relational::GroupBy {
+                Relational::GroupBy(GroupByRel {
                     gr_cols, output, ..
-                } => {
+                }) => {
                     let child = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "Groupby node must have at least one child".into(),
@@ -1083,9 +1085,9 @@ impl FullExplain {
                     let p = GroupBy::new(ir, gr_cols, *output, &HashMap::new())?;
                     Some(ExplainNode::GroupBy(p))
                 }
-                Relational::OrderBy {
+                Relational::OrderBy(OrderByRel {
                     order_by_elements, ..
-                } => {
+                }) => {
                     let child = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "OrderBy node must have at least one child".into(),
@@ -1095,7 +1097,7 @@ impl FullExplain {
                     let o_b = OrderBy::new(ir, order_by_elements, &HashMap::new())?;
                     Some(ExplainNode::OrderBy(o_b))
                 }
-                Relational::Projection { output, .. } => {
+                Relational::Projection(ProjectionRel { output, .. }) => {
                     // TODO: change this logic when we'll enable sub-queries in projection
                     let child = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
@@ -1106,16 +1108,16 @@ impl FullExplain {
                     let p = Projection::new(ir, *output, &HashMap::new())?;
                     Some(ExplainNode::Projection(p))
                 }
-                Relational::ScanRelation {
+                Relational::ScanRelation(ScanRelation {
                     relation, alias, ..
-                } => {
+                }) => {
                     let s = Scan::new(
                         relation.to_smolstr(),
                         alias.as_ref().map(ToSmolStr::to_smolstr),
                     );
                     Some(ExplainNode::Scan(s))
                 }
-                Relational::ScanCte { alias, .. } => {
+                Relational::ScanCte(ScanCte { alias, .. }) => {
                     let child = stack.pop().expect("CTE node must have exactly one child");
                     let existing_pos = result.subqueries.iter().position(|sq| *sq == child);
                     let pos = existing_pos.unwrap_or_else(|| {
@@ -1124,12 +1126,12 @@ impl FullExplain {
                     });
                     Some(ExplainNode::Cte(alias.clone(), Ref::new(pos)))
                 }
-                Relational::Selection {
+                Relational::Selection(Selection {
                     children, filter, ..
-                }
-                | Relational::Having {
+                })
+                | Relational::Having(Having {
                     children, filter, ..
-                } => {
+                }) => {
                     let mut sq_ref_map: SubQueryRefMap = HashMap::with_capacity(children.len() - 1);
                     if let Some((_, other)) = children.split_first() {
                         for sq_id in other.iter().rev() {
@@ -1177,7 +1179,7 @@ impl FullExplain {
                         Some(ExplainNode::UnionAll)
                     }
                 }
-                Relational::ScanSubQuery { alias, .. } => {
+                Relational::ScanSubQuery(ScanSubQuery { alias, .. }) => {
                     let child = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "ScanSubQuery node must have exactly one child".into(),
@@ -1187,9 +1189,9 @@ impl FullExplain {
                     let s = SubQuery::new(alias.as_ref().map(ToString::to_string));
                     Some(ExplainNode::SubQuery(s))
                 }
-                Relational::Motion {
+                Relational::Motion(MotionRel {
                     children, policy, ..
-                } => {
+                }) => {
                     let child = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "Motion node must have exactly one child".into(),
@@ -1205,7 +1207,8 @@ impl FullExplain {
                         })?;
 
                         let child_output_id = ir.get_relation_node(*child_id)?.output();
-                        let col_list = ir.get_expression_node(child_output_id)?.get_row_list()?;
+                        let child_node = ir.get_expression_node(child_output_id)?;
+                        let col_list = child_node.get_row_list()?;
 
                         let targets = (s.targets)
                             .iter()
@@ -1247,12 +1250,12 @@ impl FullExplain {
 
                     Some(ExplainNode::Motion(m))
                 }
-                Relational::Join {
+                Relational::Join(Join {
                     children,
                     condition,
                     kind,
                     ..
-                } => {
+                }) => {
                     if children.len() < 2 {
                         return Err(SbroadError::UnexpectedNumberOfValues(
                             "Join must have at least two children".into(),
@@ -1287,7 +1290,7 @@ impl FullExplain {
                         kind: kind.clone(),
                     }))
                 }
-                Relational::ValuesRow { data, children, .. } => {
+                Relational::ValuesRow(ValuesRow { data, children, .. }) => {
                     let mut sq_ref_map: SubQueryRefMap = HashMap::with_capacity(children.len());
 
                     for sq_id in children.iter().rev() {
@@ -1306,7 +1309,7 @@ impl FullExplain {
 
                     Some(ExplainNode::ValueRow(row))
                 }
-                Relational::Values { children, .. } => {
+                Relational::Values(Values { children, .. }) => {
                     let mut amount_values = children.len();
 
                     while amount_values > 0 {
@@ -1321,11 +1324,11 @@ impl FullExplain {
                     }
                     Some(ExplainNode::Value)
                 }
-                Relational::Insert {
+                Relational::Insert(Insert {
                     relation,
                     conflict_strategy,
                     ..
-                } => {
+                }) => {
                     let values = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "Insert node failed to pop a value row.".into(),
@@ -1350,7 +1353,7 @@ impl FullExplain {
 
                     Some(ExplainNode::Update(Update::new(ir, id)?))
                 }
-                Relational::Delete { relation, .. } => {
+                Relational::Delete(Delete { relation, .. }) => {
                     let values = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "Delete node failed to pop a value row.".into(),
@@ -1361,7 +1364,7 @@ impl FullExplain {
 
                     Some(ExplainNode::Delete(relation.to_smolstr()))
                 }
-                Relational::Limit { limit, .. } => {
+                Relational::Limit(Limit { limit, .. }) => {
                     let child = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "Limit node must have exactly one child".into(),

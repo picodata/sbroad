@@ -7,7 +7,7 @@ use tarantool::tuple::Tuple;
 
 use crate::cbo::histogram::Scalar;
 use crate::cbo::{ColumnStats, TableColumnPair, TableStats};
-use crate::ir::expression::NodeId;
+use crate::ir::node::NodeId;
 use crate::utils::MutexLike;
 use std::any::Any;
 

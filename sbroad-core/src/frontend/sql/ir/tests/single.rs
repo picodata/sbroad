@@ -1,7 +1,7 @@
 use smol_str::{SmolStr, ToSmolStr};
 
-use crate::ir::expression::NodeId;
-use crate::ir::operator::Relational;
+use crate::ir::node::relational::Relational;
+use crate::ir::node::{Motion, NodeId};
 use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
 use crate::ir::tree::traversal::{PostOrder, REL_CAPACITY};
@@ -35,7 +35,7 @@ impl Plan {
         let node = self.get_relation_node(node_id).unwrap();
 
         match node {
-            Relational::Motion { policy, .. } => match policy {
+            Relational::Motion(Motion { policy, .. }) => match policy {
                 MotionPolicy::None => Policy::None,
                 MotionPolicy::Full => Policy::Full,
                 MotionPolicy::Local => Policy::Local,
@@ -81,7 +81,7 @@ fn check_join_motions(
         .iter(plan.get_top().unwrap())
         .find(|level_node| -> bool {
             let rel = plan.get_relation_node(level_node.1).unwrap();
-            matches!(rel, Relational::Join { .. })
+            matches!(rel, Relational::Join(_))
         })
         .unwrap();
     let join_id = level_node.1;

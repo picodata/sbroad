@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 
 use super::TreeIterator;
-use crate::ir::expression::{Expression, NodeId};
+use crate::ir::node::expression::Expression;
+use crate::ir::node::{BoolExpr, NodeId};
 use crate::ir::operator::Bool;
 use crate::ir::{Node, Nodes};
 
@@ -55,9 +56,9 @@ impl<'n> Iterator for AndIterator<'n> {
 
 fn and_next<'nodes>(iter: &mut impl AndTreeIterator<'nodes>) -> Option<&'nodes NodeId> {
     let node = iter.get_nodes().get(iter.get_current());
-    if let Some(Node::Expression(Expression::Bool {
+    if let Some(Node::Expression(Expression::Bool(BoolExpr {
         left, op, right, ..
-    })) = node
+    }))) = node
     {
         if *op != Bool::And {
             return None;

@@ -1,14 +1,14 @@
-use crate::frontend::Ast;
+use crate::{
+    frontend::Ast,
+    ir::node::{ddl::Ddl, CreateTable},
+};
 use pretty_assertions::assert_eq;
 use smol_str::{SmolStr, ToSmolStr};
 
 use crate::{
     executor::engine::mock::RouterConfigurationMock,
     frontend::sql::ast::AbstractSyntaxTree,
-    ir::{
-        ddl::{ColumnDef, Ddl},
-        relation::Type,
-    },
+    ir::{ddl::ColumnDef, relation::Type},
 };
 
 #[test]
@@ -20,11 +20,11 @@ fn infer_not_null_on_pk1() {
     let top_id = plan.get_top().unwrap();
     let top_node = plan.get_ddl_node(top_id).unwrap();
 
-    let Ddl::CreateTable {
+    let Ddl::CreateTable(CreateTable {
         format,
         primary_key,
         ..
-    } = top_node
+    }) = top_node
     else {
         panic!("expected create table")
     };
@@ -51,11 +51,11 @@ fn infer_not_null_on_pk2() {
     let top_id = plan.get_top().unwrap();
     let top_node = plan.get_ddl_node(top_id).unwrap();
 
-    let Ddl::CreateTable {
+    let Ddl::CreateTable(CreateTable {
         format,
         primary_key,
         ..
-    } = top_node
+    }) = top_node
     else {
         panic!("expected create table")
     };
@@ -107,7 +107,7 @@ fn infer_sk_from_pk() {
     let top_id = plan.get_top().unwrap();
     let top_node = plan.get_ddl_node(top_id).unwrap();
 
-    let Ddl::CreateTable { sharding_key, .. } = top_node else {
+    let Ddl::CreateTable(CreateTable { sharding_key, .. }) = top_node else {
         panic!("expected create table")
     };
 

@@ -1,13 +1,13 @@
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::to_user;
 use crate::ir::aggregates::AggregateKind;
-use crate::ir::expression::Expression;
+use crate::ir::node::{NodeId, StableFunction};
 use crate::ir::relation::Type;
-use crate::ir::{Node, Plan};
+use crate::ir::Plan;
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
-use super::expression::{FunctionFeature, NodeId};
+use super::expression::FunctionFeature;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Behavior {
@@ -70,14 +70,14 @@ impl Plan {
                 Some(format_smolstr!("function {} is not stable", function.name)),
             ));
         }
-        let func_expr = Expression::StableFunction {
+        let func_expr = StableFunction {
             name: function.name.to_smolstr(),
             children,
             feature,
             func_type: function.func_type.clone(),
             is_system: function.is_system,
         };
-        let func_id = self.nodes.push(Node::Expression(func_expr));
+        let func_id = self.nodes.push(func_expr.into());
         Ok(func_id)
     }
 
@@ -132,14 +132,14 @@ impl Plan {
         } else {
             None
         };
-        let func_expr = Expression::StableFunction {
+        let func_expr = StableFunction {
             name: function.to_lowercase().to_smolstr(),
             children,
             feature,
             func_type: Type::from(kind),
             is_system: true,
         };
-        let id = self.nodes.push(Node::Expression(func_expr));
+        let id = self.nodes.push(func_expr.into());
         Ok(id)
     }
 }

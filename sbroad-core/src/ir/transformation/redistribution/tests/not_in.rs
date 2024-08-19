@@ -1,9 +1,10 @@
-use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::transformation::redistribution::tests::{get_motion_id, NodeId};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::{ArenaType, Slice, Slices};
 use pretty_assertions::assert_eq;
+
+use super::{Motion, Relational};
 
 #[test]
 fn not_in1() {
@@ -14,7 +15,7 @@ fn not_in1() {
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
@@ -31,8 +32,8 @@ fn not_in2() {
     assert_eq!(
         Slices::from(vec![Slice {
             slice: vec![NodeId {
-                offset: 65,
-                arena_type: ArenaType::Default,
+                offset: 0,
+                arena_type: ArenaType::Arena136,
             }]
         }]),
         plan.slices
@@ -48,7 +49,7 @@ fn not_in3() {
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
@@ -64,7 +65,7 @@ fn not_in4() {
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
@@ -80,7 +81,7 @@ fn not_in5() {
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");

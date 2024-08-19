@@ -14,15 +14,15 @@ pub enum Entity {
     Acl,
     /// corresponding to enum Args
     Args,
-    /// corresponding to struct AbstractSyntaxTree
+    /// corresponding to struct 'AbstractSyntaxTree'
     AST,
-    /// corresponding to struct ParseNode
+    /// corresponding to struct 'ParseNode'
     ParseNode,
     /// corresponding to trait Aggregate
     Aggregate,
-    /// corresponding to struct AggregateSignature
+    /// corresponding to struct 'AggregateSignature'
     AggregateSignature,
-    /// corresponding to struct AggregateCollector
+    /// corresponding to struct 'AggregateCollector'
     AggregateCollector,
     /// corresponding to struct Buckets
     Buckets,
@@ -38,6 +38,8 @@ pub enum Entity {
     Column,
     /// CTE
     Cte,
+    /// corresponding to operations on DDL.
+    Ddl,
     /// corresponds to enum Distribution
     Distribution,
     /// tarantool distribution key
@@ -46,7 +48,7 @@ pub enum Entity {
     Engine,
     /// corresponds to enum Expression
     Expression,
-    /// corresponds to struct ExpressionMapper
+    /// corresponds to struct 'ExpressionMapper'
     ExpressionMapper,
     /// corresponds to struct Histogram
     Histogram,
@@ -164,6 +166,7 @@ impl fmt::Display for Entity {
             Entity::ClusterSchema => "cluster schema".to_smolstr(),
             Entity::Column => "column".to_smolstr(),
             Entity::Cte => "CTE".to_smolstr(),
+            Entity::Ddl => "DDL".to_smolstr(),
             Entity::Distribution => "distribution".to_smolstr(),
             Entity::DistributionKey => "distribution key".to_smolstr(),
             Entity::Engine => "engine".to_smolstr(),

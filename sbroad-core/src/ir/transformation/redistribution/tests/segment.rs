@@ -1,13 +1,14 @@
 use crate::collection;
 use crate::ir::distribution::{Distribution, Key};
 use crate::ir::helpers::RepeatableState;
-use crate::ir::operator::Relational;
+use crate::ir::node::{Node64, NodeId};
 use crate::ir::relation::Column;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
-use crate::ir::Node;
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
+
+use super::{Motion, Relational};
 
 #[test]
 fn inner_join1() {
@@ -20,7 +21,7 @@ fn inner_join1() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(
@@ -49,7 +50,7 @@ fn inner_join2() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(
@@ -105,7 +106,7 @@ fn inner_join3() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment((Key { positions: vec![0] }).into())
@@ -115,13 +116,17 @@ fn inner_join3() {
     }
 
     // Check distribution of the join output tuple.
-    let mut join_node: Option<&Relational> = None;
-    for node in &plan.nodes.arena {
-        if let Node::Relational(rel) = node {
-            if matches!(rel, Relational::Join { .. }) {
-                join_node = Some(rel);
-                break;
-            }
+    let mut join_node = None;
+    for node in plan.nodes.arena64.iter().enumerate() {
+        if let Node64::Join(_) = node.1 {
+            join_node = Some(
+                plan.get_relation_node(NodeId {
+                    offset: u32::try_from(node.0).unwrap(),
+                    arena_type: crate::ir::node::ArenaType::Arena64,
+                })
+                .unwrap(),
+            );
+            break;
         }
     }
     let join = join_node.unwrap();
@@ -140,7 +145,7 @@ fn inner_join4() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(
@@ -163,7 +168,7 @@ fn insert1() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(
@@ -186,7 +191,7 @@ fn insert2() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::LocalSegment(
@@ -209,7 +214,7 @@ fn insert3() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::LocalSegment(
@@ -232,7 +237,7 @@ fn insert4() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(
@@ -255,7 +260,7 @@ fn insert5() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(MotionKey {
@@ -275,7 +280,7 @@ fn insert6() {
     plan.add_motions().unwrap();
     let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(MotionKey {

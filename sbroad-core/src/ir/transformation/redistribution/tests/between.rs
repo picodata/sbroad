@@ -1,4 +1,5 @@
-use crate::ir::operator::Relational;
+use crate::ir::node::relational::Relational;
+use crate::ir::node::Motion;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::MotionPolicy;
@@ -16,7 +17,7 @@ fn between1() {
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
@@ -46,7 +47,7 @@ fn between3() {
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");

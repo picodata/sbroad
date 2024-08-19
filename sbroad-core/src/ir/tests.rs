@@ -67,7 +67,7 @@ fn get_node() {
 
     let scan_id = plan.add_scan("t", None).unwrap();
 
-    if let Node::Relational(Relational::ScanRelation { relation, .. }) =
+    if let Node::Relational(Relational::ScanRelation(ScanRelation { relation, .. })) =
         plan.get_node(scan_id).unwrap()
     {
         assert_eq!(relation, "t");
@@ -80,10 +80,10 @@ fn get_node() {
 fn get_node_oor() {
     let plan = Plan::default();
     assert_eq!(
-        SbroadError::NotFound(Entity::Node, "from Default arena with index 42".into()),
+        SbroadError::NotFound(Entity::Node, "from Arena32 with index 42".into()),
         plan.get_node(NodeId {
             offset: 42,
-            arena_type: ArenaType::Default
+            arena_type: ArenaType::Arena32
         })
         .unwrap_err()
     );

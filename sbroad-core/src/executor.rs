@@ -33,8 +33,8 @@ use crate::executor::engine::{helpers::materialize_values, Router, TableVersionM
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::Cache;
 use crate::frontend::Ast;
-use crate::ir::expression::NodeId;
-use crate::ir::operator::Relational;
+use crate::ir::node::relational::Relational;
+use crate::ir::node::{Motion, NodeId};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
 use crate::ir::{Plan, Slices};
@@ -192,8 +192,7 @@ where
                     }
                 }
                 let motion = self.exec_plan.get_ir_plan().get_relation_node(*motion_id)?;
-
-                if let Relational::Motion { policy, .. } = motion {
+                if let Relational::Motion(Motion { policy, .. }) = motion {
                     match policy {
                         MotionPolicy::Segment(_) => {
                             // if child is values, then we can materialize it
@@ -225,6 +224,7 @@ where
                 }
 
                 let top_id = self.exec_plan.get_motion_subtree_root(*motion_id)?;
+
                 let buckets = self.bucket_discovery(top_id)?;
                 let virtual_table = self.coordinator.materialize_motion(
                     &mut self.exec_plan,

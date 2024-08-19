@@ -15,7 +15,7 @@ use crate::ir::Options;
 use crate::otm::{current_id, extract_context, inject_context};
 
 use crate::executor::engine::TableVersionMap;
-use crate::ir::expression::NodeId;
+use crate::ir::node::NodeId;
 #[cfg(not(feature = "mock"))]
 use opentelemetry::trace::TraceContextExt;
 

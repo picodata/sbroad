@@ -20,12 +20,12 @@ use tarantool::tuple::Encode;
 use crate::debug;
 use crate::errors::SbroadError;
 use crate::executor::vtable::{VTableTuple, VirtualTable};
-use crate::ir::expression::NodeId;
-use crate::ir::operator::Relational;
+use crate::ir::node::relational::Relational;
+use crate::ir::node::{Node, NodeId};
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::tree::traversal::{PostOrderWithFilter, REL_CAPACITY};
 use crate::ir::value::{LuaValue, Value};
-use crate::ir::{Node, Plan};
+use crate::ir::Plan;
 
 pub type ExecutorTuple = Vec<LuaValue>;
 
@@ -260,7 +260,7 @@ impl Plan {
     /// - If relational iterator fails to return a correct node.
     pub fn subtree_contains_values(&self, top_id: NodeId) -> Result<bool, SbroadError> {
         let filter = |node_id: NodeId| -> bool {
-            if let Ok(Node::Relational(Relational::Values { .. })) = self.get_node(node_id) {
+            if let Ok(Node::Relational(Relational::Values(_))) = self.get_node(node_id) {
                 return true;
             }
             false

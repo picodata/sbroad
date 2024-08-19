@@ -31,31 +31,27 @@ fn proj_preserve_dist_key() {
 
     plan.top = Some(proj_id);
 
-    let scan_output: NodeId = if let Node::Relational(scan) = plan.get_node(scan_id).unwrap() {
-        scan.output()
-    } else {
-        panic!("Invalid plan!");
-    };
-    plan.set_distribution(scan_output).unwrap();
-    if let Node::Expression(scan_row) = plan.get_node(scan_output).unwrap() {
-        let keys: HashSet<_, RepeatableState> = collection! { Key::new(vec![1, 0]) };
-        assert_eq!(
-            &Distribution::Segment { keys: keys.into() },
-            scan_row.distribution().unwrap()
-        );
-    }
+    let rel_node = plan.get_relation_node(scan_id).unwrap();
+    let scan_output = rel_node.output();
 
-    let proj_output: NodeId = if let Node::Relational(proj) = plan.get_node(proj_id).unwrap() {
-        proj.output()
-    } else {
-        panic!("Invalid plan!");
-    };
+    plan.set_distribution(scan_output).unwrap();
+    let expr_node = plan.get_expression_node(scan_output).unwrap();
+    let keys: HashSet<_, RepeatableState> = collection! { Key::new(vec![1, 0]) };
+    assert_eq!(
+        &Distribution::Segment { keys: keys.into() },
+        expr_node.distribution().unwrap()
+    );
+
+    let rel_node = plan.get_relation_node(proj_id).unwrap();
+    let proj_output: NodeId = rel_node.output();
+
     plan.set_distribution(proj_output).unwrap();
-    if let Node::Expression(proj_row) = plan.get_node(proj_output).unwrap() {
+    let expr_node = plan.get_node(proj_output).unwrap();
+    if let Node::Expression(expr) = expr_node {
         let keys: HashSet<_, RepeatableState> = collection! { Key::new(vec![1, 0]) };
         assert_eq!(
             &Distribution::Segment { keys: keys.into() },
-            proj_row.distribution().unwrap()
+            expr.distribution().unwrap()
         );
     }
 }
@@ -68,10 +64,10 @@ fn projection_any_dist_for_expr() {
 
     // check explain first
     let expected_explain = SmolStr::from(
-        r#"projection (sum(("count_13"::integer))::decimal -> "col_1")
+        r#"projection (sum(("count_096"::integer))::decimal -> "col_1")
     motion [policy: full]
         scan
-            projection (count(("test_space"."id"::unsigned))::integer -> "count_13")
+            projection (count(("test_space"."id"::unsigned))::integer -> "count_096")
                 scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -88,7 +84,7 @@ vtable_max_rows = 5000
             .find(|level_node| {
                 matches!(
                     plan.get_relation_node(level_node.1).unwrap(),
-                    Relational::Projection { .. }
+                    Relational::Projection(_)
                 )
             })
             .unwrap()

@@ -1,11 +1,10 @@
 use pretty_assertions::assert_eq;
 
-use crate::{backend::sql::ir::PatternWithParams, ir::expression::NodeId};
+use crate::backend::sql::ir::PatternWithParams;
 
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::operator::Relational;
 use crate::ir::tests::column_integer_user_non_null;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use smol_str::SmolStr;
@@ -178,7 +177,7 @@ fn linker_test() {
                         "{} {} {}",
                         r#"SELECT "test_space"."FIRST_NAME""#,
                         r#"FROM "test_space""#,
-                        r#"WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_76")"#,
+                        r#"WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_0136")"#,
                         ), vec![],
                     )
                 )
@@ -193,7 +192,7 @@ fn linker_test() {
                         "{} {} {}",
                         r#"SELECT "test_space"."FIRST_NAME""#,
                         r#"FROM "test_space""#,
-                        r#"WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_76")"#,
+                        r#"WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_0136")"#,
                         ), vec![],
                     )
                 )
@@ -268,7 +267,7 @@ fn union_linker_test() {
                     r#"FROM "test_space_hist""#,
                     r#"WHERE ("test_space_hist"."sys_op") > (?)"#,
                     r#") as "t1""#,
-                    r#"WHERE ("t1"."id") in (SELECT "identification_number" FROM "TMP_test_219")"#,
+                    r#"WHERE ("t1"."id") in (SELECT "identification_number" FROM "TMP_test_0136")"#,
                 ),
                 vec![Value::from(0_u64), Value::from(0_u64)],
             ))),
@@ -288,7 +287,7 @@ fn union_linker_test() {
                     r#"FROM "test_space_hist""#,
                     r#"WHERE ("test_space_hist"."sys_op") > (?)"#,
                     r#") as "t1""#,
-                    r#"WHERE ("t1"."id") in (SELECT "identification_number" FROM "TMP_test_219")"#,
+                    r#"WHERE ("t1"."id") in (SELECT "identification_number" FROM "TMP_test_0136")"#,
                 ),
                 vec![Value::from(0_u64), Value::from(0_u64)],
             ))),
@@ -370,7 +369,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
                 r#"WHERE ("test_space_hist"."sysFrom") <= (?)"#,
                 r#") as "t3""#,
                 r#"INNER JOIN"#,
-                r#"(SELECT "identification_number" FROM "TMP_test_275""#,
+                r#"(SELECT "identification_number" FROM "TMP_test_0136""#,
                 r#") as "t8""#,
                 r#"ON ("t3"."id") = ("t8"."identification_number")"#,
                 r#"WHERE ("t3"."id") = (?) and ("t8"."identification_number") = (?)"#
@@ -441,7 +440,7 @@ fn join_linker2_test() {
                 r#""t1"."id", "t1"."sysFrom", "t1"."FIRST_NAME", "t1"."sys_op""#,
                 r#"FROM "test_space" as "t1") as "t1""#,
                 r#"INNER JOIN"#,
-                r#"(SELECT "id1","id2" FROM "TMP_test_87")"#,
+                r#"(SELECT "id1","id2" FROM "TMP_test_0136")"#,
                 r#"as "t2" ON ("t1"."id") = (?)"#
             ),
             vec![Value::from(1_u64)],
@@ -504,7 +503,7 @@ fn join_linker3_test() {
                 r#"SELECT "t2"."id1" FROM"#,
                 r#"(SELECT "test_space"."id" FROM "test_space") as "t1""#,
                 r#"INNER JOIN"#,
-                r#"(SELECT "id1","FIRST_NAME" FROM "TMP_test_69") as "t2""#,
+                r#"(SELECT "id1","FIRST_NAME" FROM "TMP_test_0136") as "t2""#,
                 r#"ON ("t2"."id1") = (?)"#,
             ),
             vec![Value::from(1_u64)],
@@ -592,9 +591,9 @@ fn join_linker4_test() {
                     r#""T1"."id", "T1"."sysFrom", "T1"."FIRST_NAME", "T1"."sys_op""#,
                     r#"FROM "test_space" as "T1") as "T1""#,
                     r#"INNER JOIN"#,
-                    r#"(SELECT "r_id" FROM "TMP_test_148") as "T2""#,
+                    r#"(SELECT "r_id" FROM "TMP_test_0136") as "T2""#,
                     r#"ON ("T1"."id") = ("T2"."r_id")"#,
-                    r#"and ("T1"."FIRST_NAME") = (SELECT "fn" FROM "TMP_test_152")"#,
+                    r#"and ("T1"."FIRST_NAME") = (SELECT "fn" FROM "TMP_test_1136")"#,
                 ),
                 vec![],
             ))),
@@ -608,9 +607,9 @@ fn join_linker4_test() {
                     r#""T1"."id", "T1"."sysFrom", "T1"."FIRST_NAME", "T1"."sys_op""#,
                     r#"FROM "test_space" as "T1") as "T1""#,
                     r#"INNER JOIN"#,
-                    r#"(SELECT "r_id" FROM "TMP_test_148") as "T2""#,
+                    r#"(SELECT "r_id" FROM "TMP_test_0136") as "T2""#,
                     r#"ON ("T1"."id") = ("T2"."r_id")"#,
-                    r#"and ("T1"."FIRST_NAME") = (SELECT "fn" FROM "TMP_test_152")"#,
+                    r#"and ("T1"."FIRST_NAME") = (SELECT "fn" FROM "TMP_test_1136")"#,
                 ),
                 vec![],
             ))),
@@ -686,7 +685,7 @@ on q."f" = "t1"."a""#;
                 "{} {} {} {}",
                 r#"SELECT "t1"."a", "t1"."b", "q"."f", "q"."b" FROM"#,
                 r#"(SELECT "t1"."a", "t1"."b" FROM "t1") as "t1""#,
-                r#"INNER JOIN (SELECT "f","B" FROM "TMP_test_146")"#,
+                r#"INNER JOIN (SELECT "f","B" FROM "TMP_test_1136")"#,
                 r#"as "q" ON ("q"."f") = ("t1"."a")"#,
             ),
             vec![],
@@ -728,7 +727,7 @@ fn dispatch_order_by() {
     expected.rows.extend(vec![vec![
         LuaValue::String("Execute query locally".to_string()),
         LuaValue::String(String::from(PatternWithParams::new(
-            r#"SELECT "id" FROM (SELECT "id" FROM "TMP_test_40") ORDER BY "id""#.to_string(),
+            r#"SELECT "id" FROM (SELECT "id" FROM "TMP_test_0136") ORDER BY "id""#.to_string(),
             vec![],
         ))),
     ]]);
@@ -802,9 +801,9 @@ fn anonymous_col_index_test() {
                     r#""test_space"."sys_op""#,
                     r#"FROM "test_space""#,
                     r#"WHERE ("test_space"."id") in"#,
-                    r#"(SELECT "identification_number" FROM "TMP_test_130")"#,
+                    r#"(SELECT "identification_number" FROM "TMP_test_1136")"#,
                     r#"or ("test_space"."id") in"#,
-                    r#"(SELECT "identification_number" FROM "TMP_test_134")"#,
+                    r#"(SELECT "identification_number" FROM "TMP_test_0136")"#,
                 ),
                 vec![],
             ))),
@@ -821,15 +820,14 @@ fn anonymous_col_index_test() {
                     r#""test_space"."sys_op""#,
                     r#"FROM "test_space""#,
                     r#"WHERE ("test_space"."id") in"#,
-                    r#"(SELECT "identification_number" FROM "TMP_test_130")"#,
+                    r#"(SELECT "identification_number" FROM "TMP_test_1136")"#,
                     r#"or ("test_space"."id") in"#,
-                    r#"(SELECT "identification_number" FROM "TMP_test_134")"#,
+                    r#"(SELECT "identification_number" FROM "TMP_test_0136")"#,
                 ),
                 vec![],
             ))),
         ],
     ]);
-
     assert_eq!(expected, result);
 }
 
@@ -916,7 +914,7 @@ fn virtual_table_23(alias: Option<&str>) -> VirtualTable {
 
 fn get_motion_policy(plan: &Plan, motion_id: NodeId) -> &MotionPolicy {
     let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
+    if let Relational::Motion(Motion { policy, .. }) = motion {
         policy
     } else {
         panic!("Expected a motion node");
@@ -997,9 +995,9 @@ fn groupby_linker_test() {
             LuaValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {} {}",
-                    r#"SELECT "column_12" as "ii" FROM"#,
-                    r#"(SELECT "id" FROM "TMP_test_45")"#,
-                    r#"GROUP BY "column_12""#,
+                    r#"SELECT "column_764" as "ii" FROM"#,
+                    r#"(SELECT "id" FROM "TMP_test_0136")"#,
+                    r#"GROUP BY "column_764""#,
                 ),
                 vec![],
             ))),

@@ -1,19 +1,19 @@
 use std::rc::Rc;
 
+use engine::mock::TEMPLATE;
 use itertools::Itertools;
 use pretty_assertions::assert_eq;
 use smol_str::SmolStr;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::collection;
-use crate::executor::engine::mock::{
-    ReplicasetDispatchInfo, RouterRuntimeMock, VshardMock, TEMPLATE,
-};
+use crate::executor::engine::mock::{ReplicasetDispatchInfo, RouterRuntimeMock, VshardMock};
+use crate::ir::node::{ArenaType, Node136};
 use crate::ir::relation::Type;
 use crate::ir::tests::{column_integer_user_non_null, column_user_non_null};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::Snapshot;
-use crate::ir::{ArenaType, Node, Slice};
+use crate::ir::Slice;
 
 use super::*;
 
@@ -85,7 +85,7 @@ fn exec_plan_subtree_test() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "test_space"."FIRST_NAME" FROM "test_space" WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_20")"#.to_string(),
+            r#"SELECT "test_space"."FIRST_NAME" FROM "test_space" WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_0136")"#.to_string(),
             vec![]
         ));
 }
@@ -133,7 +133,7 @@ fn exec_plan_subtree_two_stage_groupby_test() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "T1"."FIRST_NAME" as "column_12" FROM "test_space" as "T1" GROUP BY "T1"."FIRST_NAME""#
+            r#"SELECT "T1"."FIRST_NAME" as "column_764" FROM "test_space" as "T1" GROUP BY "T1"."FIRST_NAME""#
                 .to_string(),
             vec![]
         )
@@ -144,7 +144,7 @@ fn exec_plan_subtree_two_stage_groupby_test() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "column_12" as "FIRST_NAME" FROM (SELECT "FIRST_NAME" FROM "TMP_test_6") GROUP BY "column_12""#.to_string(),
+            r#"SELECT "column_764" as "FIRST_NAME" FROM (SELECT "FIRST_NAME" FROM "TMP_test_0136") GROUP BY "column_764""#.to_string(),
             vec![]
         ));
 }
@@ -165,15 +165,15 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
         .unwrap();
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(column_user_non_null(
-        SmolStr::from("column_12"),
+        SmolStr::from("column_764"),
         Type::String,
     ));
     virtual_table.add_column(column_user_non_null(
-        SmolStr::from("column_13"),
+        SmolStr::from("column_864"),
         Type::Integer,
     ));
     virtual_table.add_column(column_user_non_null(
-        SmolStr::from("column_14"),
+        SmolStr::from("column_964"),
         Type::Integer,
     ));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
@@ -200,8 +200,8 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
         PatternWithParams::new(
             format!(
                 "{} {} {}",
-                r#"SELECT "T1"."FIRST_NAME" as "column_12", "T1"."sys_op" as "column_13","#,
-                r#""T1"."sysFrom" as "column_14" FROM "test_space" as "T1""#,
+                r#"SELECT "T1"."sysFrom" as "column_964", "T1"."FIRST_NAME" as "column_764","#,
+                r#""T1"."sys_op" as "column_864" FROM "test_space" as "T1""#,
                 r#"GROUP BY "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom""#,
             ),
             vec![]
@@ -213,11 +213,12 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            f_sql(
-                r#"SELECT "column_12" as "FIRST_NAME",
-"column_13" as "sys_op", "column_14" as "sysFrom"
-FROM (SELECT "column_12","column_13","column_14" FROM "TMP_test_14")
-GROUP BY "column_12", "column_13", "column_14""#
+            format!(
+                "{} {} {} {}",
+                r#"SELECT "column_764" as "FIRST_NAME", "column_864" as "sys_op","#,
+                r#""column_964" as "sysFrom" FROM"#,
+                r#"(SELECT "column_764","column_864","column_964" FROM "TMP_test_0136")"#,
+                r#"GROUP BY "column_764", "column_864", "column_964""#,
             ),
             vec![]
         )
@@ -278,12 +279,13 @@ fn exec_plan_subtree_aggregates() {
         sql,
         PatternWithParams::new(
             format!(
-                "{} {} {} {} {} {}",
-                r#"SELECT ("T1"."id") * ("T1"."sys_op") as "column_49", "T1"."sys_op" as "column_12","#,
-                r#""T1"."id" as "column_46", group_concat ("T1"."FIRST_NAME", ?) as "group_concat_58", count ("T1"."sysFrom") as "count_37","#,
-                r#"total ("T1"."id") as "total_64","#,
-                r#"min ("T1"."id") as "min_67", count ("T1"."id") as "count_61", max ("T1"."id") as "max_70","#,
-                r#"sum ("T1"."id") as "sum_42" FROM "test_space" as "T1""#,
+                "{} {} {} {} {} {} {}",
+                r#"SELECT "T1"."sys_op" as "column_764", "T1"."id" as "column_2864","#,
+                r#"("T1"."id") * ("T1"."sys_op") as "column_1632", group_concat ("T1"."FIRST_NAME", ?) as "group_concat_496","#,
+                r#"count ("T1"."sysFrom") as "count_096", total ("T1"."id") as "total_696","#,
+                r#"min ("T1"."id") as "min_796", count ("T1"."id") as "count_596","#,
+                r#"max ("T1"."id") as "max_896", sum ("T1"."id") as "sum_196""#,
+                r#"FROM "test_space" as "T1""#,
                 r#"GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#,
             ),
             vec![Value::from("o")]
@@ -297,14 +299,14 @@ fn exec_plan_subtree_aggregates() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {} {} {} {} {}",
-                r#"SELECT ("column_12") || ("column_12") as "col_1","#,
-                r#"("column_12") * (?) + (sum ("count_37")) as "col_2", sum ("sum_42") as "col_3","#,
-                r#"(sum (DISTINCT "column_49")) / (count (DISTINCT "column_46")) as "col_4","#,
-                r#"group_concat ("group_concat_58", ?) as "col_5","#,
-                r#"sum (CAST ("sum_42" as double)) / sum (CAST ("count_61" as double)) as "col_6","#,
-                r#"total ("total_64") as "col_7", min ("min_67") as "col_8", max ("max_70") as "col_9""#,
-                r#"FROM (SELECT "sys_op","sum_42","count_37","sum_49","count_51","group_concat_58","count_61","total_64","min_67","max_70" FROM "TMP_test_70")"#,
-                r#"GROUP BY "column_12""#
+                r#"SELECT ("column_764") || ("column_764") as "col_1","#,
+                r#"("column_764") * (?) + (sum ("count_096")) as "col_2", sum ("sum_196") as "col_3","#,
+                r#"(sum (DISTINCT "column_1632")) / (count (DISTINCT "column_2864")) as "col_4","#,
+                r#"group_concat ("group_concat_496", ?) as "col_5","#,
+                r#"sum (CAST ("sum_196" as double)) / sum (CAST ("count_596" as double)) as "col_6","#,
+                r#"total ("total_696") as "col_7", min ("min_796") as "col_8", max ("max_896") as "col_9""#,
+                r#"FROM (SELECT "sys_op","sum_42","count_37","sum_49","count_51","group_concat_58","count_61","total_64","min_67","max_70" FROM "TMP_test_0136")"#,
+                r#"GROUP BY "column_764""#
             ),
             vec![Value::Unsigned(2), Value::from("o")]
         )
@@ -326,8 +328,8 @@ fn exec_plan_subtree_aggregates_no_groupby() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("column_19")));
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_13")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("column_932")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_096")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -350,7 +352,7 @@ fn exec_plan_subtree_aggregates_no_groupby() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT ("T1"."id") + ("T1"."sysFrom") as "column_19", count ("T1"."sysFrom") as "count_13" FROM "test_space" as "T1" GROUP BY ("T1"."id") + ("T1"."sysFrom")"#.to_string(),
+            r#"SELECT ("T1"."id") + ("T1"."sysFrom") as "column_632", count ("T1"."sysFrom") as "count_096" FROM "test_space" as "T1" GROUP BY ("T1"."id") + ("T1"."sysFrom")"#.to_string(),
             vec![]
         ));
 
@@ -359,7 +361,7 @@ fn exec_plan_subtree_aggregates_no_groupby() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT sum ("count_13") as "col_1", sum (DISTINCT "column_19") as "col_2" FROM (SELECT "column_19","count_13" FROM "TMP_test_12")"#.to_string(),
+            r#"SELECT sum ("count_096") as "col_1", sum (DISTINCT "column_632") as "col_2" FROM (SELECT "column_932","count_096" FROM "TMP_test_0136")"#.to_string(),
             vec![]
         ));
 }
@@ -400,7 +402,7 @@ fn exec_plan_subquery_under_motion_without_alias() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "tid", "sid" FROM (SELECT "test_space"."id" as "tid" FROM "test_space") INNER JOIN (SELECT "identification_number" FROM "TMP_test_28") ON ?"#.to_string(),
+            r#"SELECT "tid", "sid" FROM (SELECT "test_space"."id" as "tid" FROM "test_space") INNER JOIN (SELECT "identification_number" FROM "TMP_test_0136") ON ?"#.to_string(),
             vec![Value::Boolean(true)]
         ));
 }
@@ -441,7 +443,7 @@ fn exec_plan_subquery_under_motion_with_alias() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "tid", "hti"."sid" FROM (SELECT "test_space"."id" as "tid" FROM "test_space") INNER JOIN (SELECT "identification_number" FROM "TMP_test_28") as "hti" ON ?"#.to_string(),
+            r#"SELECT "tid", "hti"."sid" FROM (SELECT "test_space"."id" as "tid" FROM "test_space") INNER JOIN (SELECT "identification_number" FROM "TMP_test_0136") as "hti" ON ?"#.to_string(),
             vec![Value::Boolean(true)]
         ));
 }
@@ -476,7 +478,7 @@ fn exec_plan_motion_under_in_operator() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "test_space"."id" FROM "test_space" WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_20")"#.to_string(),
+            r#"SELECT "test_space"."id" FROM "test_space" WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_0136")"#.to_string(),
             vec![]
         ));
 }
@@ -515,7 +517,7 @@ fn exec_plan_motion_under_except() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "test_space"."id" FROM "test_space" EXCEPT SELECT "identification_number" FROM "TMP_test_19""#.to_string(),
+            r#"SELECT "test_space"."id" FROM "test_space" EXCEPT SELECT "identification_number" FROM "TMP_test_0136""#.to_string(),
             vec![]
         ));
 }
@@ -535,7 +537,7 @@ fn exec_plan_subtree_count_asterisk() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_13")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_096")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -559,7 +561,7 @@ fn exec_plan_subtree_count_asterisk() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT count (*) as "count_13" FROM "test_space""#.to_string(),
+            r#"SELECT count (*) as "count_096" FROM "test_space""#.to_string(),
             vec![]
         )
     );
@@ -569,7 +571,7 @@ fn exec_plan_subtree_count_asterisk() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT sum ("count_13") as "col_1" FROM (SELECT "count_13" FROM "TMP_test_7")"#
+            r#"SELECT sum ("count_096") as "col_1" FROM (SELECT "count_096" FROM "TMP_test_0136")"#
                 .to_string(),
             vec![]
         )
@@ -628,8 +630,8 @@ fn exec_plan_subtree_having() {
         PatternWithParams::new(
             format!(
                 "{} {} {}",
-                r#"SELECT ("T1"."sys_op") * (?) as "column_64", "T1"."sys_op" as "column_12","#,
-                r#"count (("T1"."sys_op") * (?)) as "count_60" FROM "test_space" as "T1""#,
+                r#"SELECT "T1"."sys_op" as "column_764", ("T1"."sys_op") * (?) as "column_2032","#,
+                r#"count (("T1"."sys_op") * (?)) as "count_196" FROM "test_space" as "T1""#,
                 r#"GROUP BY "T1"."sys_op", ("T1"."sys_op") * (?)"#,
             ),
             vec![Value::Unsigned(2), Value::Unsigned(2), Value::Unsigned(2)]
@@ -648,10 +650,10 @@ fn exec_plan_subtree_having() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {}",
-                r#"SELECT ("column_12") || ("column_12") as "col_1","#,
-                r#"(sum ("count_60")) + (count (DISTINCT "column_64")) as "col_2" FROM"#,
-                r#"(SELECT "column_63","column_12","count_58" FROM "TMP_test_22")"#,
-                r#"GROUP BY "column_12" HAVING (sum (DISTINCT "column_64")) > (?)"#
+                r#"SELECT ("column_764") || ("column_764") as "col_1","#,
+                r#"(sum ("count_196")) + (count (DISTINCT "column_2032")) as "col_2" FROM"#,
+                r#"(SELECT "column_63","column_12","count_58" FROM "TMP_test_0136")"#,
+                r#"GROUP BY "column_764" HAVING (sum (DISTINCT "column_2032")) > (?)"#
             ),
             vec![Value::Unsigned(1u64)]
         )
@@ -711,8 +713,8 @@ fn exec_plan_subtree_having_without_groupby() {
         PatternWithParams::new(
             format!(
                 "{} {} {}",
-                r#"SELECT ("T1"."sys_op") * (?) as "column_45","#,
-                r#"count (("T1"."sys_op") * (?)) as "count_41" FROM "test_space" as "T1""#,
+                r#"SELECT ("T1"."sys_op") * (?) as "column_1332","#,
+                r#"count (("T1"."sys_op") * (?)) as "count_196" FROM "test_space" as "T1""#,
                 r#"GROUP BY ("T1"."sys_op") * (?)"#,
             ),
             vec![Value::Unsigned(2), Value::Unsigned(2), Value::Unsigned(2)]
@@ -731,9 +733,9 @@ fn exec_plan_subtree_having_without_groupby() {
         PatternWithParams::new(
             format!(
                 "{} {} {}",
-                r#"SELECT (sum ("count_41")) + (count (DISTINCT "column_45")) as "col_1""#,
-                r#"FROM (SELECT "column_63","column_12","count_58" FROM "TMP_test_14")"#,
-                r#"HAVING (sum (DISTINCT "column_45")) > (?)"#,
+                r#"SELECT (sum ("count_196")) + (count (DISTINCT "column_1332")) as "col_1""#,
+                r#"FROM (SELECT "column_63","column_12","count_58" FROM "TMP_test_0136")"#,
+                r#"HAVING (sum (DISTINCT "column_1332")) > (?)"#,
             ),
             vec![Value::Unsigned(1u64)]
         )
@@ -847,11 +849,11 @@ fn global_union_all2() {
     let (motion_id, _) = sub_plan
         .get_ir_plan()
         .nodes
-        .iter()
+        .iter136()
         .find_position(|n| {
             matches!(
                 n,
-                Node::Relational(Relational::Motion {
+                Node136::Motion(Motion {
                     policy: MotionPolicy::Full,
                     ..
                 })
@@ -862,7 +864,7 @@ fn global_union_all2() {
     let actual_dispatch = coordinator.detailed_dispatch(sub_plan, &buckets);
     let motion_id = NodeId {
         offset: motion_id as u32,
-        arena_type: ArenaType::Default,
+        arena_type: ArenaType::Arena136,
     };
 
     let expected = vec![
@@ -880,7 +882,7 @@ fn global_union_all2() {
         },
         ReplicasetDispatchInfo {
             rs_id: 2,
-            pattern: r#"SELECT "global_t"."a", "global_t"."b" FROM "global_t" WHERE ("global_t"."b") in (SELECT "e" FROM "TMP_test_16") UNION ALL SELECT "t2"."e", "t2"."f" FROM "t2""#.to_string(),
+            pattern: r#"SELECT "global_t"."a", "global_t"."b" FROM "global_t" WHERE ("global_t"."b") in (SELECT "e" FROM "TMP_test_0136") UNION ALL SELECT "t2"."e", "t2"."f" FROM "t2""#.to_string(),
             params: vec![],
             vtables_map: collection!(motion_id => Rc::new(virtual_table)),
         },
@@ -933,7 +935,7 @@ fn global_union_all3() {
     // these tuples must belong to different replicasets
     let tuple1 = vec![Value::Integer(3)];
     let tuple2 = vec![Value::Integer(2929)];
-    groupby_vtable.add_column(column_integer_user_non_null(SmolStr::from("column_51")));
+    groupby_vtable.add_column(column_integer_user_non_null(SmolStr::from("column_3364")));
     groupby_vtable.add_tuple(tuple1.clone());
     groupby_vtable.add_tuple(tuple2.clone());
     if let MotionPolicy::Segment(key) =
@@ -967,11 +969,11 @@ fn global_union_all3() {
     let (groupby_motion_id, _) = sub_plan
         .get_ir_plan()
         .nodes
-        .iter()
+        .iter136()
         .find_position(|n| {
             matches!(
                 n,
-                Node::Relational(Relational::Motion {
+                Node136::Motion(Motion {
                     policy: MotionPolicy::Segment(_),
                     ..
                 })
@@ -981,11 +983,11 @@ fn global_union_all3() {
     let (sq_motion_id, _) = sub_plan
         .get_ir_plan()
         .nodes
-        .iter()
+        .iter136()
         .find_position(|n| {
             matches!(
                 n,
-                Node::Relational(Relational::Motion {
+                Node136::Motion(Motion {
                     policy: MotionPolicy::Full,
                     ..
                 })
@@ -997,24 +999,24 @@ fn global_union_all3() {
 
     let groupby_motion_id = NodeId {
         offset: groupby_motion_id as u32,
-        arena_type: ArenaType::Default,
+        arena_type: ArenaType::Arena136,
     };
 
     let sq_motion_id = NodeId {
         offset: sq_motion_id as u32,
-        arena_type: ArenaType::Default,
+        arena_type: ArenaType::Arena136,
     };
 
     let expected = vec![
         ReplicasetDispatchInfo {
             rs_id: 0,
-            pattern: r#" select cast(null as integer) where false UNION ALL SELECT "column_51" as "f" FROM (SELECT "column_51" FROM "TMP_test_35") GROUP BY "column_51""#.to_string(),
+            pattern: r#" select cast(null as integer) where false UNION ALL SELECT "column_3364" as "f" FROM (SELECT "column_3364" FROM "TMP_test_2136") GROUP BY "column_3364""#.to_string(),
             params: vec![],
             vtables_map: collection!(groupby_motion_id => Rc::new(groupby_vtable1)),
         },
         ReplicasetDispatchInfo {
             rs_id: 1,
-            pattern: r#"SELECT "global_t"."a" FROM "global_t" WHERE ("global_t"."b") in (SELECT "f" FROM "TMP_test_14") UNION ALL SELECT "column_51" as "f" FROM (SELECT "column_51" FROM "TMP_test_35") GROUP BY "column_51""#.to_string(),
+            pattern: r#"SELECT "global_t"."a" FROM "global_t" WHERE ("global_t"."b") in (SELECT "f" FROM "TMP_test_0136") UNION ALL SELECT "column_3364" as "f" FROM (SELECT "column_3364" FROM "TMP_test_2136") GROUP BY "column_3364""#.to_string(),
             params: vec![],
             vtables_map: collection!(sq_motion_id => Rc::new(sq_vtable), groupby_motion_id => Rc::new(groupby_vtable2)),
         },
@@ -1121,11 +1123,12 @@ fn global_except() {
     expected.rows.extend(vec![vec![
         LuaValue::String(format!("Execute query locally")),
         LuaValue::String(String::from(PatternWithParams::new(
-            r#"SELECT "global_t"."a" FROM "global_t" EXCEPT SELECT "e" FROM "TMP_test_47""#.into(),
+            r#"SELECT "global_t"."a" FROM "global_t" EXCEPT SELECT "e" FROM "TMP_test_0136""#
+                .into(),
             vec![],
         ))),
     ]]);
-    assert_eq!(expected, res,)
+    assert_eq!(expected, res)
 }
 
 #[test]
@@ -1172,7 +1175,7 @@ fn exec_plan_order_by() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "identification_number" FROM (SELECT "identification_number" FROM "TMP_test_6") ORDER BY "identification_number""#.to_string(),
+            r#"SELECT "identification_number" FROM (SELECT "identification_number" FROM "TMP_test_0136") ORDER BY "identification_number""#.to_string(),
             vec![]
         ));
 }

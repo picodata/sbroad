@@ -2,10 +2,13 @@ use smol_str::{format_smolstr, ToSmolStr};
 
 use crate::{
     errors::{Entity, SbroadError},
-    ir::{expression::Expression, relation::Type, Node, Plan},
+    ir::{relation::Type, Plan},
 };
 
-use super::NodeId;
+use super::{
+    Alias, ArithmeticExpr, Case, Cast, Constant, ExprInParentheses, Expression, MutExpression,
+    Node, NodeId, Reference, Row, StableFunction,
+};
 
 impl Plan {
     fn get_node_type(&self, node_id: NodeId) -> Result<Type, SbroadError> {
@@ -19,7 +22,7 @@ impl Plan {
             )),
             // Parameter nodes must recalculate their type during
             // binding (see `bind_params` function).
-            Node::Parameter(ty) => Ok(ty.clone().unwrap_or(Type::Scalar)),
+            Node::Parameter(ty) => Ok(ty.param_type.clone().unwrap_or(Type::Scalar)),
             Node::Ddl(_) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("DDL node has no type".to_smolstr()),
@@ -27,6 +30,10 @@ impl Plan {
             Node::Acl(_) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("ACL node has no type".to_smolstr()),
+            )),
+            Node::Invalid(_) => Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("Invalid node has no type".to_smolstr()),
             )),
             Node::Block(_) => Err(SbroadError::Invalid(
                 Entity::Node,
@@ -36,7 +43,7 @@ impl Plan {
     }
 }
 
-impl Expression {
+impl Expression<'_> {
     /// Calculate the type of the expression.
     ///
     /// # Errors
@@ -46,11 +53,11 @@ impl Expression {
     /// - Plan is in inconsistent state
     pub fn calculate_type(&self, plan: &Plan) -> Result<Type, SbroadError> {
         match self {
-            Expression::Case {
+            Expression::Case(Case {
                 when_blocks,
                 else_expr,
                 ..
-            } => {
+            }) => {
                 let mut case_type = None;
                 let check_types_corresponds = |case_type: &Type, ret_expr_type: &Type| {
                     if case_type != ret_expr_type {
@@ -86,13 +93,14 @@ impl Expression {
                 }
                 Ok(case_type_unwrapped)
             }
-            Expression::Alias { child, .. } | Expression::ExprInParentheses { child } => {
+            Expression::Alias(Alias { child, .. })
+            | Expression::ExprInParentheses(ExprInParentheses { child }) => {
                 plan.get_node_type(*child)
             }
-            Expression::Bool { .. } | Expression::Unary { .. } => Ok(Type::Boolean),
-            Expression::Arithmetic {
+            Expression::Bool(_) | Expression::Unary(_) => Ok(Type::Boolean),
+            Expression::Arithmetic(ArithmeticExpr {
                 left, right, op, ..
-            } => {
+            }) => {
                 let left_type = plan.get_node_type(*left)?;
                 let right_type = plan.get_node_type(*right)?;
                 match (&left_type, &right_type) {
@@ -112,11 +120,11 @@ impl Expression {
                     )),
                 }
             }
-            Expression::Cast { to, .. } => Ok(to.as_relation_type()),
-            Expression::Trim { .. } | Expression::Concat { .. } => Ok(Type::String),
-            Expression::Constant { value, .. } => Ok(value.get_type()),
-            Expression::Reference { col_type, .. } => Ok(col_type.clone()),
-            Expression::Row { list, .. } => {
+            Expression::Cast(Cast { to, .. }) => Ok(to.as_relation_type()),
+            Expression::Trim(_) | Expression::Concat(_) => Ok(Type::String),
+            Expression::Constant(Constant { value, .. }) => Ok(value.get_type()),
+            Expression::Reference(Reference { col_type, .. }) => Ok(col_type.clone()),
+            Expression::Row(Row { list, .. }) => {
                 if let (Some(expr_id), None) = (list.first(), list.get(1)) {
                     let expr = plan.get_expression_node(*expr_id)?;
                     expr.calculate_type(plan)
@@ -124,12 +132,12 @@ impl Expression {
                     Ok(Type::Array)
                 }
             }
-            Expression::StableFunction {
+            Expression::StableFunction(StableFunction {
                 name,
                 func_type,
                 children,
                 ..
-            } => {
+            }) => {
                 // min/max functions have a scalar type, which means that their actual type can be
                 // inferred from the arguments.
                 if let "max" | "min" = name.as_str() {
@@ -142,7 +150,7 @@ impl Expression {
                     Ok(func_type.clone())
                 }
             }
-            Expression::CountAsterisk => Ok(Type::Integer),
+            Expression::CountAsterisk(_) => Ok(Type::Integer),
         }
     }
 
@@ -163,12 +171,12 @@ impl Expression {
     /// # Errors
     /// - if the reference is invalid;
     pub fn recalculate_type(&self, plan: &Plan) -> Result<Type, SbroadError> {
-        if let Expression::Reference {
+        if let Expression::Reference(Reference {
             parent,
             targets,
             position,
             ..
-        } = self
+        }) = self
         {
             let parent_id = parent.ok_or_else(|| {
                 SbroadError::Invalid(
@@ -206,9 +214,11 @@ impl Expression {
         }
         self.calculate_type(plan)
     }
+}
 
+impl MutExpression<'_> {
     pub fn set_ref_type(&mut self, new_type: Type) {
-        if let Expression::Reference { col_type, .. } = self {
+        if let MutExpression::Reference(Reference { col_type, .. }) = self {
             *col_type = new_type;
         }
     }

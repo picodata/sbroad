@@ -4,15 +4,21 @@ use smol_str::{SmolStr, ToSmolStr};
 
 use crate::backend::sql::tree::{SyntaxData, SyntaxPlan};
 use crate::errors::{Action, Entity, SbroadError};
-use crate::ir::expression::Expression;
-use crate::ir::operator::{OrderByEntity, Relational};
+use crate::ir::node::{
+    Alias, BoolExpr, Case, Constant, Delete, Except, ExprInParentheses, GroupBy, Having, Insert,
+    Intersect, Join, Motion, NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation,
+    ScanSubQuery, Selection, UnaryExpr, Union, UnionAll, Update, Values, ValuesRow,
+};
+use crate::ir::operator::OrderByEntity;
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use crate::ir::{Node, Plan};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::Write;
 use std::hash::BuildHasher;
 
-use super::expression::NodeId;
+use super::node::expression::Expression;
+use super::node::relational::Relational;
+use super::node::Limit;
 
 /// Helper macros to build a hash map or set
 /// from the list of arguments.
@@ -83,7 +89,7 @@ impl Plan {
         if let Ok(expr) = expr_try {
             write!(buf, "expression: ")?;
             match expr {
-                Expression::Alias { name, child } => {
+                Expression::Alias(Alias { name, child }) => {
                     let child_node = self.get_node(*child).expect("Alias must have a child node");
                     let child = match child_node {
                         Node::Expression(child_expr) => format!("{child_expr:?}"),
@@ -94,16 +100,16 @@ impl Plan {
                     };
                     writeln!(buf, "Alias [name = {name}, child = {child}]")?;
                 }
-                Expression::ExprInParentheses { child } => {
+                Expression::ExprInParentheses(ExprInParentheses { child }) => {
                     writeln!(buf, "Parentheses")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Child")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *child)?;
                 }
-                Expression::Case {
+                Expression::Case(Case {
                     search_expr,
                     when_blocks,
                     else_expr,
-                } => {
+                }) => {
                     writeln!(buf, "Case")?;
                     if let Some(search_expr) = search_expr {
                         writeln_with_tabulation(buf, tabulation_number + 1, "Search_expr")?;
@@ -120,24 +126,24 @@ impl Plan {
                         self.formatted_arena_node(buf, tabulation_number + 1, *else_expr)?;
                     }
                 }
-                Expression::Bool { op, left, right } => {
+                Expression::Bool(BoolExpr { op, left, right }) => {
                     writeln!(buf, "Bool [op: {op}]")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Left child")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *left)?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Right child")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *right)?;
                 }
-                Expression::Constant { value } => {
+                Expression::Constant(Constant { value }) => {
                     writeln!(buf, "Constant [value = {value}]")?;
                 }
-                Expression::CountAsterisk => writeln!(buf, "CountAsterisk")?,
-                Expression::Reference {
+                Expression::CountAsterisk(_) => writeln!(buf, "CountAsterisk")?,
+                Expression::Reference(Reference {
                     targets,
                     position,
                     parent,
                     col_type,
-                } => {
-                    let alias_name = self.get_alias_from_reference_node(expr).unwrap();
+                }) => {
+                    let alias_name = self.get_alias_from_reference_node(&expr).unwrap();
 
                     writeln!(buf, "Reference")?;
                     writeln_with_tabulation(
@@ -150,8 +156,8 @@ impl Plan {
                     let rel_id = self.get_relational_from_reference_node(node_id);
                     if let Ok(rel_id) = rel_id {
                         let rel_node = self.get_relation_node(*rel_id);
-                        if let Ok(rel_node) = rel_node {
-                            if let Ok(Some(name)) = rel_node.scan_name(self, *position) {
+                        if rel_node.is_ok() {
+                            if let Ok(Some(name)) = self.scan_name(*rel_id, *position) {
                                 writeln_with_tabulation(
                                     buf,
                                     tabulation_number + 1,
@@ -185,23 +191,23 @@ impl Plan {
                         format!("Column type: {col_type}").as_str(),
                     )?;
                 }
-                Expression::Row { list, distribution } => {
+                Expression::Row(Row { list, distribution }) => {
                     writeln!(buf, "Row [distribution = {distribution:?}]")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "List:")?;
                     for value in list {
                         self.formatted_arena_node(buf, tabulation_number + 2, *value)?;
                     }
                 }
-                Expression::Cast { .. } => writeln!(buf, "Cast")?,
-                Expression::Trim { .. } => writeln!(buf, "Trim")?,
-                Expression::Concat { .. } => writeln!(buf, "Concat")?,
-                Expression::StableFunction { .. } => writeln!(buf, "StableFunction")?,
-                Expression::Unary { op, child } => {
+                Expression::Cast(_) => writeln!(buf, "Cast")?,
+                Expression::Trim(_) => writeln!(buf, "Trim")?,
+                Expression::Concat(_) => writeln!(buf, "Concat")?,
+                Expression::StableFunction(_) => writeln!(buf, "StableFunction")?,
+                Expression::Unary(UnaryExpr { op, child }) => {
                     writeln!(buf, "Unary [op: {op}]")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Child")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *child)?;
                 }
-                Expression::Arithmetic { .. } => writeln!(buf, "Arithmetic")?,
+                Expression::Arithmetic(_) => writeln!(buf, "Arithmetic")?,
             };
         }
         Ok(())
@@ -224,9 +230,9 @@ impl Plan {
             write!(buf, "relation: ")?;
             // Print relation name and specific info.
             match relation {
-                Relational::ScanRelation {
+                Relational::ScanRelation(ScanRelation {
                     alias, relation, ..
-                } => {
+                }) => {
                     writeln!(buf, "ScanRelation")?;
                     writeln_with_tabulation(
                         buf,
@@ -241,15 +247,15 @@ impl Plan {
                         )?;
                     }
                 }
-                Relational::Join { condition, .. } => {
+                Relational::Join(Join { condition, .. }) => {
                     writeln!(buf, "InnerJoin")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Condition:")?;
                     self.formatted_arena_node(buf, tabulation_number + 2, *condition)?;
                 }
-                Relational::Projection { .. } => {
+                Relational::Projection(_) => {
                     writeln!(buf, "Projection")?;
                 }
-                Relational::ScanCte { alias, .. } => {
+                Relational::ScanCte(ScanCte { alias, .. }) => {
                     writeln!(buf, "ScanCte")?;
                     if !alias.is_empty() {
                         writeln_with_tabulation(
@@ -259,7 +265,7 @@ impl Plan {
                         )?;
                     }
                 }
-                Relational::ScanSubQuery { alias, .. } => {
+                Relational::ScanSubQuery(ScanSubQuery { alias, .. }) => {
                     writeln!(buf, "ScanSubQuery")?;
                     if let Some(alias) = alias {
                         if !alias.is_empty() {
@@ -271,23 +277,23 @@ impl Plan {
                         }
                     }
                 }
-                Relational::Selection {
+                Relational::Selection(Selection {
                     children: _,
                     filter,
                     output: _,
-                } => {
+                }) => {
                     writeln!(buf, "Selection")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Filter")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *filter)?;
                 }
-                Relational::Having { filter, .. } => {
+                Relational::Having(Having { filter, .. }) => {
                     writeln!(buf, "Having")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Filter")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *filter)?;
                 }
-                Relational::GroupBy {
+                Relational::GroupBy(GroupBy {
                     gr_cols, is_final, ..
-                } => {
+                }) => {
                     writeln!(buf, "GroupBy [is_final = {is_final}]")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Gr_cols:")?;
                     for gr_col in gr_cols {
@@ -295,14 +301,14 @@ impl Plan {
                         let text = if let Ok(gl_col_expr) = gl_col_expr {
                             format!("Gr_col: {gl_col_expr:?}")
                         } else {
-                            format!("Gr_col: {gr_col:?}")
+                            format!("Gr_col: {gr_col}")
                         };
                         writeln_with_tabulation(buf, tabulation_number + 2, text.as_str())?;
                     }
                 }
-                Relational::OrderBy {
+                Relational::OrderBy(OrderBy {
                     order_by_elements, ..
-                } => {
+                }) => {
                     writeln!(buf, "OrderBy")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Order_by_elements:")?;
                     for element in order_by_elements {
@@ -322,52 +328,51 @@ impl Plan {
                     }
                 }
                 Relational::Values { .. } => writeln!(buf, "Values")?,
-                Relational::ValuesRow { data, .. } => {
+                Relational::ValuesRow(ValuesRow { data, .. }) => {
                     writeln!(buf, "ValuesRow")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Data")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *data)?;
                 }
-                Relational::Motion { policy, .. } => {
+                Relational::Motion(Motion { policy, .. }) => {
                     writeln!(buf, "Motion [policy = {policy:?}]")?;
                 }
                 Relational::Union { .. } => writeln!(buf, "Union")?,
                 Relational::UnionAll { .. } => writeln!(buf, "UnionAll")?,
-                Relational::Update {
+                Relational::Update(Update {
                     relation,
                     update_columns_map,
                     ..
-                } => {
+                }) => {
                     writeln!(buf, "Update")?;
                     writeln_with_tabulation(buf, tabulation_number + 1, "Update columns map:")?;
                     for (rel_pos, proj_pos) in update_columns_map {
                         writeln_with_tabulation(buf, tabulation_number + 2, format!("Update {relation} column on pos {rel_pos} to child projection column on pos {proj_pos}").as_str())?;
                     }
                 }
-                Relational::Delete { .. } => writeln!(buf, "Delete")?,
-                Relational::Insert { .. } => writeln!(buf, "Insert")?,
-                Relational::Intersect { .. } => writeln!(buf, "Intersect")?,
-                Relational::Except { .. } => writeln!(buf, "Except")?,
-                Relational::Limit { limit, .. } => writeln!(buf, "Limit {limit}")?,
+                Relational::Delete(_) => writeln!(buf, "Delete")?,
+                Relational::Insert(_) => writeln!(buf, "Insert")?,
+                Relational::Intersect(_) => writeln!(buf, "Intersect")?,
+                Relational::Except(_) => writeln!(buf, "Except")?,
+                Relational::Limit(Limit { limit, .. }) => writeln!(buf, "Limit {limit}")?,
             }
             // Print children.
             match relation {
-                node @ (Relational::Join { .. }
-                | Relational::Projection { .. }
-                | Relational::Except { .. }
-                | Relational::Delete { .. }
-                | Relational::Insert { .. }
-                | Relational::Intersect { .. }
-                | Relational::ScanSubQuery { .. }
-                | Relational::Selection { .. }
-                | Relational::Values { .. }
-                | Relational::Motion { .. }
-                | Relational::Union { .. }
-                | Relational::UnionAll { .. }
-                | Relational::Update { .. }
-                | Relational::Having { .. }
-                | Relational::GroupBy { .. }
-                | Relational::ValuesRow { .. }
-                | Relational::Limit { .. }) => {
+                ref node @ (Relational::Join(_)
+                | Relational::Projection(_)
+                | Relational::Except(_)
+                | Relational::Delete(_)
+                | Relational::Insert(_)
+                | Relational::Intersect(_)
+                | Relational::ScanSubQuery(_)
+                | Relational::Selection(_)
+                | Relational::Values(_)
+                | Relational::Motion(_)
+                | Relational::Union(_)
+                | Relational::UnionAll(_)
+                | Relational::Update(_)
+                | Relational::Having(_)
+                | Relational::GroupBy(_)
+                | Relational::ValuesRow(_)) => {
                     writeln_with_tabulation(buf, tabulation_number + 1, "Children:")?;
                     for child in &node.children() {
                         writeln_with_tabulation(
@@ -377,7 +382,9 @@ impl Plan {
                         )?;
                     }
                 }
-                Relational::OrderBy { child, .. } | Relational::ScanCte { child, .. } => {
+                Relational::Limit(Limit { child, .. })
+                | Relational::OrderBy(OrderBy { child, .. })
+                | Relational::ScanCte(ScanCte { child, .. }) => {
                     writeln_with_tabulation(buf, tabulation_number + 1, "Children:")?;
                     writeln_with_tabulation(
                         buf,
@@ -391,26 +398,26 @@ impl Plan {
             }
             // Print output.
             match relation {
-                Relational::ScanRelation { output, .. }
-                | Relational::Join { output, .. }
-                | Relational::Except { output, .. }
-                | Relational::Delete { output, .. }
-                | Relational::Insert { output, .. }
-                | Relational::Intersect { output, .. }
-                | Relational::Projection { output, .. }
-                | Relational::ScanCte { output, .. }
-                | Relational::ScanSubQuery { output, .. }
-                | Relational::GroupBy { output, .. }
-                | Relational::OrderBy { output, .. }
-                | Relational::Selection { output, .. }
-                | Relational::Having { output, .. }
-                | Relational::Values { output, .. }
-                | Relational::Motion { output, .. }
-                | Relational::Union { output, .. }
-                | Relational::UnionAll { output, .. }
-                | Relational::Update { output, .. }
-                | Relational::ValuesRow { output, .. }
-                | Relational::Limit { output, .. } => {
+                Relational::ScanRelation(ScanRelation { output, .. })
+                | Relational::Join(Join { output, .. })
+                | Relational::Except(Except { output, .. })
+                | Relational::Delete(Delete { output, .. })
+                | Relational::Insert(Insert { output, .. })
+                | Relational::Intersect(Intersect { output, .. })
+                | Relational::Projection(Projection { output, .. })
+                | Relational::ScanCte(ScanCte { output, .. })
+                | Relational::ScanSubQuery(ScanSubQuery { output, .. })
+                | Relational::GroupBy(GroupBy { output, .. })
+                | Relational::OrderBy(OrderBy { output, .. })
+                | Relational::Selection(Selection { output, .. })
+                | Relational::Having(Having { output, .. })
+                | Relational::Values(Values { output, .. })
+                | Relational::Motion(Motion { output, .. })
+                | Relational::Union(Union { output, .. })
+                | Relational::UnionAll(UnionAll { output, .. })
+                | Relational::Update(Update { output, .. })
+                | Relational::ValuesRow(ValuesRow { output, .. })
+                | Relational::Limit(Limit { output, .. }) => {
                     writeln_with_tabulation(
                         buf,
                         tabulation_number + 1,

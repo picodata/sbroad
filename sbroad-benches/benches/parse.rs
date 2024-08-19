@@ -420,7 +420,6 @@ criterion_group!(
     benches,
     bench_pure_pest_parsing,
     bench_full_parsing,
-    bench_serde_clone,
-    bench_take_subtree,
+    bench_serde_clone
 );
 criterion_main!(benches);

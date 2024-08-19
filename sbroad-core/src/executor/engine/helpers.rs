@@ -1,6 +1,15 @@
 use ahash::AHashMap;
 
-use crate::{error, ir::expression::NodeId, utils::MutexLike};
+use crate::{
+    error,
+    ir::node::{
+        expression::{ExprOwned, Expression},
+        relational::{RelOwned, Relational},
+        Alias, Constant, Delete, Insert, Limit, Motion, NodeId, NodeOwned, Update, Values,
+        ValuesRow,
+    },
+    utils::MutexLike,
+};
 use itertools::enumerate;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::{
@@ -42,13 +51,11 @@ use crate::{
     },
     ir::{
         distribution::Distribution,
-        expression::Expression,
-        operator::Relational,
         relation::{Column, ColumnRole, Type},
         transformation::redistribution::{MotionKey, MotionPolicy},
         tree::Snapshot,
         value::Value,
-        Node, Plan,
+        Plan,
     },
 };
 use sbroad_proc::otm_child_span;
@@ -140,10 +147,10 @@ pub fn build_required_binary(exec_plan: &mut ExecutionPlan) -> Result<Binary, Sb
                 let child_id = ir.get_relational_child(top_id, 0)?;
                 let is_cacheable = matches!(
                     ir.get_relation_node(child_id)?,
-                    Relational::Motion {
+                    Relational::Motion(Motion {
                         policy: MotionPolicy::Local | MotionPolicy::LocalSegment { .. },
                         ..
-                    }
+                    })
                 );
                 if is_cacheable {
                     let cacheable_subtree_root_id = exec_plan.get_motion_subtree_root(child_id)?;
@@ -187,16 +194,18 @@ pub fn build_optional_binary(mut exec_plan: ExecutionPlan) -> Result<Binary, Sbr
             let sp_top_id = plan.get_top()?;
             let sp_top = plan.get_relation_node(sp_top_id)?;
             let motion_id = match sp_top {
-                Relational::Insert { children, .. }
-                | Relational::Delete { children, .. }
-                | Relational::Update { children, .. } => *children.first().ok_or_else(|| {
-                    SbroadError::Invalid(
-                        Entity::Plan,
-                        Some(format_smolstr!(
-                            "expected at least one child under DML node {sp_top:?}",
-                        )),
-                    )
-                })?,
+                Relational::Insert(Insert { children, .. })
+                | Relational::Update(Update { children, .. })
+                | Relational::Delete(Delete { children, .. }) => {
+                    *children.first().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Plan,
+                            Some(format_smolstr!(
+                                "expected at least one child under DML node {sp_top:?}",
+                            )),
+                        )
+                    })?
+                }
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
@@ -205,7 +214,7 @@ pub fn build_optional_binary(mut exec_plan: ExecutionPlan) -> Result<Binary, Sbr
                 }
             };
             let motion = plan.get_relation_node(motion_id)?;
-            let Relational::Motion { policy, .. } = motion else {
+            let Relational::Motion(Motion { policy, .. }) = motion else {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
                     Some(format_smolstr!(
@@ -437,12 +446,12 @@ pub fn init_local_update_tuple_builder(
     vtable: &VirtualTable,
     update_id: NodeId,
 ) -> Result<TupleBuilderPattern, SbroadError> {
-    if let Relational::Update {
+    if let Relational::Update(Update {
         relation,
         update_columns_map,
         pk_positions,
         ..
-    } = plan.get_relation_node(update_id)?
+    }) = plan.get_relation_node(update_id)?
     {
         let mut commands: TupleBuilderPattern =
             Vec::with_capacity(update_columns_map.len() + pk_positions.len());
@@ -664,9 +673,9 @@ fn init_sharded_update_tuple_builder(
     vtable: &VirtualTable,
     update_id: NodeId,
 ) -> Result<TupleBuilderPattern, SbroadError> {
-    let Relational::Update {
+    let Relational::Update(Update {
         update_columns_map, ..
-    } = plan.get_relation_node(update_id)?
+    }) = plan.get_relation_node(update_id)?
     else {
         return Err(SbroadError::Invalid(
             Entity::Node,
@@ -759,7 +768,7 @@ pub fn empty_query_result(
             for col_id in columns {
                 let column = ir_plan.get_expression_node(*col_id)?;
                 let column_type = column.calculate_type(ir_plan)?;
-                let column_name = if let Expression::Alias { name, .. } = column {
+                let column_name = if let Expression::Alias(Alias { name, .. }) = column {
                     name.clone()
                 } else {
                     return Err(SbroadError::Invalid(
@@ -811,7 +820,7 @@ pub fn explain_format(explain: &str) -> Result<Box<dyn Any>, SbroadError> {
 fn has_zero_limit_clause(plan: &ExecutionPlan) -> Result<bool, SbroadError> {
     let ir = plan.get_ir_plan();
     let top_id = ir.get_top()?;
-    if let Relational::Limit { limit, .. } = ir.get_relation_node(top_id)? {
+    if let Relational::Limit(Limit { limit, .. }) = ir.get_relation_node(top_id)? {
         return Ok(*limit == 0);
     }
     Ok(false)
@@ -900,10 +909,10 @@ pub(crate) fn materialize_values(
 ) -> Result<Option<VirtualTable>, SbroadError> {
     // Check that the motion node has a local segment policy.
     let motion_node = plan.get_ir_plan().get_relation_node(motion_node_id)?;
-    if let Relational::Motion {
+    if let Relational::Motion(Motion {
         policy: MotionPolicy::LocalSegment(_),
         ..
-    } = motion_node
+    }) = motion_node
     {
     } else {
         return Ok(None);
@@ -917,17 +926,16 @@ pub(crate) fn materialize_values(
     let child_id = plan.get_motion_child(motion_node_id)?;
     if !matches!(
         plan.get_ir_plan().get_relation_node(child_id)?,
-        Relational::Values { .. }
+        Relational::Values(_)
     ) {
         return Ok(None);
     }
-    let child_node_ref = plan.get_mut_ir_plan().get_mut_node(child_id)?;
-    let child_node = std::mem::replace(child_node_ref, Node::Parameter(None));
-    if let Node::Relational(Relational::Values {
+    let child_node = plan.get_mut_ir_plan().replace_with_stub(child_id);
+    if let NodeOwned::Relational(RelOwned::Values(Values {
         ref children,
         output,
         ..
-    }) = child_node
+    })) = child_node
     {
         // Build a new virtual table (check that all the rows are made of constants only).
         let mut vtable = VirtualTable::new();
@@ -935,7 +943,7 @@ pub(crate) fn materialize_values(
 
         let columns_len = if let Some(first_row_id) = children.first() {
             let row_node = plan.get_ir_plan().get_relation_node(*first_row_id)?;
-            let Relational::ValuesRow { data, .. } = row_node else {
+            let Relational::ValuesRow(ValuesRow { data, .. }) = row_node else {
                 return Err(SbroadError::Invalid(
                     Entity::Node,
                     Some(format_smolstr!("Expected ValuesRow, got {row_node:?}")),
@@ -956,7 +964,7 @@ pub(crate) fn materialize_values(
         let mut nullable_column_indices = HashSet::with_capacity(columns_len);
         for row_id in children {
             let row_node = plan.get_ir_plan().get_relation_node(*row_id)?;
-            if let Relational::ValuesRow { data, children, .. } = row_node {
+            if let Relational::ValuesRow(ValuesRow { data, children, .. }) = row_node {
                 // Check that there are no subqueries in the values node.
                 // (If any we'll need to materialize them first with dispatch
                 // to the storages.)
@@ -982,9 +990,10 @@ pub(crate) fn materialize_values(
                                     format_smolstr!("at position {idx} in the row"),
                                 )
                             })?;
-                    let column_node_ref = plan.get_mut_ir_plan().get_mut_node(column_id)?;
-                    let column_node = std::mem::replace(column_node_ref, Node::Parameter(None));
-                    if let Node::Expression(Expression::Constant { value, .. }) = column_node {
+                    let column_node = plan.get_mut_ir_plan().replace_with_stub(column_id);
+                    if let NodeOwned::Expression(ExprOwned::Constant(Constant { value, .. })) =
+                        column_node
+                    {
                         if let Value::Null = value {
                             nullable_column_indices.insert(idx);
                         }
@@ -1009,16 +1018,13 @@ pub(crate) fn materialize_values(
             }
         }
         // Build virtual table's columns.
-        let output_cols = plan
-            .get_ir_plan()
-            .get_expression_node(output)?
-            .get_row_list()?;
+        let output_cols = plan.get_ir_plan().get_row_list(output)?;
         let columns = vtable.get_mut_columns();
         columns.reserve(output_cols.len());
         for (idx, column_id) in enumerate(output_cols) {
             let is_nullable = nullable_column_indices.contains(&idx);
             let alias = plan.get_ir_plan().get_expression_node(*column_id)?;
-            if let Expression::Alias { name, .. } = alias {
+            if let Expression::Alias(Alias { name, .. }) = alias {
                 let column = Column {
                     name: name.clone(),
                     r#type: Type::Scalar,
@@ -1530,9 +1536,9 @@ where
     let top_id = plan.get_top()?;
     let top = plan.get_relation_node(top_id)?;
     match top {
-        Relational::Insert { .. } => execute_insert_on_storage(runtime, &mut optional, required),
-        Relational::Delete { .. } => execute_delete_on_storage(runtime, &mut optional, required),
-        Relational::Update { .. } => execute_update_on_storage(runtime, &mut optional, required),
+        Relational::Insert(_) => execute_insert_on_storage(runtime, &mut optional, required),
+        Relational::Delete(_) => execute_delete_on_storage(runtime, &mut optional, required),
+        Relational::Update(_) => execute_update_on_storage(runtime, &mut optional, required),
         _ => Err(SbroadError::Invalid(
             Entity::Plan,
             Some(format_smolstr!(
@@ -2216,7 +2222,7 @@ pub fn try_get_metadata_from_plan(
     for col_id in columns {
         let column = ir.get_expression_node(*col_id)?;
         let column_type = column.calculate_type(ir)?.to_string();
-        let column_name = if let Expression::Alias { name, .. } = column {
+        let column_name = if let Expression::Alias(Alias { name, .. }) = column {
             name.to_string()
         } else {
             return Err(SbroadError::Invalid(

@@ -11,8 +11,9 @@
 //! ```
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::{Expression, NodeId};
 use crate::ir::helpers::RepeatableState;
+use crate::ir::node::expression::{Expression, MutExpression};
+use crate::ir::node::{Alias, ArithmeticExpr, BoolExpr, NodeId, Row};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::tree::traversal::BreadthFirst;
@@ -69,7 +70,7 @@ impl Chain {
     /// - There is something wrong with our sub-queries.
     pub fn insert(&mut self, plan: &mut Plan, expr_id: NodeId) -> Result<(), SbroadError> {
         let bool_expr = plan.get_expression_node(expr_id)?;
-        if let Expression::Bool { left, op, right } = bool_expr {
+        if let Expression::Bool(BoolExpr { left, op, right }) = bool_expr {
             if let Bool::And | Bool::Or = op {
                 // We don't expect nested AND/OR expressions in DNF.
                 return Err(SbroadError::Unsupported(
@@ -89,12 +90,12 @@ impl Chain {
                         _ => (*left, *right, op.clone()),
                     };
 
-                if let Ok(Expression::Arithmetic { .. }) = plan.get_expression_node(left_id) {
+                if let Ok(Expression::Arithmetic(_)) = plan.get_expression_node(left_id) {
                     self.other.push(expr_id);
                     return Ok(());
                 }
 
-                if let Ok(Expression::Arithmetic { .. }) = plan.get_expression_node(right_id) {
+                if let Ok(Expression::Arithmetic(_)) = plan.get_expression_node(right_id) {
                     self.other.push(expr_id);
                     return Ok(());
                 }
@@ -208,7 +209,7 @@ impl Plan {
     fn get_columns_or_self(&self, expr_id: NodeId) -> Result<Vec<NodeId>, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
-            Expression::Row { list, .. } => Ok(list.clone()),
+            Expression::Row(Row { list, .. }) => Ok(list.clone()),
             _ => Ok(vec![expr_id]),
         }
     }
@@ -242,21 +243,21 @@ impl Plan {
             let mut nodes_for_chain: Vec<NodeId> = Vec::with_capacity(nodes_and.len());
             for and_id in nodes_and {
                 let expr = self.get_expression_node(and_id)?;
-                if let Expression::Bool {
+                if let Expression::Bool(BoolExpr {
                     left,
                     op: Bool::And,
                     right,
                     ..
-                } = expr
+                }) = expr
                 {
                     let children = vec![*left, *right];
                     for child_id in children {
                         visited.insert(child_id);
                         let child_expr = self.get_expression_node(child_id)?;
-                        if let Expression::Bool {
+                        if let Expression::Bool(BoolExpr {
                             op: Bool::And | Bool::Or,
                             ..
-                        } = child_expr
+                        }) = child_expr
                         {
                             continue;
                         }
@@ -306,15 +307,15 @@ impl Plan {
         for id in nodes {
             let expr = self.get_expression_node(id)?;
             match expr {
-                Expression::Alias { child, .. } => {
+                Expression::Alias(Alias { child, .. }) => {
                     let chain = chains.get(child);
                     if let Some(chain) = chain {
                         let new_child_id = f_to_plan(chain, self)?;
                         let expr_mut = self.get_mut_expression_node(id)?;
-                        if let Expression::Alias {
+                        if let MutExpression::Alias(Alias {
                             child: ref mut child_id,
                             ..
-                        } = expr_mut
+                        }) = expr_mut
                         {
                             *child_id = new_child_id;
                         } else {
@@ -325,18 +326,18 @@ impl Plan {
                         }
                     }
                 }
-                Expression::Bool { left, right, .. } => {
+                Expression::Bool(BoolExpr { left, right, .. }) => {
                     let children = [*left, *right];
                     for (pos, child) in children.iter().enumerate() {
                         let chain = chains.get(child);
                         if let Some(chain) = chain {
                             let new_child_id = f_to_plan(chain, self)?;
                             let expr_mut = self.get_mut_expression_node(id)?;
-                            if let Expression::Bool {
+                            if let MutExpression::Bool(BoolExpr {
                                 left: ref mut left_id,
                                 right: ref mut right_id,
                                 ..
-                            } = expr_mut
+                            }) = expr_mut
                             {
                                 if pos == 0 {
                                     *left_id = new_child_id;
@@ -354,18 +355,18 @@ impl Plan {
                         }
                     }
                 }
-                Expression::Arithmetic { left, right, .. } => {
+                Expression::Arithmetic(ArithmeticExpr { left, right, .. }) => {
                     let children = [*left, *right];
                     for (pos, child) in children.iter().enumerate() {
                         let chain = chains.get(child);
                         if let Some(chain) = chain {
                             let new_child_id = f_to_plan(chain, self)?;
                             let expr_mut = self.get_mut_expression_node(id)?;
-                            if let Expression::Arithmetic {
+                            if let MutExpression::Arithmetic(ArithmeticExpr {
                                 left: ref mut left_id,
                                 right: ref mut right_id,
                                 ..
-                            } = expr_mut
+                            }) = expr_mut
                             {
                                 if pos == 0 {
                                     *left_id = new_child_id;
@@ -383,14 +384,14 @@ impl Plan {
                         }
                     }
                 }
-                Expression::Row { list, .. } => {
+                Expression::Row(Row { list, .. }) => {
                     let children = list.clone();
                     for (pos, child) in children.iter().enumerate() {
                         let chain = chains.get(child);
                         if let Some(chain) = chain {
                             let new_child_id = f_to_plan(chain, self)?;
                             let expr_mut = self.get_mut_expression_node(id)?;
-                            if let Expression::Row { ref mut list, .. } = expr_mut {
+                            if let MutExpression::Row(Row { ref mut list, .. }) = expr_mut {
                                 if let Some(child_id) = list.get_mut(pos) {
                                     *child_id = new_child_id;
                                 } else {

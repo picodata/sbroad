@@ -1,8 +1,8 @@
 use std::ops::{Index, Range, RangeFrom, RangeFull};
 
-use crate::ir::expression::NodeId;
+use crate::ir::node::NodeId;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Children<'r> {
     None,
     Single(&'r NodeId),
@@ -223,9 +223,7 @@ impl<'r> MutChildren<'r> {
             MutChildren::Single(i) => (i, MutChildren::None),
             MutChildren::Couple(l, r) => (l, MutChildren::Single(r)),
             MutChildren::Many(i) => {
-                let Some((elem, next)) = i.split_first_mut() else {
-                    return None;
-                };
+                let (elem, next) = i.split_first_mut()?;
                 (elem, MutChildren::Many(next))
             }
         };
@@ -244,9 +242,7 @@ impl<'c> Iterator for MutChildrenIter<'c> {
     fn next(&mut self) -> Option<Self::Item> {
         let inner = std::mem::take(&mut self.inner);
         if let Some(inner) = inner {
-            let Some((elem, next)) = inner.split_first() else {
-                return None;
-            };
+            let (elem, next) = inner.split_first()?;
             self.inner = Some(next);
             Some(elem)
         } else {

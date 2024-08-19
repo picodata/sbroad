@@ -924,9 +924,9 @@ g2.test_alias = function()
         {name = "a", type = "integer"},
     })
 
-    local res, err = api:call("sbroad.execute", { [[
-        select "id", "id" + "a" as "sum", "id" * "a" as "mul", "a" from "arithmetic_space"
-        ]], {}})
+    local res, err = api:call("sbroad.execute", {
+        [[select "id", "id" + "a" as "sum", "id" * "a" as "mul", "a" from "arithmetic_space"]], {}
+    })
     t.assert_equals(err, nil)
     t.assert_equals(res.metadata, {
         {name = "id", type = "integer"},
@@ -934,6 +934,7 @@ g2.test_alias = function()
         {name = "mul", type = "integer"},
         {name = "a", type = "integer"},
     })
+
 end
 
 g2.test_associativity = function()

@@ -12,11 +12,15 @@ pub mod split_columns;
 
 use smol_str::format_smolstr;
 
-use super::expression::NodeId;
+use super::node::expression::{Expression, MutExpression};
+use super::node::relational::{MutRelational, Relational};
 use super::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::Expression;
-use crate::ir::operator::{Bool, Relational};
+use crate::ir::node::{
+    Alias, ArithmeticExpr, BoolExpr, Case, Cast, ExprInParentheses, Join, NodeId, Row, Selection,
+    StableFunction, Trim, UnaryExpr,
+};
+use crate::ir::operator::Bool;
 use crate::ir::{Node, Plan};
 use std::collections::HashMap;
 
@@ -142,12 +146,12 @@ impl Plan {
             let id = level_node.1;
             let rel = self.get_relation_node(id)?;
             let (old_tree_id, new_tree_id) = match rel {
-                Relational::Selection {
+                Relational::Selection(Selection {
                     filter: tree_id, ..
-                }
-                | Relational::Join {
+                })
+                | Relational::Join(Join {
                     condition: tree_id, ..
-                } => f(self, *tree_id)?,
+                }) => f(self, *tree_id)?,
                 _ => continue,
             };
             if old_tree_id != new_tree_id {
@@ -155,12 +159,12 @@ impl Plan {
             }
             let rel = self.get_mut_relation_node(id)?;
             match rel {
-                Relational::Selection {
+                MutRelational::Selection(Selection {
                     filter: tree_id, ..
-                }
-                | Relational::Join {
+                })
+                | MutRelational::Join(Join {
                     condition: tree_id, ..
-                } => {
+                }) => {
                     *tree_id = new_tree_id;
                 }
                 _ => continue,
@@ -187,15 +191,15 @@ impl Plan {
         // * That will contain transformed nodes as children
         let filter = |node_id: NodeId| -> bool {
             if let Ok(Node::Expression(
-                Expression::Bool { .. }
-                | Expression::ExprInParentheses { .. }
-                | Expression::Arithmetic { .. }
-                | Expression::Alias { .. }
-                | Expression::Row { .. }
-                | Expression::Cast { .. }
-                | Expression::Case { .. }
-                | Expression::StableFunction { .. }
-                | Expression::Unary { .. },
+                Expression::Bool(_)
+                | Expression::ExprInParentheses(_)
+                | Expression::Arithmetic(_)
+                | Expression::Alias(_)
+                | Expression::Row(_)
+                | Expression::Cast(_)
+                | Expression::Case(_)
+                | Expression::StableFunction(_)
+                | Expression::Unary(_),
             )) = self.get_node(node_id)
             {
                 return true;
@@ -213,7 +217,7 @@ impl Plan {
         for level_node in &nodes {
             let id = level_node.1;
             let expr = self.get_expression_node(id)?;
-            if let Expression::Bool { op, .. } = expr {
+            if let Expression::Bool(BoolExpr { op, .. }) = expr {
                 if ops.contains(op) || ops.is_empty() {
                     let (old_top_id, new_top_id) = f(self, id)?;
                     if old_top_id != new_top_id {
@@ -240,17 +244,17 @@ impl Plan {
                 // XXX: If you add a new expression type to the match, make sure to
                 // add it to the filter above.
                 match expr {
-                    Expression::Alias { child, .. }
-                    | Expression::ExprInParentheses { child, .. }
-                    | Expression::Cast { child, .. }
-                    | Expression::Unary { child, .. } => {
+                    MutExpression::Alias(Alias { child, .. })
+                    | MutExpression::ExprInParentheses(ExprInParentheses { child, .. })
+                    | MutExpression::Cast(Cast { child, .. })
+                    | MutExpression::Unary(UnaryExpr { child, .. }) => {
                         map.replace(child);
                     }
-                    Expression::Case {
+                    MutExpression::Case(Case {
                         search_expr,
                         when_blocks,
                         else_expr,
-                    } => {
+                    }) => {
                         if let Some(search_expr) = search_expr {
                             map.replace(search_expr);
                         }
@@ -262,29 +266,29 @@ impl Plan {
                             map.replace(else_expr);
                         }
                     }
-                    Expression::Bool { left, right, .. }
-                    | Expression::Arithmetic { left, right, .. } => {
+                    MutExpression::Bool(BoolExpr { left, right, .. })
+                    | MutExpression::Arithmetic(ArithmeticExpr { left, right, .. }) => {
                         map.replace(left);
                         map.replace(right);
                     }
-                    Expression::Trim {
+                    MutExpression::Trim(Trim {
                         pattern, target, ..
-                    } => {
+                    }) => {
                         if let Some(pattern) = pattern {
                             map.replace(pattern);
                         }
                         map.replace(target);
                     }
-                    Expression::Row { list, .. }
-                    | Expression::StableFunction { children: list, .. } => {
+                    MutExpression::Row(Row { list, .. })
+                    | MutExpression::StableFunction(StableFunction { children: list, .. }) => {
                         for id in list {
                             map.replace(id);
                         }
                     }
-                    Expression::Concat { .. }
-                    | Expression::Constant { .. }
-                    | Expression::Reference { .. }
-                    | Expression::CountAsterisk => {}
+                    MutExpression::Concat(_)
+                    | MutExpression::Constant(_)
+                    | MutExpression::Reference(_)
+                    | MutExpression::CountAsterisk(_) => {}
                 }
             }
             // Checks if the top node is a new node.

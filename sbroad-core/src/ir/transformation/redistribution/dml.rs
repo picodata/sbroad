@@ -1,6 +1,7 @@
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::NodeId;
-use crate::ir::operator::{ConflictStrategy, Relational, UpdateStrategy};
+use crate::ir::node::relational::{MutRelational, Relational};
+use crate::ir::node::{Delete, Insert, Motion, NodeId, Update};
+use crate::ir::operator::{ConflictStrategy, UpdateStrategy};
 use crate::ir::relation::{Column, Table};
 use crate::ir::transformation::redistribution::MotionOpcode;
 use crate::ir::Plan;
@@ -17,9 +18,9 @@ impl Plan {
     /// - `Insert` has 0 or more than 1 child
     pub fn dml_child_id(&self, dml_node_id: NodeId) -> Result<NodeId, SbroadError> {
         let dml_node = self.get_relation_node(dml_node_id)?;
-        if let Relational::Insert { children, .. }
-        | Relational::Update { children, .. }
-        | Relational::Delete { children, .. } = dml_node
+        if let Relational::Insert(Insert { children, .. })
+        | Relational::Update(Update { children, .. })
+        | Relational::Delete(Delete { children, .. }) = dml_node
         {
             if let (Some(child), None) = (children.first(), children.get(1)) {
                 return Ok(*child);
@@ -44,9 +45,9 @@ impl Plan {
         insert_id: NodeId,
     ) -> Result<&ConflictStrategy, SbroadError> {
         let insert = self.get_relation_node(insert_id)?;
-        if let Relational::Insert {
+        if let Relational::Insert(Insert {
             conflict_strategy, ..
-        } = insert
+        }) = insert
         {
             return Ok(conflict_strategy);
         }
@@ -72,7 +73,7 @@ impl Plan {
         // output columns.
         let child_id = self.dml_child_id(insert_id)?;
         let child_output_id = self.get_relation_node(child_id)?.output();
-        let child_row = self.get_expression_node(child_output_id)?.get_row_list()?;
+        let child_row = self.get_row_list(child_output_id)?;
         if columns.len() != child_row.len() {
             return Err(SbroadError::Invalid(
                 Entity::Node,
@@ -117,7 +118,7 @@ impl Plan {
     /// - node is not `Insert`
     pub(crate) fn insert_columns(&self, insert_id: NodeId) -> Result<&[usize], SbroadError> {
         let insert = self.get_relation_node(insert_id)?;
-        if let Relational::Insert { ref columns, .. } = insert {
+        if let Relational::Insert(Insert { ref columns, .. }) = insert {
             return Ok(columns);
         }
         Err(SbroadError::Invalid(
@@ -132,9 +133,9 @@ impl Plan {
     /// - Node is not an `Insert`
     pub fn dml_node_table(&self, node_id: NodeId) -> Result<&Table, SbroadError> {
         let node = self.get_relation_node(node_id)?;
-        if let Relational::Insert { relation, .. }
-        | Relational::Update { relation, .. }
-        | Relational::Delete { relation, .. } = node
+        if let Relational::Insert(Insert { relation, .. })
+        | Relational::Update(Update { relation, .. })
+        | Relational::Delete(Delete { relation, .. }) = node
         {
             return self.get_relation_or_error(relation);
         }
@@ -155,13 +156,13 @@ impl Plan {
         len: usize,
     ) -> Result<(), SbroadError> {
         let node = self.get_mut_relation_node(update_id)?;
-        if let Relational::Update {
+        if let MutRelational::Update(Update {
             strategy:
                 UpdateStrategy::ShardedUpdate {
                     delete_tuple_len, ..
                 },
             ..
-        } = node
+        }) = node
         {
             *delete_tuple_len = Some(len);
         } else {
@@ -181,14 +182,14 @@ impl Plan {
     /// - length not set on current `Update` node
     pub fn get_update_delete_tuple_len(&self, update_id: NodeId) -> Result<usize, SbroadError> {
         let node = self.get_relation_node(update_id)?;
-        if let Relational::Update {
+        if let Relational::Update(Update {
             strategy:
                 UpdateStrategy::ShardedUpdate {
                     delete_tuple_len: Some(len),
                     ..
                 },
             ..
-        } = node
+        }) = node
         {
             return Ok(*len);
         }
@@ -211,7 +212,7 @@ impl Plan {
         opcode_idx: usize,
     ) -> Result<&MotionOpcode, SbroadError> {
         let node = self.get_relation_node(motion_id)?;
-        if let Relational::Motion { program, .. } = node {
+        if let Relational::Motion(Motion { program, .. }) = node {
             if let Some(op) = program.0.get(opcode_idx) {
                 return Ok(op);
             }
@@ -232,7 +233,7 @@ impl Plan {
     /// - Node is not an `Update`
     pub fn is_sharded_update(&self, update_id: NodeId) -> Result<bool, SbroadError> {
         let node = self.get_relation_node(update_id)?;
-        if let Relational::Update { strategy, .. } = node {
+        if let Relational::Update(Update { strategy, .. }) = node {
             return Ok(matches!(strategy, UpdateStrategy::ShardedUpdate { .. }));
         }
         Err(SbroadError::Invalid(

@@ -90,8 +90,9 @@
 //!    to the plan tree.
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::{Expression, NodeId};
 use crate::ir::helpers::RepeatableState;
+use crate::ir::node::expression::Expression;
+use crate::ir::node::{Constant, NodeId, Reference, Row};
 use crate::ir::operator::Bool;
 use crate::ir::relation::Type;
 use crate::ir::transformation::merge_tuples::Chain;
@@ -115,12 +116,12 @@ struct EqClassRef {
 
 impl EqClassRef {
     fn from_ref(expr: &Expression) -> Result<Self, SbroadError> {
-        if let Expression::Reference {
+        if let Expression::Reference(Reference {
             targets: expr_tgt,
             position: expr_pos,
             parent: expr_prt,
             col_type: expr_type,
-        } = expr
+        }) = expr
         {
             return Ok(EqClassRef {
                 targets: expr_tgt.clone(),
@@ -157,7 +158,7 @@ impl Eq for EqClassConst {}
 
 impl EqClassConst {
     fn from_const(expr: &Expression) -> Result<Self, SbroadError> {
-        if let Expression::Constant { value: expr_value } = expr {
+        if let Expression::Constant(Constant { value: expr_value }) = expr {
             return Ok(EqClassConst {
                 value: expr_value.clone(),
             });
@@ -251,7 +252,7 @@ impl EqClassChain {
         // If one of the sides doesn't satisfy self equivalence, produce
         // a new equality class.
         for class in &mut self.list {
-            if (class.set.get(left).is_some() || class.set.get(right).is_some())
+            if (class.set.contains(left) || class.set.contains(right))
                 && left.is_self_equivalent()
                 && right.is_self_equivalent()
             {
@@ -281,14 +282,14 @@ impl EqClassChain {
     /// as `NULL != NULL` (the result is "NULL" itself).
     fn merge(&self) -> Self {
         let mut result = EqClassChain::new();
-        result.pairs = self.pairs.clone();
+        result.pairs.clone_from(&self.pairs);
 
         // A set of indexes of the equality classes in the chain
         // that contain common elements and should not be reinspected.
         let mut matched: HashSet<usize> = HashSet::new();
 
         for i in 0..self.list.len() {
-            if matched.get(&i).is_some() {
+            if matched.contains(&i) {
                 continue;
             }
 
@@ -297,7 +298,7 @@ impl EqClassChain {
                 matched.insert(i);
 
                 for j in i..self.list.len() {
-                    if matched.get(&j).is_some() {
+                    if matched.contains(&j) {
                         continue;
                     }
 
@@ -333,7 +334,7 @@ impl EqClassChain {
 
     fn subtract_pairs(&self) -> Self {
         let mut result = EqClassChain::new();
-        result.pairs = self.pairs.clone();
+        result.pairs.clone_from(&self.pairs);
 
         for class in &self.list {
             let ec_ref = class.ref_copy();
@@ -484,13 +485,11 @@ impl Plan {
     fn try_to_eq_class_expr(&self, expr_id: NodeId) -> Result<EqClassExpr, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
-            Expression::Constant { .. } => {
-                Ok(EqClassExpr::EqClassConst(EqClassConst::from_const(expr)?))
+            Expression::Constant(_) => {
+                Ok(EqClassExpr::EqClassConst(EqClassConst::from_const(&expr)?))
             }
-            Expression::Reference { .. } => {
-                Ok(EqClassExpr::EqClassRef(EqClassRef::from_ref(expr)?))
-            }
-            Expression::Row { list, .. } => {
+            Expression::Reference(_) => Ok(EqClassExpr::EqClassRef(EqClassRef::from_ref(&expr)?)),
+            Expression::Row(Row { list, .. }) => {
                 if let (Some(col_id), None) = (list.first(), list.get(1)) {
                     self.try_to_eq_class_expr(*col_id)
                 } else {

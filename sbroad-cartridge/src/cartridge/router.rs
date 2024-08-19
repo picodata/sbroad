@@ -3,7 +3,7 @@
 use sbroad::cbo::{ColumnStats, TableColumnPair, TableStats};
 use sbroad::executor::engine::helpers::vshard::{get_random_bucket, impl_exec_ir_on_buckets};
 use sbroad::executor::engine::{DispatchReturnFormat, Metadata, QueryCache, Vshard};
-use sbroad::ir::expression::NodeId;
+use sbroad::ir::node::NodeId;
 use sbroad::utils::MutexLike;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::fiber::Mutex;

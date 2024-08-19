@@ -48,17 +48,17 @@ vtable_max_rows = 5000
 }
 
 #[test]
-fn aggretage() {
+fn aggregate() {
     let input = r#"SELECT min("b"), min(distinct "b") FROM "t" LIMIT 1"#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
         r#"limit 1
-    projection (min(("min_13"::unsigned))::scalar -> "col_1", min(distinct ("column_15"::unsigned))::scalar -> "col_2")
+    projection (min(("min_096"::unsigned))::scalar -> "col_1", min(distinct ("column_864"::unsigned))::scalar -> "col_2")
         motion [policy: full]
             scan
-                projection ("t"."b"::unsigned -> "column_15", min(("t"."b"::unsigned))::scalar -> "min_13")
+                projection ("t"."b"::unsigned -> "column_864", min(("t"."b"::unsigned))::scalar -> "min_096")
                     group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                         scan "t"
 execution options:
@@ -80,11 +80,11 @@ fn group_by() {
         r#"limit 555
     motion [policy: full]
         limit 555
-            projection (sum(("count_26"::integer))::decimal -> "col_1", "column_12"::unsigned -> "b")
-                group by ("column_12"::unsigned) output: ("column_12"::unsigned -> "column_12", "count_26"::integer -> "count_26")
-                    motion [policy: segment([ref("column_12")])]
+            projection (sum(("count_096"::integer))::decimal -> "col_1", "column_764"::unsigned -> "b")
+                group by ("column_764"::unsigned) output: ("column_764"::unsigned -> "column_764", "count_096"::integer -> "count_096")
+                    motion [policy: segment([ref("column_764")])]
                         scan
-                            projection ("t"."b"::unsigned -> "column_12", count((*::integer))::integer -> "count_26")
+                            projection ("t"."b"::unsigned -> "column_764", count((*::integer))::integer -> "count_096")
                                 group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                                     scan "t"
 execution options:

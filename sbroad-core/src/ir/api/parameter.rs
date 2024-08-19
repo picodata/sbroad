@@ -1,7 +1,12 @@
 use crate::errors::SbroadError;
-use crate::ir::block::Block;
-use crate::ir::expression::{Expression, NodeId};
-use crate::ir::operator::Relational;
+use crate::ir::node::block::{Block, MutBlock};
+use crate::ir::node::expression::{Expression, MutExpression};
+use crate::ir::node::relational::{MutRelational, Relational};
+use crate::ir::node::{
+    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, ExprInParentheses, Having, Join, MutNode,
+    Node64, NodeId, Parameter, Procedure, Row, Selection, StableFunction, Trim, UnaryExpr,
+    ValuesRow,
+};
 use crate::ir::tree::traversal::{LevelNode, PostOrder};
 use crate::ir::value::Value;
 use crate::ir::{ArenaType, Node, OptionParamValue, Plan, ValueIdx};
@@ -205,54 +210,54 @@ impl<'binder> ParamsBinder<'binder> {
                 //       trees such as OrderBy and GroupBy, because it won't influence ordering and
                 //       grouping correspondingly. These cases are handled during parsing stage.
                 Node::Relational(rel) => match rel {
-                    Relational::Having {
+                    Relational::Having(Having {
                         filter: ref param_id,
                         ..
-                    }
-                    | Relational::Selection {
+                    })
+                    | Relational::Selection(Selection {
                         filter: ref param_id,
                         ..
-                    }
-                    | Relational::Join {
+                    })
+                    | Relational::Join(Join {
                         condition: ref param_id,
                         ..
-                    } => {
+                    }) => {
                         self.cover_param_with_row(*param_id, true, &mut param_index, &mut row_ids);
                     }
                     _ => {}
                 },
                 Node::Expression(expr) => match expr {
-                    Expression::Alias {
+                    Expression::Alias(Alias {
                         child: ref param_id,
                         ..
-                    }
-                    | Expression::ExprInParentheses {
+                    })
+                    | Expression::ExprInParentheses(ExprInParentheses {
                         child: ref param_id,
-                    }
-                    | Expression::Cast {
-                        child: ref param_id,
-                        ..
-                    }
-                    | Expression::Unary {
+                    })
+                    | Expression::Cast(Cast {
                         child: ref param_id,
                         ..
-                    } => {
+                    })
+                    | Expression::Unary(UnaryExpr {
+                        child: ref param_id,
+                        ..
+                    }) => {
                         self.cover_param_with_row(*param_id, false, &mut param_index, &mut row_ids);
                     }
-                    Expression::Bool {
+                    Expression::Bool(BoolExpr {
                         ref left,
                         ref right,
                         ..
-                    }
-                    | Expression::Arithmetic {
+                    })
+                    | Expression::Arithmetic(ArithmeticExpr {
                         ref left,
                         ref right,
                         ..
-                    }
-                    | Expression::Concat {
+                    })
+                    | Expression::Concat(Concat {
                         ref left,
                         ref right,
-                    } => {
+                    }) => {
                         for param_id in &[*left, *right] {
                             self.cover_param_with_row(
                                 *param_id,
@@ -262,11 +267,11 @@ impl<'binder> ParamsBinder<'binder> {
                             );
                         }
                     }
-                    Expression::Trim {
+                    Expression::Trim(Trim {
                         ref pattern,
                         ref target,
                         ..
-                    } => {
+                    }) => {
                         let params = match pattern {
                             Some(p) => [Some(*p), Some(*target)],
                             None => [None, Some(*target)],
@@ -280,10 +285,10 @@ impl<'binder> ParamsBinder<'binder> {
                             );
                         }
                     }
-                    Expression::Row { ref list, .. }
-                    | Expression::StableFunction {
+                    Expression::Row(Row { ref list, .. })
+                    | Expression::StableFunction(StableFunction {
                         children: ref list, ..
-                    } => {
+                    }) => {
                         for param_id in list {
                             // Parameter is already under row/function so that we don't
                             // have to cover it with `add_row` call.
@@ -295,11 +300,11 @@ impl<'binder> ParamsBinder<'binder> {
                             );
                         }
                     }
-                    Expression::Case {
+                    Expression::Case(Case {
                         ref search_expr,
                         ref when_blocks,
                         ref else_expr,
-                    } => {
+                    }) => {
                         if let Some(search_expr) = search_expr {
                             self.cover_param_with_row(
                                 *search_expr,
@@ -333,10 +338,10 @@ impl<'binder> ParamsBinder<'binder> {
                     }
                     Expression::Reference { .. }
                     | Expression::Constant { .. }
-                    | Expression::CountAsterisk => {}
+                    | Expression::CountAsterisk { .. } => {}
                 },
                 Node::Block(block) => match block {
-                    Block::Procedure { ref values, .. } => {
+                    Block::Procedure(Procedure { ref values, .. }) => {
                         for param_id in values {
                             // We don't need to wrap arguments, passed into the
                             // procedure call, into the rows.
@@ -349,7 +354,7 @@ impl<'binder> ParamsBinder<'binder> {
                         }
                     }
                 },
-                Node::Parameter(..) | Node::Ddl(..) | Node::Acl(..) => {}
+                Node::Invalid(..) | Node::Parameter(..) | Node::Ddl(..) | Node::Acl(..) => {}
             }
         }
 
@@ -382,7 +387,7 @@ impl<'binder> ParamsBinder<'binder> {
             }
         }
         for (id, new_type) in exprs_to_set_ref_type {
-            let expr = self.plan.get_mut_expression_node(id)?;
+            let mut expr = self.plan.get_mut_expression_node(id)?;
             expr.set_ref_type(new_type);
         }
 
@@ -400,7 +405,7 @@ impl<'binder> ParamsBinder<'binder> {
                 let binding_node_id = if is_row {
                     *row_ids
                         .get(param_id)
-                        .unwrap_or_else(|| panic!("Row not found at position {param_id:?}"))
+                        .unwrap_or_else(|| panic!("Row not found at position {param_id}"))
                 } else {
                     get_param_value(
                         tnt_params_style,
@@ -419,64 +424,64 @@ impl<'binder> ParamsBinder<'binder> {
         for LevelNode(_, id) in &self.nodes {
             let node = self.plan.get_mut_node(*id)?;
             match node {
-                Node::Relational(rel) => match rel {
-                    Relational::Having {
+                MutNode::Relational(rel) => match rel {
+                    MutRelational::Having(Having {
                         filter: ref mut param_id,
                         ..
-                    }
-                    | Relational::Selection {
+                    })
+                    | MutRelational::Selection(Selection {
                         filter: ref mut param_id,
                         ..
-                    }
-                    | Relational::Join {
+                    })
+                    | MutRelational::Join(Join {
                         condition: ref mut param_id,
                         ..
-                    } => {
+                    }) => {
                         bind_param(param_id, true, &mut param_index);
                     }
                     _ => {}
                 },
-                Node::Expression(expr) => match expr {
-                    Expression::Alias {
+                MutNode::Expression(expr) => match expr {
+                    MutExpression::Alias(Alias {
                         child: ref mut param_id,
                         ..
-                    }
-                    | Expression::ExprInParentheses {
+                    })
+                    | MutExpression::ExprInParentheses(ExprInParentheses {
                         child: ref mut param_id,
-                    }
-                    | Expression::Cast {
-                        child: ref mut param_id,
-                        ..
-                    }
-                    | Expression::Unary {
+                    })
+                    | MutExpression::Cast(Cast {
                         child: ref mut param_id,
                         ..
-                    } => {
+                    })
+                    | MutExpression::Unary(UnaryExpr {
+                        child: ref mut param_id,
+                        ..
+                    }) => {
                         bind_param(param_id, false, &mut param_index);
                     }
-                    Expression::Bool {
+                    MutExpression::Bool(BoolExpr {
                         ref mut left,
                         ref mut right,
                         ..
-                    }
-                    | Expression::Arithmetic {
+                    })
+                    | MutExpression::Arithmetic(ArithmeticExpr {
                         ref mut left,
                         ref mut right,
                         ..
-                    }
-                    | Expression::Concat {
+                    })
+                    | MutExpression::Concat(Concat {
                         ref mut left,
                         ref mut right,
-                    } => {
+                    }) => {
                         for param_id in [left, right] {
                             bind_param(param_id, true, &mut param_index);
                         }
                     }
-                    Expression::Trim {
+                    MutExpression::Trim(Trim {
                         ref mut pattern,
                         ref mut target,
                         ..
-                    } => {
+                    }) => {
                         let params = match pattern {
                             Some(p) => [Some(p), Some(target)],
                             None => [None, Some(target)],
@@ -485,20 +490,20 @@ impl<'binder> ParamsBinder<'binder> {
                             bind_param(param_id, true, &mut param_index);
                         }
                     }
-                    Expression::Row { ref mut list, .. }
-                    | Expression::StableFunction {
+                    MutExpression::Row(Row { ref mut list, .. })
+                    | MutExpression::StableFunction(StableFunction {
                         children: ref mut list,
                         ..
-                    } => {
+                    }) => {
                         for param_id in list {
                             bind_param(param_id, false, &mut param_index);
                         }
                     }
-                    Expression::Case {
+                    MutExpression::Case(Case {
                         ref mut search_expr,
                         ref mut when_blocks,
                         ref mut else_expr,
-                    } => {
+                    }) => {
                         if let Some(param_id) = search_expr {
                             bind_param(param_id, false, &mut param_index);
                         }
@@ -510,18 +515,21 @@ impl<'binder> ParamsBinder<'binder> {
                             bind_param(param_id, false, &mut param_index);
                         }
                     }
-                    Expression::Reference { .. }
-                    | Expression::Constant { .. }
-                    | Expression::CountAsterisk => {}
+                    MutExpression::Reference { .. }
+                    | MutExpression::Constant { .. }
+                    | MutExpression::CountAsterisk { .. } => {}
                 },
-                Node::Block(block) => match block {
-                    Block::Procedure { ref mut values, .. } => {
+                MutNode::Block(block) => match block {
+                    MutBlock::Procedure(Procedure { ref mut values, .. }) => {
                         for param_id in values {
                             bind_param(param_id, false, &mut param_index);
                         }
                     }
                 },
-                Node::Parameter(..) | Node::Ddl(..) | Node::Acl(..) => {}
+                MutNode::Invalid(..)
+                | MutNode::Parameter(..)
+                | MutNode::Ddl(..)
+                | MutNode::Acl(..) => {}
             }
         }
 
@@ -530,7 +538,7 @@ impl<'binder> ParamsBinder<'binder> {
 
     fn update_value_rows(&mut self) -> Result<(), SbroadError> {
         for LevelNode(_, id) in &self.nodes {
-            if let Ok(Node::Relational(Relational::ValuesRow { .. })) = self.plan.get_node(*id) {
+            if let Ok(Node::Relational(Relational::ValuesRow(_))) = self.plan.get_node(*id) {
                 self.plan.update_values_row(*id)?;
             }
         }
@@ -540,7 +548,7 @@ impl<'binder> ParamsBinder<'binder> {
 
 impl Plan {
     pub fn add_param(&mut self) -> NodeId {
-        self.nodes.push(Node::Parameter(None))
+        self.nodes.push(Parameter { param_type: None }.into())
     }
 
     /// Bind params related to `Option` clause.
@@ -579,19 +587,20 @@ impl Plan {
     }
 
     // Gather all parameter nodes from the tree to a hash set.
+    /// # Panics
     #[must_use]
     /// # Panics
     pub fn get_param_set(&self) -> AHashSet<NodeId> {
         let param_set: AHashSet<NodeId> = self
             .nodes
-            .arena
+            .arena64
             .iter()
             .enumerate()
             .filter_map(|(id, node)| {
-                if let Node::Parameter(..) = node {
+                if let Node64::Parameter(_) = node {
                     Some(NodeId {
                         offset: u32::try_from(id).unwrap(),
-                        arena_type: ArenaType::Default,
+                        arena_type: ArenaType::Arena64,
                     })
                 } else {
                     None
@@ -613,7 +622,9 @@ impl Plan {
     pub fn update_values_row(&mut self, id: NodeId) -> Result<(), SbroadError> {
         let values_row = self.get_node(id)?;
         let (output_id, data_id) =
-            if let Node::Relational(Relational::ValuesRow { output, data, .. }) = values_row {
+            if let Node::Relational(Relational::ValuesRow(ValuesRow { output, data, .. })) =
+                values_row
+            {
                 (*output, *data)
             } else {
                 panic!("Expected a values row: {values_row:?}")
@@ -627,7 +638,7 @@ impl Plan {
                 .get(pos)
                 .unwrap_or_else(|| panic!("Node not found at position {pos}"));
             let alias = self.get_mut_expression_node(*alias_id)?;
-            if let Expression::Alias { ref mut child, .. } = alias {
+            if let MutExpression::Alias(Alias { ref mut child, .. }) = alias {
                 *child = new_child_id;
             } else {
                 panic!("Expected an alias: {alias:?}")

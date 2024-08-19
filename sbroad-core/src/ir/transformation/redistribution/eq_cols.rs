@@ -1,8 +1,13 @@
 use crate::errors::SbroadError;
-use crate::ir::expression::{Expression, ExpressionId, NodeId};
+use crate::ir::expression::ExpressionId;
+use crate::ir::node::expression::Expression;
+use crate::ir::node::{
+    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, ExprInParentheses, NodeId, Reference, Row,
+    StableFunction, Trim, UnaryExpr,
+};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::redistribution::BoolOp;
-use crate::ir::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
+use crate::ir::tree::traversal::{LevelNode, PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
 use crate::ir::{Node, Plan};
 use std::collections::{HashMap, HashSet};
 use std::slice::Iter;
@@ -71,20 +76,19 @@ impl ReferredMap {
         let mut referred = ReferredMap::with_capacity(EXPR_CAPACITY);
         let mut expr_tree =
             PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
-        for level_node in expr_tree.iter(condition_id) {
-            let node_id = level_node.1;
+        for LevelNode(_, node_id) in expr_tree.iter(condition_id) {
             let expr = plan.get_expression_node(node_id)?;
             let res = match expr {
-                Expression::Bool { left, right, .. }
-                | Expression::Arithmetic { left, right, .. }
-                | Expression::Concat { left, right, .. } => referred
+                Expression::Bool(BoolExpr { left, right, .. })
+                | Expression::Arithmetic(ArithmeticExpr { left, right, .. })
+                | Expression::Concat(Concat { left, right, .. }) => referred
                     .get_or_none(*left)
                     .add(referred.get_or_none(*right)),
-                Expression::Case {
+                Expression::Case(Case {
                     search_expr,
                     when_blocks,
                     else_expr,
-                } => {
+                }) => {
                     let mut res = Referred::None;
                     if let Some(search_expr) = search_expr {
                         res = res.add(referred.get_or_none(*search_expr));
@@ -98,18 +102,18 @@ impl ReferredMap {
                     }
                     res
                 }
-                Expression::Trim {
+                Expression::Trim(Trim {
                     pattern, target, ..
-                } => match pattern {
+                }) => match pattern {
                     Some(pattern) => referred
                         .get_or_none(*pattern)
                         .add(referred.get_or_none(*target)),
                     None => referred.get_or_none(*target).clone(),
                 },
-                Expression::Constant { .. } | Expression::CountAsterisk => Referred::None,
-                Expression::Reference {
+                Expression::Constant { .. } | Expression::CountAsterisk { .. } => Referred::None,
+                Expression::Reference(Reference {
                     targets, parent, ..
-                } => {
+                }) => {
                     if *parent == Some(join_id) && *targets == Some(vec![1]) {
                         Referred::Inner
                     } else if *parent == Some(join_id) && *targets == Some(vec![0]) {
@@ -118,16 +122,16 @@ impl ReferredMap {
                         Referred::None
                     }
                 }
-                Expression::Row { list: children, .. }
-                | Expression::StableFunction { children, .. } => {
+                Expression::Row(Row { list: children, .. })
+                | Expression::StableFunction(StableFunction { children, .. }) => {
                     children.iter().fold(Referred::None, |acc, x| {
                         acc.add(referred.get(*x).unwrap_or(&Referred::None))
                     })
                 }
-                Expression::Alias { child, .. }
-                | Expression::ExprInParentheses { child }
-                | Expression::Cast { child, .. }
-                | Expression::Unary { child, .. } => {
+                Expression::Alias(Alias { child, .. })
+                | Expression::ExprInParentheses(ExprInParentheses { child })
+                | Expression::Cast(Cast { child, .. })
+                | Expression::Unary(UnaryExpr { child, .. }) => {
                     referred.get(*child).unwrap_or(&Referred::None).clone()
                 }
             };
@@ -291,18 +295,18 @@ impl EqualityCols {
             let right_node = plan.get_expression_node(*right_id)?;
             match (left_node, right_node) {
                 (
-                    Expression::Reference {
+                    Expression::Reference(Reference {
                         targets: targets_left,
                         position: pos_left,
                         parent: parent_left,
                         col_type: col_type_left,
-                    },
-                    Expression::Reference {
+                    }),
+                    Expression::Reference(Reference {
                         targets: targets_right,
                         position: pos_right,
                         parent: parent_right,
                         col_type: col_type_right,
-                    },
+                    }),
                 ) => {
                     // TODO: compare types only if the runtime requires it.
 
@@ -322,7 +326,7 @@ impl EqualityCols {
                         new_eq_cols.add_equality_pair(inner_pos, outer_pos);
                     };
                 }
-                (Expression::Constant { .. }, _) | (_, Expression::Constant { .. }) => {}
+                (Expression::Constant(_), _) | (_, Expression::Constant(_)) => {}
                 (_, _) => {
                     // if some kind of transformation is applied to another side of equality
                     // operator, we can't do repartition join, for example:
@@ -360,12 +364,12 @@ impl EqualityCols {
         let right_expr = plan.get_expression_node(op.right)?;
         let res = match (left_expr, right_expr) {
             (
-                Expression::Row {
+                Expression::Row(Row {
                     list: list_left, ..
-                },
-                Expression::Row {
+                }),
+                Expression::Row(Row {
                     list: list_right, ..
-                },
+                }),
             ) => match op.op {
                 Bool::Eq | Bool::In => EqualityCols::eq_cols_for_eq(
                     list_left, list_right, node_id, inner_id, plan, refers_to,
@@ -489,7 +493,7 @@ impl EqualityCols {
         let mut node_eq_cols: EqualityColsMap = EqualityColsMap::new();
         let refers_to = ReferredMap::new_from_join_condition(plan, condition_id, join_id)?;
         let filter = |node_id: NodeId| -> bool {
-            if let Ok(Node::Expression(Expression::Bool { .. })) = plan.get_node(node_id) {
+            if let Ok(Node::Expression(Expression::Bool(_))) = plan.get_node(node_id) {
                 return true;
             }
             false
@@ -505,7 +509,7 @@ impl EqualityCols {
             let left_expr = plan.get_expression_node(bool_op.left)?;
             let right_expr = plan.get_expression_node(bool_op.right)?;
             let new_eq_cols = match (left_expr, right_expr) {
-                (Expression::Row { .. }, Expression::Row { .. }) => {
+                (Expression::Row(_), Expression::Row(_)) => {
                     EqualityCols::eq_cols_for_rows(&bool_op, node_id, &refers_to, inner_id, plan)?
                 }
                 (_, _) => {

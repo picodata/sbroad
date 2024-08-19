@@ -9,11 +9,12 @@ use serde::{Deserialize, Serialize};
 use crate::collection;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::helpers::RepeatableState;
+use crate::ir::node::{NodeId, Reference, Row};
 use crate::ir::transformation::redistribution::{MotionKey, Target};
 
 use super::api::children::Children;
-use super::expression::{Expression, NodeId};
-use super::operator::Relational;
+use super::node::expression::{Expression, MutExpression};
+use super::node::relational::Relational;
 use super::relation::{Column, ColumnPositions};
 use super::{Node, Plan};
 
@@ -332,9 +333,9 @@ impl ReferenceInfo {
         let mut ref_map: AHashMap<ChildColumnReference, ParentColumnPosition> = AHashMap::new();
         for (parent_column_pos, id) in ir.get_row_list(row_id)?.iter().enumerate() {
             let child_id = ir.get_child_under_alias(*id)?;
-            if let Expression::Reference {
+            if let Expression::Reference(Reference {
                 targets, position, ..
-            } = ir.get_expression_node(child_id)?
+            }) = ir.get_expression_node(child_id)?
             {
                 // As the row is located in the branch relational node, the targets should be non-empty.
                 let targets = targets.as_ref().ok_or_else(|| {
@@ -420,10 +421,7 @@ impl Plan {
     /// - invalid projection node (e.g. no children)
     /// - failed to get child distribution
     pub fn set_projection_distribution(&mut self, proj_id: NodeId) -> Result<(), SbroadError> {
-        if !matches!(
-            self.get_relation_node(proj_id)?,
-            Relational::Projection { .. }
-        ) {
+        if !matches!(self.get_relation_node(proj_id)?, Relational::Projection(_)) {
             return Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format_smolstr!("expected projection on id: {proj_id:?}")),
@@ -441,7 +439,7 @@ impl Plan {
         let mut only_compound_exprs = true;
         for id in self.get_row_list(output_id)? {
             let child_id = self.get_child_under_alias(*id)?;
-            if let Expression::Reference { .. } = self.get_expression_node(child_id)? {
+            if let Expression::Reference(_) = self.get_expression_node(child_id)? {
                 only_compound_exprs = false;
                 break;
             }
@@ -479,12 +477,14 @@ impl Plan {
     /// - reference has invalid targets
     #[allow(clippy::too_many_lines)]
     pub fn set_distribution(&mut self, row_id: NodeId) -> Result<(), SbroadError> {
-        let row_children = self.get_expression_node(row_id)?.get_row_list()?;
+        let row_children = self.get_row_list(row_id)?;
 
         let mut parent_node = None;
         for id in row_children {
             let child_id = self.get_child_under_alias(*id)?;
-            if let Expression::Reference { parent, .. } = self.get_expression_node(child_id)? {
+            if let Expression::Reference(Reference { parent, .. }) =
+                self.get_expression_node(child_id)?
+            {
                 parent_node = *parent;
                 break;
             }
@@ -511,9 +511,9 @@ impl Plan {
                 HashMap::with_capacity_and_hasher(row_children.len(), RandomState::new());
             for (pos, id) in row_children.iter().enumerate() {
                 let child_id = self.get_child_under_alias(*id)?;
-                if let Expression::Reference {
+                if let Expression::Reference(Reference {
                     targets, position, ..
-                } = self.get_expression_node(child_id)?
+                }) = self.get_expression_node(child_id)?
                 {
                     if targets.is_some() {
                         return Err(SbroadError::Invalid(
@@ -535,10 +535,10 @@ impl Plan {
                 })
             });
             if all_found {
-                if let Expression::Row {
+                if let MutExpression::Row(Row {
                     ref mut distribution,
                     ..
-                } = self.get_mut_expression_node(row_id)?
+                }) = self.get_mut_expression_node(row_id)?
                 {
                     let keys: HashSet<Key, RepeatableState> = collection! { new_key };
                     *distribution = Some(Distribution::Segment { keys: keys.into() });
@@ -557,10 +557,10 @@ impl Plan {
                     let suggested_dist =
                         self.dist_from_child(child_id, &ref_info.child_column_to_parent_col)?;
                     let output = self.get_mut_expression_node(row_id)?;
-                    if let Expression::Row {
+                    if let MutExpression::Row(Row {
                         ref mut distribution,
                         ..
-                    } = output
+                    }) = output
                     {
                         if distribution.is_none() {
                             *distribution = Some(suggested_dist);
@@ -614,7 +614,7 @@ impl Plan {
 
         if !matches!(
             node,
-            Relational::Join { .. } | Relational::Having { .. } | Relational::Selection { .. }
+            Relational::Join(_) | Relational::Having(_) | Relational::Selection(_)
         ) {
             return Ok(None);
         }
@@ -664,10 +664,10 @@ impl Plan {
     ) -> Result<Distribution, SbroadError> {
         if let Node::Relational(relational_op) = self.get_node(child_rel_node)? {
             let node = self.get_node(relational_op.output())?;
-            if let Node::Expression(Expression::Row {
+            if let Node::Expression(Expression::Row(Row {
                 distribution: child_dist,
                 ..
-            }) = node
+            })) = node
             {
                 match child_dist {
                     None => {
@@ -725,10 +725,10 @@ impl Plan {
     /// # Errors
     /// - supplied node is `Row`
     pub fn set_dist(&mut self, row_id: NodeId, dist: Distribution) -> Result<(), SbroadError> {
-        if let Expression::Row {
+        if let MutExpression::Row(Row {
             ref mut distribution,
             ..
-        } = self.get_mut_expression_node(row_id)?
+        }) = self.get_mut_expression_node(row_id)?
         {
             *distribution = Some(dist);
             return Ok(());
@@ -765,10 +765,10 @@ impl Plan {
             }
         };
         let expr = self.get_mut_expression_node(row_id)?;
-        if let Expression::Row {
+        if let MutExpression::Row(Row {
             ref mut distribution,
             ..
-        } = expr
+        }) = expr
         {
             *distribution = Some(new_dist);
         } else {
@@ -781,13 +781,31 @@ impl Plan {
         Ok(())
     }
 
+    /// Gets current row distribution.
+    ///
+    /// # Errors
+    /// Returns `SbroadError` when the function is called on expression
+    /// other than `Row` or a node doesn't know its distribution yet.
+    pub fn distribution(&self, id: NodeId) -> Result<&Distribution, SbroadError> {
+        if let Expression::Row(Row { distribution, .. }) = self.get_expression_node(id)? {
+            let Some(dist) = distribution else {
+                return Err(SbroadError::Invalid(
+                    Entity::Distribution,
+                    Some("distribution is uninitialized".into()),
+                ));
+            };
+            return Ok(dist);
+        }
+        Err(SbroadError::Invalid(Entity::Expression, None))
+    }
+
     /// Gets distribution of the output row.
     ///
     /// # Errors
     /// - Node is not of a row type.
     pub fn get_distribution(&self, row_id: NodeId) -> Result<&Distribution, SbroadError> {
         match self.get_node(row_id)? {
-            Node::Expression(expr) => expr.distribution(),
+            Node::Expression(_) => self.distribution(row_id),
             Node::Relational(_) => Err(SbroadError::Invalid(
                 Entity::Distribution,
                 Some(
@@ -810,6 +828,10 @@ impl Plan {
             Node::Block(_) => Err(SbroadError::Invalid(
                 Entity::Distribution,
                 Some("Failed to get distribution for a code block node.".to_smolstr()),
+            )),
+            Node::Invalid(_) => Err(SbroadError::Invalid(
+                Entity::Distribution,
+                Some("Failed to get distribution for an invalid node.".to_smolstr()),
             )),
         }
     }
