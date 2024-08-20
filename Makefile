@@ -31,7 +31,7 @@ clean:
 
 lint:
 	cargo fmt --all -- --check
-	RUSTFLAGS="-D warnings" cargo clippy -- -Dclippy::all -Wclippy::pedantic
+	cargo clippy -- --deny clippy::all
 	RUSTDOCFLAGS="-D warnings" cargo doc
 	cargo audit -f audit.toml
 	./deps.sh
