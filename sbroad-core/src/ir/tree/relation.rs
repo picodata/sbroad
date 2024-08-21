@@ -61,56 +61,49 @@ impl<'n> Iterator for RelationalIterator<'n> {
     }
 }
 
-fn relational_next<'nodes>(iter: &mut impl RelationalTreeIterator<'nodes>) -> Option<NodeId> {
-    match iter.get_nodes().get(iter.get_current()) {
-        Some(Node::Relational(
-            node @ (Relational::Except { .. }
-            | Relational::Join { .. }
-            | Relational::Insert { .. }
-            | Relational::Intersect { .. }
-            | Relational::Delete { .. }
-            | Relational::Motion { .. }
-            | Relational::Projection { .. }
-            | Relational::ScanSubQuery { .. }
-            | Relational::Selection { .. }
-            | Relational::Having { .. }
-            | Relational::Union { .. }
-            | Relational::UnionAll { .. }
-            | Relational::Update { .. }
-            | Relational::Values { .. }
-            | Relational::ValuesRow { .. }),
-        )) => {
-            let step = *iter.get_child().borrow();
-            let children = node.children();
-            if step < children.len() {
-                *iter.get_child().borrow_mut() += 1;
-                return children.get(step).copied();
-            }
-            None
-        }
-        Some(Node::Relational(Relational::GroupBy(GroupBy { children, .. }))) => {
-            let step = *iter.get_child().borrow();
-            if step == 0 {
-                *iter.get_child().borrow_mut() += 1;
-                return children.get(step).copied();
-            }
-            None
-        }
-        Some(Node::Relational(
-            Relational::OrderBy(OrderBy { child, .. })
-            | Relational::ScanCte(ScanCte { child, .. })
-            | Relational::Limit(Limit { child, .. }),
-        )) => {
-            let step = *iter.get_child().borrow();
-            if step == 0 {
-                *iter.get_child().borrow_mut() += 1;
-                return Some(*child);
-            }
-            None
-        }
-        Some(
-            Node::Relational(Relational::ScanRelation { .. })
-            | Node::Expression(_)
+fn relational_next<'nodes>(
+    iter: &mut impl RelationalTreeIterator<'nodes>,
+) -> Option<&'nodes usize> {
+    let next = iter.get_nodes().get(iter.get_current());
+    match next {
+        Some(node) => match node {
+            Node::Relational(rel_node) => match rel_node {
+                node @ (Relational::Except { .. }
+                | Relational::Join { .. }
+                | Relational::Insert { .. }
+                | Relational::Intersect { .. }
+                | Relational::Delete { .. }
+                | Relational::Motion { .. }
+                | Relational::Projection { .. }
+                | Relational::ScanSubQuery { .. }
+                | Relational::Selection { .. }
+                | Relational::Having { .. }
+                | Relational::GroupBy { .. }
+                | Relational::OrderBy { .. }
+                | Relational::Union { .. }
+                | Relational::UnionAll { .. }
+                | Relational::Update { .. }
+                | Relational::Values { .. }
+                | Relational::ValuesRow { .. }) => {
+                    let step = *iter.get_child().borrow();
+                    let children = node.children();
+                    if step < children.len() {
+                        *iter.get_child().borrow_mut() += 1;
+                        return children.get(step);
+                    }
+                    None
+                }
+                Relational::ScanCte { child, .. } | Relational::Limit { child, .. } => {
+                    let step = *iter.get_child().borrow();
+                    if step == 0 {
+                        *iter.get_child().borrow_mut() += 1;
+                        return Some(child);
+                    }
+                    None
+                }
+                Relational::ScanRelation { .. } => None,
+            },
+            Node::Expression(_)
             | Node::Parameter(_)
             | Node::Invalid(_)
             | Node::Ddl(_)
