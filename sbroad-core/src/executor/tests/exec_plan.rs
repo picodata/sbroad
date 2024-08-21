@@ -17,6 +17,17 @@ use crate::ir::Slice;
 
 use super::*;
 
+fn reshard_vtable(
+    query: &Query<RouterRuntimeMock>,
+    motion_id: usize,
+    virtual_table: &mut VirtualTable,
+) {
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
+    {
+        virtual_table.reshard(key, &query.coordinator).unwrap();
+    }
+}
+
 // Helper function to format back sql.
 // The local sql we produce doesn't contain line breaks,
 // but in code it's hard to read such long string, so
@@ -50,19 +61,9 @@ fn exec_plan_subtree_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = virtual_table_23(None);
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
@@ -96,22 +97,12 @@ fn exec_plan_subtree_two_stage_groupby_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(vcolumn_user_non_null(Type::String));
 
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
 
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
@@ -152,22 +143,12 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(vcolumn_user_non_null(Type::String));
     virtual_table.add_column(vcolumn_user_non_null(Type::String));
     virtual_table.add_column(vcolumn_user_non_null(Type::String));
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
 
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
@@ -187,7 +168,7 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
         sql,
         PatternWithParams::new(
             f_sql(
-                r#"SELECT "T1"."FIRST_NAME" as "column_596",
+                r#"SELECT "T1"."FIRST_NAME" as "column_12",
 "T1"."sys_op" as "column_696",
 "T1"."sysFrom" as "column_796"
 FROM "test_space" as "T1"
@@ -222,14 +203,7 @@ fn exec_plan_subtree_aggregates() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_column(vcolumn_integer_user_non_null());
@@ -241,10 +215,7 @@ fn exec_plan_subtree_aggregates() {
     virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_column(vcolumn_integer_user_non_null());
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
 
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
@@ -304,21 +275,11 @@ fn exec_plan_subtree_aggregates_no_groupby() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_column(vcolumn_integer_user_non_null());
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
 
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
@@ -363,19 +324,9 @@ fn exec_plan_subquery_under_motion_without_alias() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = virtual_table_23(None);
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
@@ -404,19 +355,9 @@ fn exec_plan_subquery_under_motion_with_alias() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = virtual_table_23(Some("hti"));
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
@@ -439,19 +380,9 @@ fn exec_plan_motion_under_in_operator() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = virtual_table_23(None);
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
@@ -478,19 +409,9 @@ fn exec_plan_motion_under_except() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = virtual_table_23(None);
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
@@ -513,20 +434,10 @@ fn exec_plan_subtree_count_asterisk() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(vcolumn_integer_user_non_null());
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
 
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
@@ -574,22 +485,12 @@ fn exec_plan_subtree_having() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql.as_str(), vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_column(vcolumn_integer_user_non_null());
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
 
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
@@ -600,12 +501,13 @@ fn exec_plan_subtree_having() {
     let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
 
     // Check groupby local stage
-    let subplan1 = exec_plan.take_subtree(motion_child_id).unwrap();
-    let subplan1_top_id = subplan1.get_ir_plan().get_top().unwrap();
-    let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
-    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
-    let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan1.to_sql(&nodes, TEMPLATE, None).unwrap();
+    let sql = get_sql_from_execution_plan(
+        exec_plan,
+        motion_child_id,
+        Snapshot::Oldest,
+        &Buckets::All,
+        "test",
+    );
     if let MotionPolicy::Segment(_) = exec_plan.get_motion_policy(motion_id).unwrap() {
     } else {
         panic!("Expected MotionPolicy::Segment for local aggregation stage");
@@ -624,12 +526,8 @@ fn exec_plan_subtree_having() {
     );
 
     // Check main query
-    let subplan2 = exec_plan.take_subtree(top_id).unwrap();
-    let subplan2_top_id = subplan2.get_ir_plan().get_top().unwrap();
-    let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
-    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
-    let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan2.to_sql(&nodes, TEMPLATE, None).unwrap();
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -656,22 +554,12 @@ fn exec_plan_subtree_having_without_groupby() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql.as_str(), vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_column(vcolumn_integer_user_non_null());
-    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
-    {
-        virtual_table.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, motion_id, &mut virtual_table);
 
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
@@ -682,12 +570,13 @@ fn exec_plan_subtree_having_without_groupby() {
     let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
 
     // Check groupby local stage
-    let subplan1 = exec_plan.take_subtree(motion_child_id).unwrap();
-    let subplan1_top_id = subplan1.get_ir_plan().get_top().unwrap();
-    let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
-    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
-    let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan1.to_sql(&nodes, TEMPLATE, None).unwrap();
+    let sql = get_sql_from_execution_plan(
+        exec_plan,
+        motion_child_id,
+        Snapshot::Oldest,
+        &Buckets::All,
+        "test",
+    );
     if let MotionPolicy::Full = exec_plan.get_motion_policy(motion_id).unwrap() {
     } else {
         panic!("Expected MotionPolicy::Full after local stage");
@@ -707,12 +596,8 @@ fn exec_plan_subtree_having_without_groupby() {
     );
 
     // Check main query
-    let subplan2 = exec_plan.take_subtree(top_id).unwrap();
-    let subplan2_top_id = subplan2.get_ir_plan().get_top().unwrap();
-    let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
-    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
-    let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan2.to_sql(&nodes, TEMPLATE, None).unwrap();
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -740,13 +625,8 @@ fn global_table_scan() {
     let buckets = query.bucket_discovery(top_id).unwrap();
     assert_eq!(Buckets::Any, buckets);
     let exec_plan = query.get_mut_exec_plan();
-    let subplan = exec_plan.take_subtree(top_id).unwrap();
-    let subplan_top_id = subplan.get_ir_plan().get_top().unwrap();
-    let sp = SyntaxPlan::new(&subplan, subplan_top_id, Snapshot::Oldest).unwrap();
-    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
-    let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan.to_sql(&nodes, TEMPLATE, None).unwrap();
-
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -804,14 +684,7 @@ fn global_union_all2() {
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
 
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let motion_child = query.exec_plan.get_motion_subtree_root(motion_id).unwrap();
     // imitate plan execution
     query.exec_plan.take_subtree(motion_child).unwrap();
@@ -923,11 +796,7 @@ fn global_union_all3() {
     groupby_vtable.add_column(vcolumn_integer_user_non_null());
     groupby_vtable.add_tuple(tuple1.clone());
     groupby_vtable.add_tuple(tuple2.clone());
-    if let MotionPolicy::Segment(key) =
-        get_motion_policy(query.exec_plan.get_ir_plan(), groupby_motion_id)
-    {
-        groupby_vtable.reshard(key, &query.coordinator).unwrap();
-    }
+    reshard_vtable(&query, groupby_motion_id, &mut groupby_vtable);
     query
         .exec_plan
         .set_motion_vtable(&groupby_motion_id, groupby_vtable.clone(), &coordinator)
@@ -1001,7 +870,7 @@ fn global_union_all3() {
         },
         ReplicasetDispatchInfo {
             rs_id: 1,
-            pattern: r#"SELECT "global_t"."a" FROM "global_t" WHERE ("global_t"."b") in (SELECT "COL_1" FROM "TMP_test_0136") UNION ALL SELECT "COL_1" as "f" FROM (SELECT "COL_1" FROM "TMP_test_2136") GROUP BY "COL_1""#.to_string(),
+            pattern: r#"SELECT "global_t"."a" FROM "global_t" WHERE ("global_t"."b") in (SELECT "COL_1" FROM "TMP_test_0136") UNION ALL SELECT "COL_1" as "f" FROM (SELECT "COL_1" FROM "TMP_test_35") GROUP BY "COL_1""#.to_string(),
             params: vec![],
             vtables_map: collection!(sq_motion_id => Rc::new(sq_vtable), groupby_motion_id => Rc::new(groupby_vtable2)),
         },
@@ -1059,14 +928,7 @@ fn global_except() {
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
 
-    let intersect_motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let intersect_motion_id = query.get_motion_id(0, 0);
 
     {
         // check map stage
@@ -1114,6 +976,91 @@ fn global_except() {
         ))),
     ]]);
     assert_eq!(expected, res)
+}
+
+#[test]
+fn local_translation_asterisk_single() {
+    let sql = r#"SELECT * from "t3""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!("{}", r#"SELECT "t3"."a", "t3"."b" FROM "t3""#,),
+            vec![]
+        )
+    );
+}
+
+#[test]
+fn local_translation_asterisk_several() {
+    let sql = r#"SELECT *, * from "t3""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#,
+            ),
+            vec![]
+        )
+    );
+}
+
+#[test]
+fn local_translation_asterisk_named() {
+    let sql = r#"SELECT *, "t3".*, * from "t3""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "t3"."a", "t3"."b", "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#,
+            ),
+            vec![]
+        )
+    );
+}
+
+#[test]
+fn local_translation_asterisk_with_additional_columns() {
+    let sql = r#"SELECT "a", *, "t3"."b", "t3".*, * from "t3""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "t3"."a", "t3"."a", "t3"."b", "t3"."b", "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#,
+            ),
+            vec![]
+        )
+    );
 }
 
 #[test]
@@ -1265,12 +1212,58 @@ fn exec_plan_order_by_with_subquery() {
         .unwrap()
         .position(0)
         .unwrap();
-    let mut virtual_table = virtual_table_23(None);
+    let mut virtual_table = virtual_table_23(Some("hash_testing"));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
     let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
+    vtables.insert(motion_id, Rc::new(virtual_table));
+
+    let exec_plan = query.get_mut_exec_plan();
+    exec_plan.set_vtables(vtables);
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+    let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
+
+    // Check sub-query
+    let sql = get_sql_from_execution_plan(
+        exec_plan,
+        motion_child_id,
+        Snapshot::Oldest,
+        &Buckets::All,
+        "test",
+    );
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            r#"SELECT "hash_testing"."identification_number" FROM "hash_testing""#.to_string(),
+            vec![]
+        )
+    );
+
+    // Check main query
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            r#"SELECT "COL_1" as "identification_number" FROM (SELECT "COL_1" FROM "TMP_test_6") as "hash_testing" ORDER BY "COL_1""#.to_string(),
+            vec![]
+        ));
+}
+
+#[test]
+fn exec_plan_order_by_with_subquery() {
+    let sql = r#"SELECT "identification_number"
+                      FROM (select "identification_number" from "hash_testing")
+                      ORDER BY "identification_number""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let motion_id = query.get_motion_id(0, 0);
+    let mut virtual_table = virtual_table_23(None);
+    reshard_vtable(&query, motion_id, &mut virtual_table);
+    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();

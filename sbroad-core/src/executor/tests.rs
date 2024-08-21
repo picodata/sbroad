@@ -136,14 +136,7 @@ fn linker_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = virtual_table_23(None);
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
@@ -214,14 +207,7 @@ fn union_linker_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = virtual_table_23(None);
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
@@ -317,14 +303,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = virtual_table_23(Some("t8"));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
@@ -388,14 +367,7 @@ fn join_linker2_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(vcolumn_integer_user_non_null());
@@ -452,14 +424,7 @@ fn join_linker3_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(vcolumn_integer_user_non_null());
@@ -516,14 +481,7 @@ fn join_linker4_test() {
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
 
-    let motion_t2_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_t2_id = query.get_motion_id(0, 0);
     let mut virtual_t2 = VirtualTable::new();
     virtual_t2.add_column(vcolumn_integer_user_non_null());
     virtual_t2.add_tuple(vec![Value::from(1_u64)]);
@@ -538,14 +496,7 @@ fn join_linker4_test() {
         .coordinator
         .add_virtual_table(motion_t2_id, virtual_t2);
 
-    let motion_sq_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(1)
-        .unwrap();
+    let motion_sq_id = query.get_motion_id(0, 1);
     let mut virtual_sq = VirtualTable::new();
     virtual_sq.add_column(vcolumn_integer_user_non_null());
     virtual_sq.add_tuple(vec![Value::from(2_u64)]);
@@ -621,14 +572,7 @@ on q."f" = "t1"."a""#;
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
 
-    let motion_t2_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_t2_id = query.get_motion_id(0, 0);
     let mut virtual_t2 = VirtualTable::new();
     virtual_t2.add_column(vcolumn_integer_user_non_null());
     virtual_t2.set_alias("t3");
@@ -641,14 +585,7 @@ on q."f" = "t1"."a""#;
         .coordinator
         .add_virtual_table(motion_t2_id, virtual_t2);
 
-    let motion_sq_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(1)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_sq_id = query.get_motion_id(1, 0);
     let mut virtual_sq = VirtualTable::new();
     virtual_sq.add_column(vcolumn_integer_user_non_null());
     virtual_sq.add_column(vcolumn_integer_user_non_null());
@@ -694,14 +631,7 @@ fn dispatch_order_by() {
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
 
-    let order_by_motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let order_by_motion_id = query.get_motion_id(0, 0);
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(vcolumn_integer_user_non_null());
     query
@@ -735,14 +665,7 @@ fn anonymous_col_index_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion1_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion1_id = query.get_motion_id(0, 0);
     let mut virtual_t1 = virtual_table_23(None);
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
     {
@@ -751,14 +674,7 @@ fn anonymous_col_index_test() {
     query
         .coordinator
         .add_virtual_table(motion1_id, virtual_table_23(None));
-    let motion2_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(1)
-        .unwrap();
+    let motion2_id = query.get_motion_id(0, 1);
     let mut virtual_t2 = virtual_table_23(None);
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
     {
@@ -931,14 +847,7 @@ fn groupby_linker_test() {
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
 
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
+    let motion_id = query.get_motion_id(0, 0);
     let top_id = query.exec_plan.get_motion_subtree_root(motion_id).unwrap();
     assert!(
         !(Buckets::All != query.bucket_discovery(top_id).unwrap()),

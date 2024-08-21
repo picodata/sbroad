@@ -342,6 +342,18 @@ where
         self.exec_plan.get_ir_plan().is_acl()
     }
 
+    #[cfg(test)]
+    pub fn get_motion_id(&self, slice_id: usize, pos_idx: usize) -> NodeId {
+        *self
+            .exec_plan
+            .get_ir_plan()
+            .clone_slices()
+            .slice(slice_id)
+            .unwrap()
+            .position(pos_idx)
+            .unwrap()
+    }
+
     /// Checks that query is for plugin.
     ///
     /// # Errors
