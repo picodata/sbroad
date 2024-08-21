@@ -1527,6 +1527,9 @@ where
     M: Metadata,
 {
     subquery_ids_queue: VecDeque<NodeId>,
+    /// Vec of BETWEEN expressions met during parsing.
+    /// Used later to fix them as soon as we need to resolve double-linking problem
+    /// of left expression.
     betweens: Vec<Between>,
     metadata: &'worker M,
     /// Map of { reference plan_id -> (it's column name, whether it's covered with row)}
@@ -1682,6 +1685,10 @@ pub enum SelectOp {
     Except,
 }
 
+/// Helper struct denoting any combination of
+/// * SELECT
+/// * UNION (ALL)
+/// * EXCEPT
 #[derive(Clone)]
 pub enum SelectExpr {
     PlanId {
@@ -1976,7 +1983,7 @@ impl ParseExpression {
                     let uncovered_plan_child_id = if let Some((_, is_row)) = reference {
                         if *is_row {
                             let plan_inner_expr = plan.get_expression_node(plan_child_id)?;
-                            *plan_inner_expr.get_row_list()?.first().ok_or_else(|| {
+                            *plan_inner_expr.get_row_list().first().ok_or_else(|| {
                                 SbroadError::UnexpectedNumberOfValues(
                                     "There must be a Reference under Row.".into(),
                                 )
@@ -2213,10 +2220,9 @@ where
 
                     let plan_left_id = referred_relation_ids
                         .first()
-                        .ok_or(SbroadError::Invalid(
-                            Entity::Query,
-                            Some("Reference must point to some relational node".into())
-                        ))?;
+                        .unwrap_or_else(||
+                            panic!("Reference must point to some relational node")
+                        );
 
                     worker.build_columns_map(plan, *plan_left_id)?;
 
@@ -2266,7 +2272,9 @@ where
                             Err(e) => return Err(e)
                         };
                         let child = plan.get_relation_node(*plan_left_id)?;
-                        let child_alias_ids = plan.get_row_list(child.output())?;
+                        let child_alias_ids = plan.get_row_list(
+                            child.output()
+                        )?;
                         let child_alias_id = child_alias_ids
                             .get(col_position)
                             .expect("column position is invalid");
@@ -2972,6 +2980,7 @@ impl AbstractSyntaxTree {
                     // * `Row`s are added to support parsing Row expressions under `Values` nodes.
                     // * `Literal`s are added to support procedure calls and
                     //   ALTER SYSTEM which should not contain all possible `Expr`s.
+                    // * `SelectWithOptionalContinuation` is also parsed using Pratt parser
                     pairs_map.insert(arena_node_id, stack_node.pair.clone());
                 }
                 Rule::Projection | Rule::OrderBy => {
@@ -3318,7 +3327,7 @@ impl AbstractSyntaxTree {
                             plan.add_select(&[plan_rel_child_id], expr_plan_node_id)?
                         }
                         Rule::Having => plan.add_having(&[plan_rel_child_id], expr_plan_node_id)?,
-                        _ => return Err(SbroadError::Invalid(Entity::AST, None)), // never happens
+                        _ => panic!("Expected to see Selection or Having."),
                     };
                     map.add(id, plan_node_id);
                 }

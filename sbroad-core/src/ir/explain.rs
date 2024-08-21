@@ -386,7 +386,7 @@ impl Projection {
 
         let alias_list = plan.get_expression_node(output_id)?;
 
-        for col_node_id in alias_list.get_row_list()? {
+        for col_node_id in alias_list.get_row_list() {
             let col = ColExpr::new(plan, *col_node_id, sq_ref_map)?;
 
             result.cols.push(col);
@@ -436,7 +436,7 @@ impl GroupBy {
             result.gr_cols.push(col);
         }
         let alias_list = plan.get_expression_node(output_id)?;
-        for col_node_id in alias_list.get_row_list()? {
+        for col_node_id in alias_list.get_row_list() {
             let col = ColExpr::new(plan, *col_node_id, sq_ref_map)?;
             result.output_cols.push(col);
         }
@@ -736,20 +736,14 @@ impl Row {
                         if let Relational::ScanSubQuery { .. } | Relational::Motion { .. } =
                             rel_node
                         {
-                            let sq_offset = sq_ref_map.get(&rel_id).ok_or_else(|| {
-                                SbroadError::NotFound(
-                                    Entity::SubQuery,
-                                    format_smolstr!("with index {rel_id} in the map"),
-                                )
-                            })?;
+                            let sq_offset = sq_ref_map.get(&rel_id).unwrap_or_else(|| {
+                                panic!("Not found subquery with index {rel_id} in the map.")
+                            });
                             row.add_col(RowVal::SqRef(Ref::new(*sq_offset)));
                         } else {
-                            return Err(SbroadError::Invalid(
-                                Entity::Plan,
-                                Some(format_smolstr!(
-                                    "additional child ({rel_id}) is not SQ or Motion: {rel_node:?}"
-                                )),
-                            ));
+                            panic!(
+                                "Additional child ({rel_id}) is not SQ or Motion: {rel_node:?}."
+                            );
                         }
                     } else {
                         let col = ColExpr::new(plan, expr_id, sq_ref_map)?;
@@ -1160,7 +1154,7 @@ impl FullExplain {
                     let explain_node = match &node {
                         Relational::Selection { .. } => ExplainNode::Selection(selection),
                         Relational::Having { .. } => ExplainNode::Having(selection),
-                        _ => return Err(SbroadError::DoSkip),
+                        _ => panic!("Expected Selection or Having node."),
                     };
                     Some(explain_node)
                 }
@@ -1207,8 +1201,7 @@ impl FullExplain {
                         })?;
 
                         let child_output_id = ir.get_relation_node(*child_id)?.output();
-                        let child_node = ir.get_expression_node(child_output_id)?;
-                        let col_list = child_node.get_row_list()?;
+                        let col_list = ir.get_expression_node(child_output_id)?.get_row_list();
 
                         let targets = (s.targets)
                             .iter()

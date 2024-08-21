@@ -239,8 +239,7 @@ fn subtree_dfs_post() {
     let row_children = plan
         .get_expression_node(proj_row_id)
         .unwrap()
-        .clone_row_list()
-        .unwrap();
+        .clone_row_list();
     let alias_id = row_children.first().unwrap();
     let Expression::Alias(Alias {
         child: c_ref_id, ..

@@ -20,9 +20,14 @@ use super::{Node, Plan};
 
 /// Tuple columns that determinate its segment distribution.
 ///
-/// If table T1 is segmented by columns (a, b) and produces
-/// tuples with columns (a, b, c), it means that for any T1 tuple
-/// on a segment S1: f(a, b) = S1 and (a, b) is a segmentation key.
+/// Given:
+/// * f -- distribution function.
+/// * Table T1 contains columns (a, b, c) and distributed by columns (a, b).
+///
+/// Let's look at tuple (column row) with index i: (`a_i`, `b_i`, `c_i`).
+/// Calling function f on (`a_i`, `b_i`) gives us segment `S_i`. Its a segment on which
+/// this tuple will be located.
+/// (a, b) is called a "segmentation key".
 #[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct Key {
     /// A list of column positions in the tuple that form a
@@ -76,6 +81,14 @@ impl Key {
     }
 }
 
+/// Set of `Key`s each of which represents the same segmentation.
+/// After a join of several tables on the given key we may get several columns' sets that represent
+/// the same distribution.
+/// E.g. given 2 tables:
+/// * t(a, b) distributed by a
+/// * q(p, r) distributed by p
+/// After their join (`t join q on a = p`) we'll get table tq(a, b, p, r) where
+/// both Key((a)) and Key((p)) will represent the same segmentation.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct KeySet(HashSet<Key, RepeatableState>);
 
@@ -137,7 +150,7 @@ pub enum Distribution {
     ///
     /// Example: tuples from the segmented table.
     Segment {
-        /// A set of distribution keys (we can have multiple keys after join)
+        /// A set of distribution keys (we can have multiple keys after join).
         keys: KeySet,
     },
     /// A subtree with relational operator that has this distribution is guaranteed
@@ -151,8 +164,9 @@ pub enum Distribution {
 }
 
 impl Distribution {
-    fn union(left: &Distribution, right: &Distribution) -> Result<Distribution, SbroadError> {
-        let dist = match (left, right) {
+    /// Calculate a new distribution for the `Union` or `UnionAll` output tuple.
+    fn union(left: &Distribution, right: &Distribution) -> Distribution {
+        match (left, right) {
             (
                 Distribution::Global | Distribution::Any,
                 Distribution::Any | Distribution::Segment { .. },
@@ -189,10 +203,9 @@ impl Distribution {
         Ok(dist)
     }
 
-    /// Calculate a new distribution for the `Except` and `UnionAll` output tuple.
-    /// Single
-    fn except(left: &Distribution, right: &Distribution) -> Result<Distribution, SbroadError> {
-        let dist = match (left, right) {
+    /// Calculate a new distribution for the `Except` output tuple.
+    fn except(left: &Distribution, right: &Distribution) -> Distribution {
+        match (left, right) {
             (Distribution::Global, _) => right.clone(),
             (_, Distribution::Global) => left.clone(),
             (Distribution::Single, _) | (_, Distribution::Single) => {
@@ -235,7 +248,7 @@ impl Distribution {
                     Some(format_smolstr!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
             }
             (Distribution::Global, Distribution::Global) => {
-                // this case is handled by `dist_from_subqueries``
+                // This case is handled by `dist_from_subqueries`.
                 Distribution::Global
             }
             (Distribution::Global, _) | (Distribution::Any, Distribution::Segment { .. }) => {
@@ -278,6 +291,7 @@ impl Distribution {
     }
 }
 
+/// Nodes referred by relational operator output (ids of its children).
 enum ReferredNodes {
     None,
     Single(NodeId),
@@ -318,6 +332,19 @@ impl ReferredNodes {
     }
 }
 
+/// Helper structure to get the column position
+/// in the child node.
+#[derive(Debug, Eq, Hash, PartialEq)]
+struct ChildColumnReference {
+    /// Child node id.
+    node_id: NodeId,
+    /// Column position in the child node.
+    column_position: usize,
+}
+
+type ParentColumnPosition = usize;
+
+/// Set of the relational nodes referred by references under the row.
 struct ReferenceInfo {
     referred_children: ReferredNodes,
     child_column_to_parent_col: AHashMap<ChildColumnReference, ParentColumnPosition>,
@@ -392,16 +419,6 @@ impl Iterator for ReferredNodes {
     }
 }
 
-/// Helper structure to get the column position
-/// in the child node.
-#[derive(Debug, Eq, Hash, PartialEq)]
-struct ChildColumnReference {
-    /// Child node id.
-    node_id: NodeId,
-    /// Column position in the child node.
-    column_position: usize,
-}
-
 impl From<(NodeId, usize)> for ChildColumnReference {
     fn from((node_id, column_position): (NodeId, usize)) -> Self {
         ChildColumnReference {
@@ -411,10 +428,9 @@ impl From<(NodeId, usize)> for ChildColumnReference {
     }
 }
 
-type ParentColumnPosition = usize;
-
 impl Plan {
     /// Sets distribution for output tuple of projection.
+    /// Applied in case two stage aggregation is not present.
     ///
     /// # Errors
     /// - node is not projection
@@ -469,6 +485,8 @@ impl Plan {
     }
 
     /// Calculate and set tuple distribution.
+    /// In comparison with `set_dist` it automatically
+    /// derives distribution from children nodes.
     ///
     /// # Errors
     /// Returns `SbroadError` when current expression is not a `Row` or contains broken references.
@@ -497,10 +515,9 @@ impl Plan {
         };
         let parent = self.get_relation_node(parent_id)?;
 
-        // References in the branch node.
         let children = parent.children();
         if children.is_empty() {
-            // References in the leaf (relation scan) node.
+            // Working with a leaf node (ScanRelation).
             let tbl_name = self.get_scan_relation(parent_id)?;
             let tbl = self.get_relation_or_error(tbl_name)?;
             if tbl.is_global() {
@@ -524,8 +541,6 @@ impl Plan {
                     table_map.insert(*position, pos);
                 }
             }
-            // We don't handle a case with the ValueRow (distribution would be set to Replicated in Value node).
-            // So, we should care only about relation scan nodes.
             let sk = tbl.get_sk()?;
             let mut new_key: Key = Key::new(Vec::with_capacity(sk.len()));
             let all_found = sk.iter().all(|pos| {
@@ -545,7 +560,7 @@ impl Plan {
                 }
             }
         } else {
-            // Set of the referred relational nodes in the row.
+            // Working with all other nodes.
             let ref_info = ReferenceInfo::new(row_id, self, &children)?;
 
             match ref_info.referred_children {
@@ -589,18 +604,14 @@ impl Plan {
         Ok(())
     }
 
-    /// Join, Having or Selection
-    /// may have references that refer only to one
-    /// child (or two in case of Join),
-    /// but their final distribution also depends
-    /// on subqueries. Currently this dependency
-    /// arises only when non-sq children (required children)
-    /// have `Distribution::Global`.
+    /// Each relational node have non-sq (required) and sq (additional) children.
+    /// In case required children have `Distribution::Global` we can copy sq distribution
+    /// as far as required children data is stored on each replicaset.
     ///
-    /// This method checks whether node is Join, Selection or Having,
-    /// and if all required children have Global distribution, it computes
-    /// the correct distribution in case there are any subqueries. Otherwise,
-    /// it returns `None`.
+    /// In case all required children have Global distribution it improves
+    /// Global distribution based on subqueries in case there are any (note that `ValuesRow` has
+    /// not required children).
+    /// Otherwise, it returns `None`.
     ///
     /// # Errors
     /// - node is not relational
@@ -612,15 +623,10 @@ impl Plan {
     ) -> Result<Option<Distribution>, SbroadError> {
         let node = self.get_relation_node(node_id)?;
 
-        if !matches!(
-            node,
-            Relational::Join(_) | Relational::Having(_) | Relational::Selection(_)
-        ) {
-            return Ok(None);
-        }
-
-        let required_children_len = self.get_required_children_len(node_id)?;
-        // check all required children have Global distribution
+        let required_children_len = self
+            .get_required_children_len(node_id)?
+            .unwrap_or_else(|| panic!("Unexpected node to get required children number: {node:?}"));
+        // Check all required children have Global distribution.
         for child_idx in 0..required_children_len {
             let child_id = self.get_relational_child(node_id, child_idx)?;
             let child_dist = self.get_rel_distribution(child_id)?;
@@ -638,17 +644,13 @@ impl Plan {
                     suggested_dist = Some(Distribution::Any);
                 }
                 Distribution::Any { .. } => {
-                    // Earier when resolving conflicts for subqueries we must have
-                    // inserted Motion(Full) for subquery with Any
-                    // distribution.
-                    return Err(SbroadError::Invalid(
-                        Entity::Distribution,
-                        Some(format_smolstr!(
-                            "expected Motion(Full) for subquery child ({sq_id:?})"
-                        )),
-                    ));
+                    // Earlier when resolving conflicts for subqueries we must have
+                    // inserted Motion(Full) for subquery with Any distribution.
+                    panic!("Expected Motion(Full) for subquery child ({sq_id}).")
                 }
-                Distribution::Single | Distribution::Global => {}
+                Distribution::Single | Distribution::Global => {
+                    // TODO: In case we have a single sq can we improve Global to Single?
+                }
             }
         }
 
@@ -723,8 +725,11 @@ impl Plan {
     /// Sets the `Distribution` of row to given one
     ///
     /// # Errors
-    /// - supplied node is `Row`
-    pub fn set_dist(&mut self, row_id: NodeId, dist: Distribution) -> Result<(), SbroadError> {
+    /// - Unable to get node.
+    ///
+    /// # Panics
+    /// - Supplied node is `Row`.
+    pub fn set_dist(&mut self, row_id: usize, dist: Distribution) -> Result<(), SbroadError> {
         if let MutExpression::Row(Row {
             ref mut distribution,
             ..
@@ -733,10 +738,7 @@ impl Plan {
             *distribution = Some(dist);
             return Ok(());
         }
-        Err(SbroadError::Invalid(
-            Entity::Expression,
-            Some("the node is not a row type".to_smolstr()),
-        ))
+        panic!("The node is not a Row.");
     }
 
     fn set_two_children_node_dist(
@@ -803,41 +805,9 @@ impl Plan {
     ///
     /// # Errors
     /// - Node is not of a row type.
-    pub fn get_distribution(&self, row_id: NodeId) -> Result<&Distribution, SbroadError> {
-        match self.get_node(row_id)? {
-            Node::Expression(_) => self.distribution(row_id),
-            Node::Relational(_) => Err(SbroadError::Invalid(
-                Entity::Distribution,
-                Some(
-                    "Failed to get distribution for a relational node (try its row output tuple)."
-                        .to_smolstr(),
-                ),
-            )),
-            Node::Parameter(..) => Err(SbroadError::Invalid(
-                Entity::Distribution,
-                Some("Failed to get distribution for a parameter node.".to_smolstr()),
-            )),
-            Node::Ddl(_) => Err(SbroadError::Invalid(
-                Entity::Distribution,
-                Some("Failed to get distribution for a DDL node.".to_smolstr()),
-            )),
-            Node::Acl(_) => Err(SbroadError::Invalid(
-                Entity::Distribution,
-                Some("Failed to get distribution for a ACL node.".to_smolstr()),
-            )),
-            Node::Block(_) => Err(SbroadError::Invalid(
-                Entity::Distribution,
-                Some("Failed to get distribution for a code block node.".to_smolstr()),
-            )),
-            Node::Invalid(_) => Err(SbroadError::Invalid(
-                Entity::Distribution,
-                Some("Failed to get distribution for an invalid node.".to_smolstr()),
-            )),
-            Node::Plugin(_) => Err(SbroadError::Invalid(
-                Entity::Distribution,
-                Some("Failed to get distribution for a PLUGIN block node.".to_smolstr()),
-            )),
-        }
+    pub fn get_distribution(&self, row_id: usize) -> Result<&Distribution, SbroadError> {
+        let expr = self.get_expression_node(row_id)?;
+        Ok(expr.distribution())
     }
 
     /// Gets distribution of the relational node.

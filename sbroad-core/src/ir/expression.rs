@@ -648,7 +648,7 @@ impl ColumnPositionMap {
     pub(crate) fn new(plan: &Plan, rel_id: NodeId) -> Result<Self, SbroadError> {
         let rel_node = plan.get_relation_node(rel_id)?;
         let output = plan.get_expression_node(rel_node.output())?;
-        let alias_ids = output.get_row_list()?;
+        let alias_ids = output.get_row_list();
 
         let mut map = BTreeMap::new();
         let mut max_name = None;
@@ -1199,7 +1199,6 @@ impl Plan {
     }
 
     /// Project all the columns from the child's subquery node.
-    ///
     /// New columns don't have aliases.
     ///
     /// # Errors
@@ -1481,34 +1480,6 @@ impl Plan {
             _ => {}
         }
         Ok(false)
-    }
-
-    /// Extract `Const` value from `Row` by index
-    ///
-    /// # Errors
-    /// - node is not a row
-    /// - row doesn't have const
-    /// - const value is invalid
-    #[allow(dead_code)]
-    pub fn get_child_const_from_row(
-        &self,
-        row_id: NodeId,
-        child_num: usize,
-    ) -> Result<Value, SbroadError> {
-        let node = self.get_expression_node(row_id)?;
-        if let Expression::Row(Row { list, .. }) = node {
-            let const_node_id = list.get(child_num).ok_or_else(|| {
-                SbroadError::NotFound(Entity::Node, format_smolstr!("{child_num}"))
-            })?;
-
-            let v = self.get_expression_node(*const_node_id)?.as_const_value()?;
-
-            return Ok(v);
-        }
-        Err(SbroadError::Invalid(
-            Entity::Node,
-            Some("node is not Row type".into()),
-        ))
     }
 
     /// Replace parent for all references in the expression subtree of the current node.

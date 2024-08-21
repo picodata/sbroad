@@ -131,9 +131,6 @@ impl ExecutionPlan {
     }
 
     /// Get motion virtual table
-    ///
-    /// # Errors
-    /// - Failed to find a virtual table for the motion node.
     pub fn get_motion_vtable(&self, motion_id: NodeId) -> Result<Rc<VirtualTable>, SbroadError> {
         if let Some(vtable) = self.get_vtables() {
             if let Some(result) = vtable.get(&motion_id) {
@@ -141,14 +138,7 @@ impl ExecutionPlan {
             }
         }
         let motion_node = self.get_ir_plan().get_relation_node(motion_id)?;
-
-        Err(SbroadError::NotFound(
-            Entity::VirtualTable,
-            format_smolstr!(
-                "for Motion node ({motion_id:?}): {motion_node:?}. Plan: {:?}",
-                self
-            ),
-        ))
+        panic!("Virtual table for motion {motion_node:?} with id {motion_id} not found.")
     }
 
     /// Add materialize motion result to map of virtual tables.
@@ -561,7 +551,7 @@ impl ExecutionPlan {
                                 }
                             }
                             // We should not remove the child of a local motion node.
-                            // The subtree is needed to complie the SQL on the storage.
+                            // The subtree is needed to compile the SQL on the storage.
                             if !policy.is_local() {
                                 *children = Vec::new();
                             }

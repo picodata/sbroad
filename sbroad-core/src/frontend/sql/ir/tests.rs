@@ -2837,8 +2837,8 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql_having_with_sq_segment_local_motion() {
-    // check subquery has no Motion, as it has the same distribution
-    // as columns used in GroupBy
+    // Check subquery has no Motion, as it has the same distribution
+    // as columns used in GroupBy.
     let input = r#"
         SELECT "sysFrom", "sys_op", sum(distinct "id") as "sum", count(distinct "id") as "count" from "test_space"
         group by "sysFrom", "sys_op"

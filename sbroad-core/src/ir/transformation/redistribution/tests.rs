@@ -161,6 +161,8 @@ fn inner_join_local_policy_sq_with_union_all_in_filter() {
 
 #[test]
 fn join_inner_and_local_full_policies() {
+    // "hash_testing"      sharding_key = ("identification_number", "product_code")
+    // "hash_testing_hist" sharding_key = the same
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
         INNER JOIN
         (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"

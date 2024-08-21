@@ -357,10 +357,7 @@ impl Plan {
     pub fn add_except(&mut self, left: NodeId, right: NodeId) -> Result<NodeId, SbroadError> {
         let child_row_len = |child: NodeId, plan: &Plan| -> Result<usize, SbroadError> {
             let child_output = plan.get_relation_node(child)?.output();
-            Ok(plan
-                .get_expression_node(child_output)?
-                .get_row_list()?
-                .len())
+            Ok(plan.get_expression_node(child_output)?.get_row_list().len())
         };
 
         let left_row_len = child_row_len(left, self)?;
@@ -906,8 +903,11 @@ impl Plan {
     /// Adds motion node.
     ///
     /// # Errors
-    /// - child node is not relational
-    /// - child output tuple is invalid
+    /// - Unable to get node.
+    ///
+    /// # Panics
+    /// - Child node is not relational.
+    /// - Child output tuple is invalid.
     pub fn add_motion(
         &mut self,
         child_id: NodeId,
@@ -925,12 +925,9 @@ impl Plan {
         let output = self.add_row_for_output(child_id, &[], true, None)?;
         match policy {
             MotionPolicy::None => {
-                return Err(SbroadError::Invalid(
-                    Entity::Motion,
-                    Some(format_smolstr!(
-                        "add_motion: got MotionPolicy::None for child_id: {child_id:?}"
-                    )),
-                ))
+                panic!(
+                    "None policy is not expected for `add_motion` method for child_id: {child_id}."
+                );
             }
             MotionPolicy::Segment(key) | MotionPolicy::LocalSegment(key) => {
                 if let Ok(keyset) = KeySet::try_from(key) {
@@ -1200,7 +1197,7 @@ impl Plan {
             let child_columns = self
                 .get_expression_node(child_output_id)
                 .expect("output row")
-                .clone_row_list()?;
+                .clone_row_list();
             if child_columns.len() != columns.len() {
                 return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                     "expected {} columns in CTE, got {}",
@@ -1246,10 +1243,7 @@ impl Plan {
     ) -> Result<NodeId, SbroadError> {
         let child_row_len = |child: NodeId, plan: &Plan| -> Result<usize, SbroadError> {
             let child_output = plan.get_relation_node(child)?.output();
-            Ok(plan
-                .get_expression_node(child_output)?
-                .get_row_list()?
-                .len())
+            Ok(plan.get_expression_node(child_output)?.get_row_list().len())
         };
 
         let left_row_len = child_row_len(left, self)?;
@@ -1305,10 +1299,10 @@ impl Plan {
     /// - Row node is not of a row type
     pub fn add_values_row(
         &mut self,
-        row_id: NodeId,
+        expr_row_id: usize,
         col_idx: &mut usize,
     ) -> Result<NodeId, SbroadError> {
-        let row = self.get_expression_node(row_id)?;
+        let row = self.get_expression_node(expr_row_id)?;
         let columns = row.clone_row_list()?;
         let mut aliases: Vec<NodeId> = Vec::with_capacity(columns.len());
         for col_id in columns {
@@ -1323,11 +1317,11 @@ impl Plan {
 
         let values_row = ValuesRow {
             output,
-            data: row_id,
+            data: expr_row_id,
             children: vec![],
         };
         let values_row_id = self.add_relational(values_row.into())?;
-        self.replace_parent_in_subtree(row_id, None, Some(values_row_id))?;
+        self.replace_parent_in_subtree(expr_row_id, None, Some(values_row_id))?;
         Ok(values_row_id)
     }
 
@@ -1383,7 +1377,7 @@ impl Plan {
 
         // Generate a row of aliases referencing all the children.
         let mut aliases: Vec<NodeId> = Vec::with_capacity(names.len());
-        let columns = last_output.clone_row_list()?;
+        let columns = last_output.clone_row_list();
         for (pos, name) in names.iter().enumerate() {
             let col_id = *columns.get(pos).ok_or_else(|| {
                 SbroadError::UnexpectedNumberOfValues(format_smolstr!(
@@ -1417,12 +1411,9 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not relational
-    pub fn get_relational_output(&self, rel_id: NodeId) -> Result<NodeId, SbroadError> {
-        if let Node::Relational(rel) = self.get_node(rel_id)? {
-            Ok(rel.output())
-        } else {
-            Err(SbroadError::Invalid(Entity::Relational, None))
-        }
+    pub fn get_relational_output(&self, rel_id: usize) -> Result<usize, SbroadError> {
+        let rel_node = self.get_relation_node(rel_id)?;
+        Ok(rel_node.output())
     }
 
     /// Gets list of aliases in output tuple of `rel_id`.
@@ -1452,44 +1443,33 @@ impl Plan {
     }
 
     /// Gets children from relational node.
-    ///
-    /// # Errors
-    /// - node is not relational
     pub fn get_relational_children(&self, rel_id: NodeId) -> Result<Children<'_>, SbroadError> {
         if let Node::Relational(_) = self.get_node(rel_id)? {
             Ok(self.children(rel_id))
         } else {
-            Err(SbroadError::Invalid(
-                Entity::Node,
-                Some("invalid relational node".into()),
-            ))
+            panic!("Expected relational node for getting children.")
         }
     }
 
     /// Gets child with specified index
     ///
     /// # Errors
-    /// - node is not relational
-    /// - node does not have child with specified index
+    /// - Unable to get node.
+    ///
+    /// # Panics
+    /// - Node is not relational.
+    /// - Node does not have child with specified index.
     pub fn get_relational_child(
         &self,
         rel_id: NodeId,
         child_idx: usize,
     ) -> Result<NodeId, SbroadError> {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
-            return Ok(*rel.children().get(child_idx).ok_or_else(|| {
-                SbroadError::Invalid(
-                    Entity::Relational,
-                    Some(format_smolstr!(
-                        "rel node {rel:?} has no child with idx ({child_idx})"
-                    )),
-                )
-            })?);
+            return Ok(*rel.children().get(child_idx).unwrap_or_else(|| {
+                panic!("Rel node {rel:?} has no child with idx ({child_idx}).")
+            }));
         }
-        Err(SbroadError::NotFound(
-            Entity::Relational,
-            format_smolstr!("with id ({rel_id})"),
-        ))
+        panic!("Relational node with id {rel_id} is not found.")
     }
 
     /// Some nodes (like Having, Selection, Join),
@@ -1666,20 +1646,12 @@ impl Plan {
     }
 
     /// Sets children for relational node
-    ///
-    /// # Errors
-    /// - node is not relational
-    /// - node is scan (always a leaf node)
-    pub fn set_relational_children(
-        &mut self,
-        rel_id: NodeId,
-        children: Vec<NodeId>,
-    ) -> Result<(), SbroadError> {
-        if let MutNode::Relational(ref mut rel) = self.get_mut_node(rel_id)? {
+    pub fn set_relational_children(&mut self, rel_id: NodeId, children: Vec<NodeId>) {
+        if let MutNode::Relational(ref mut rel) = self.get_mut_node(rel_id) {
             rel.set_children(children);
-            return Ok(());
+        } else {
+            panic!("Expected relational node for {rel_id}.");
         }
-        Err(SbroadError::Invalid(Entity::Relational, None))
     }
 
     /// Get relational Scan name that given `output_alias_position` (`Expression::Alias`)
@@ -1765,21 +1737,17 @@ impl Plan {
     /// # Errors
     /// - Failed to get plan top
     /// - Node returned by the relational iterator is not relational (bug)
-    pub fn is_additional_child(&self, node_id: NodeId) -> Result<bool, SbroadError> {
-        for node in &self.nodes.arena64 {
-            match node {
-                Node64::Selection(Selection { children, .. })
-                | Node64::Having(Having { children, .. }) => {
-                    if children.iter().skip(1).any(|&c| c == node_id) {
-                        return Ok(true);
-                    }
+    pub fn is_additional_child(&self, node_id: usize) -> Result<bool, SbroadError> {
+        for (id, node) in self.nodes.iter().enumerate() {
+            if let Node::Relational(rel_node) = node {
+                let children = rel_node.children();
+                let to_skip = self.get_required_children_len(id)?;
+                let Some(to_skip) = to_skip else {
+                    continue;
+                };
+                if children.iter().skip(to_skip).any(|&c| c == node_id) {
+                    return Ok(true);
                 }
-                Node64::Join(Join { children, .. }) => {
-                    if children.iter().skip(2).any(|&c| c == node_id) {
-                        return Ok(true);
-                    }
-                }
-                _ => {}
             }
         }
         Ok(false)

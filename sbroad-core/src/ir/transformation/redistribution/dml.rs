@@ -6,17 +6,13 @@ use crate::ir::relation::{Column, Table};
 use crate::ir::transformation::redistribution::MotionOpcode;
 use crate::ir::Plan;
 use ahash::AHashMap;
-use smol_str::{format_smolstr, ToSmolStr};
+use smol_str::format_smolstr;
 
 use super::{MotionKey, Target};
 
 impl Plan {
     /// Return first child of `Insert` node
-    ///
-    /// # Errors
-    /// - node is not `Insert`
-    /// - `Insert` has 0 or more than 1 child
-    pub fn dml_child_id(&self, dml_node_id: NodeId) -> Result<NodeId, SbroadError> {
+    pub fn dml_child_id(&self, dml_node_id: usize) -> Result<usize, SbroadError> {
         let dml_node = self.get_relation_node(dml_node_id)?;
         if let Relational::Insert(Insert { children, .. })
         | Relational::Update(Update { children, .. })
@@ -25,15 +21,9 @@ impl Plan {
             if let (Some(child), None) = (children.first(), children.get(1)) {
                 return Ok(*child);
             }
-            return Err(SbroadError::Unsupported(
-                Entity::Operator,
-                Some("Insert/Update must have exactly a single child node".to_smolstr()),
-            ));
+            panic!("DML node must have exactly a single child node.");
         }
-        Err(SbroadError::Invalid(
-            Entity::Node,
-            Some(format_smolstr!("dml node with id {dml_node_id:?}")),
-        ))
+        panic!("Expected DML node to get child from. Got {dml_node:?}.");
     }
 
     /// Return `ConflictStrategy` for given insert node
@@ -73,7 +63,7 @@ impl Plan {
         // output columns.
         let child_id = self.dml_child_id(insert_id)?;
         let child_output_id = self.get_relation_node(child_id)?.output();
-        let child_row = self.get_row_list(child_output_id)?;
+        let child_row = self.get_expression_node(child_output_id)?.get_row_list();
         if columns.len() != child_row.len() {
             return Err(SbroadError::Invalid(
                 Entity::Node,
@@ -128,10 +118,7 @@ impl Plan {
     }
 
     /// Return the table for given `Insert` node
-    ///
-    /// # Errors
-    /// - Node is not an `Insert`
-    pub fn dml_node_table(&self, node_id: NodeId) -> Result<&Table, SbroadError> {
+    pub fn dml_node_table(&self, node_id: usize) -> Result<&Table, SbroadError> {
         let node = self.get_relation_node(node_id)?;
         if let Relational::Insert(Insert { relation, .. })
         | Relational::Update(Update { relation, .. })
@@ -139,10 +126,7 @@ impl Plan {
         {
             return self.get_relation_or_error(relation);
         }
-        Err(SbroadError::Invalid(
-            Entity::Node,
-            Some(format_smolstr!("DML node with id {node_id:?}")),
-        ))
+        panic!("Expected DML node to get table from. Got {node:?}.")
     }
 
     /// Set the length of tuple to delete for

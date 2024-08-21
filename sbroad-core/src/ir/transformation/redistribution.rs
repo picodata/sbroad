@@ -579,6 +579,8 @@ impl Plan {
     }
 
     /// Create Motions from the strategy map.
+    /// Note: If we call this function, every child of strategy `parent_id` must be presented in the map.
+    ///       For such a case we have `MotionPolicy::None` that won't create additional Motion nodes.
     fn create_motion_nodes(&mut self, mut strategy: Strategy) -> Result<(), SbroadError> {
         let parent_id = strategy.parent_id;
         let children = self.get_relational_children(parent_id)?;
@@ -597,14 +599,12 @@ impl Plan {
             .iter()
             .all(|(node, _)| children_set.contains(node))
         {
-            return Err(SbroadError::FailedTo(
-                Action::Add,
-                Some(Entity::Motion),
-                "trying to add motions for non-existing children in relational node".into(),
-            ));
+            panic!("Trying to add motions for non-existing children in relational node");
         }
 
         // Add motions.
+
+        // Children nodes covered with Motions (if needed from `strategy`).
         let mut children_with_motions: Vec<NodeId> = Vec::new();
         let children_owned = children.to_vec();
         for child in children_owned {
@@ -619,7 +619,7 @@ impl Plan {
                 children_with_motions.push(child);
             }
         }
-        self.set_relational_children(parent_id, children_with_motions)?;
+        self.set_relational_children(parent_id, children_with_motions);
         Ok(())
     }
 
@@ -752,10 +752,7 @@ impl Plan {
             if let Expression::Unary(UnaryExpr { child, .. }) = not_node {
                 not_nodes_children.insert(*child);
             } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Expression,
-                    Some(format_smolstr!("Expected Not operator, got {not_node:?}")),
-                ));
+                panic!("Expected Not operator, got {not_node:?}");
             }
         }
 
@@ -769,8 +766,8 @@ impl Plan {
         for LevelNode(_, bool_node) in &bool_nodes {
             let strategies = self.get_sq_node_strategies_for_bool_op(select_id, *bool_node)?;
             for (id, policy) in strategies {
-                // In case we faced with `not ... in ...`, we
-                // have to change motion policy to Full.
+                // In case NOT operator is covering expression with subquery like in
+                // `not (... in ...)` expression, we have to change motion policy to Full.
                 if not_nodes_children.contains(bool_node) {
                     strategy.add_child(id, MotionPolicy::Full, Program::default());
                 } else {
@@ -865,7 +862,7 @@ impl Plan {
     ///
     /// # Errors
     /// - If the node is not a row node.
-    fn build_row_map(&self, row_id: NodeId) -> Result<HashMap<usize, NodeId>, SbroadError> {
+    fn build_row_map(&self, row_id: NodeId) -> Result<HashMap<usize, usize>, SbroadError> {
         let columns = self.get_row_list(row_id)?;
         let mut map: HashMap<usize, NodeId> = HashMap::new();
         for (pos, col) in columns.iter().enumerate() {
@@ -1313,7 +1310,7 @@ impl Plan {
                 (outer_dist, inner_dist),
                 (Distribution::Global, _) | (_, Distribution::Global)
             ) {
-                // if at least one child is global, the join can be done without any motions
+                // If at least one child is global, the join can be done without any motions.
                 strategy.add_child(inner_child, MotionPolicy::None, Program::default());
                 strategy.add_child(outer_child, MotionPolicy::None, Program::default());
                 self.fix_sq_strategy_for_global_tbl(rel_id, cond_id, &mut strategy)?;
@@ -1329,9 +1326,9 @@ impl Plan {
     /// then default motions assigned in `choose_strategy_for_bool_op_inner_sq`
     /// function are wrong.
     ///
-    /// By default if subquery has `Segment` distribution, we assign
+    /// By default, if subquery has `Segment` distribution, we assign
     /// `Motion(None)` to it in `choose_strategy_for_bool_op_inner_sq`.
-    /// But in the case described above it can lead to wrong results:
+    /// But in the case described below it can lead to wrong results:
     ///
     /// ```sql
     /// select a, b from global
@@ -1772,7 +1769,7 @@ impl Plan {
             MotionOpcode::ReshardIfNeeded,
         ];
 
-        // Delete node alway produce a local segment policy
+        // Delete node always produce a local segment policy
         // (i.e. materialization without bucket calculation).
         map.add_child(child_id, MotionPolicy::Local, Program(program));
 
@@ -1858,20 +1855,16 @@ impl Plan {
         Ok(map)
     }
 
-    // Helper function to check whether except is done between
-    // sharded tables that both contain the bucket_id column
-    // at the same position in their outputs. In such case
-    // except can be done locally.
-    //
-    // Example:
-    // select "bucket_id" as a from t1
-    // except
-    // select "bucket_id" as b from t1
-    fn is_except_on_bucket_id(
-        &self,
-        left_id: NodeId,
-        right_id: NodeId,
-    ) -> Result<bool, SbroadError> {
+    /// Helper function to check whether except is done between
+    /// sharded tables that both contain the `bucket_id` column
+    /// at the same position in their outputs. In such case
+    /// except can be done locally.
+    ///
+    /// Example:
+    /// select `bucket_id` as a from t1
+    /// except
+    /// select `bucket_id` as b from t1
+    fn is_except_on_bucket_id(&self, left_id: NodeId, right_id: NodeId) -> Result<bool, SbroadError> {
         let mut context = self.context_mut();
         let Some(left_shard_positions) =
             context.get_shard_columns_positions(left_id, self)?.copied()
@@ -2152,7 +2145,11 @@ impl Plan {
             PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
         post_tree.populate_nodes(top);
         let nodes = post_tree.take_nodes();
+        // Set of already visited nodes. Used for the case of BETWEEN where two expressions may
+        // refer to the same relational node.
         let mut visited = AHashSet::with_capacity(nodes.len());
+        // Map of { old relational child -> new relational child }
+        // used to fix Union nodes.
         let mut old_new: AHashMap<NodeId, NodeId> = AHashMap::new();
 
         for LevelNode(_, id) in nodes {
@@ -2160,6 +2157,7 @@ impl Plan {
                 continue;
             }
 
+            // We clone it because immutable reference won't allow us to change plan later.
             let node = self.get_relation_node(id)?.get_rel_owned();
 
             // Some transformations (Union) need to add new nodes above
@@ -2244,6 +2242,8 @@ impl Plan {
                         self.get_relational_output(self.get_relational_child(id, 0)?)?,
                     )?;
                     if matches!(child_dist, Distribution::Single | Distribution::Global) {
+                        // Note on why we skip `add_two_stage_aggregation` call below in case of
+                        // Single or Global distribution:
                         // If child has Single or Global distribution and this Projection
                         // contains aggregates or there is GroupBy,
                         // then we don't need two stage transformation,
@@ -2324,7 +2324,7 @@ impl Plan {
                     // Possible, current CTE subtree has already been resolved and we
                     // can just copy the corresponding motion node.
                     if let Some(motion_id) = cte_motions.get(&child) {
-                        self.set_relational_children(id, vec![*motion_id])?;
+                        self.set_relational_children(id, vec![*motion_id]);
                     } else {
                         let strategy = self.resolve_cte_conflicts(id)?;
                         self.create_motion_nodes(strategy)?;

@@ -1484,15 +1484,8 @@ impl Plan {
     ///
     /// # Errors
     /// - supplied id does not correspond to `Row` node
-    pub fn get_row_list(&self, row_id: NodeId) -> Result<&Vec<NodeId>, SbroadError> {
-        if let Expression::Row(Row { list, .. }) = self.get_expression_node(row_id)? {
-            return Ok(list);
-        }
-
-        Err(SbroadError::Invalid(
-            Entity::Expression,
-            Some("node is not Row".into()),
-        ))
+    pub fn get_row_list(&self, row_id: usize) -> Result<&[usize], SbroadError> {
+        Ok(self.get_expression_node(row_id)?.get_row_list())
     }
 
     /// Helper function to get id of node under alias node,
@@ -1767,7 +1760,7 @@ impl Plan {
         let column_expr_node = self.get_expression_node(column_rel_node.output())?;
 
         let col_alias_id = column_expr_node
-            .get_row_list()?
+            .get_row_list()
             .get(*position)
             .unwrap_or_else(|| panic!("Column not found at position {position} in row list"));
 

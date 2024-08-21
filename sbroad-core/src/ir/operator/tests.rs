@@ -48,7 +48,7 @@ fn scan_rel() {
     if let Node::Expression(expr) = row {
         let keys: HashSet<_, RepeatableState> = collection! { Key::new(vec![1, 0]) };
         assert_eq!(
-            expr.distribution().unwrap(),
+            expr.distribution(),
             &Distribution::Segment { keys: keys.into() }
         );
     } else {
