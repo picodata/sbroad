@@ -249,24 +249,13 @@ fn subtree_next<'plan>(
                                 Ok(rel_node)
                                     if rel_node.is_subquery_or_cte() || rel_node.is_motion() =>
                                 {
-                                    // Check if the sub-query is an additional one.
-                                    let parent = iter.get_plan().get_relation_node(parent_id);
-                                    let mut is_additional = false;
-                                    if let Ok(
-                                        Relational::Selection(Selection { children, .. })
-                                        | Relational::Having(Having { children, .. }),
-                                    ) = parent
-                                    {
-                                        if children.iter().skip(1).any(|&c| c == rel_id) {
-                                            is_additional = true;
-                                        }
-                                    }
-                                    if let Ok(Relational::Join(Join { children, .. })) = parent {
-                                        if children.iter().skip(2).any(|&c| c == rel_id) {
-                                            is_additional = true;
-                                        }
-                                    }
-                                    if is_additional {
+                                    let is_additional_child = iter
+                                        .get_plan()
+                                        .is_additional_child_of_rel(parent_id, *rel_id)
+                                        .expect(
+                                            "Relational node failed to check additional child.",
+                                        );
+                                    if is_additional_child {
                                         return Some(rel_id);
                                     }
                                 }
@@ -312,15 +301,15 @@ fn subtree_next<'plan>(
                     }
                 }
 
-                ref node @ (Relational::Except(Except { output, .. })
+                Relational::Except(Except { output, .. })
                 | Relational::Insert(Insert { output, .. })
                 | Relational::Intersect(Intersect { output, .. })
                 | Relational::Delete(Delete { output, .. })
                 | Relational::ScanSubQuery(ScanSubQuery { output, .. })
                 | Relational::Union(Union { output, .. })
-                | Relational::UnionAll(UnionAll { output, .. })) => {
+                | Relational::UnionAll(UnionAll { output, .. }) => {
                     let step = *iter.get_child().borrow();
-                    let children = node.children();
+                    let children = r.children();
                     if step < children.len() {
                         *iter.get_child().borrow_mut() += 1;
                         return children.get(step).copied();
@@ -367,14 +356,15 @@ fn subtree_next<'plan>(
                     None
                 }
                 Relational::OrderBy(OrderBy {
-                    child,
+                    children,
                     output,
                     order_by_elements,
+                    ..
                 }) => {
                     let step = *iter.get_child().borrow();
                     if step == 0 {
                         *iter.get_child().borrow_mut() += 1;
-                        return Some(*child);
+                        return children.get(step);
                     }
                     let mut col_idx = step - 1;
                     while col_idx < order_by_elements.len() {

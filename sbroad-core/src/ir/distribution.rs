@@ -16,7 +16,7 @@ use super::api::children::Children;
 use super::node::expression::{Expression, MutExpression};
 use super::node::relational::Relational;
 use super::relation::{Column, ColumnPositions};
-use super::{Node, Plan};
+use super::Plan;
 
 /// Tuple columns that determinate its segment distribution.
 ///
@@ -413,26 +413,16 @@ impl From<(NodeId, usize)> for ChildColumnReference {
 impl Plan {
     /// Sets distribution for output tuple of projection.
     /// Applied in case two stage aggregation is not present.
-    ///
-    /// # Errors
-    /// - node is not projection
-    /// - invalid projection node (e.g. no children)
-    /// - failed to get child distribution
-    pub fn set_projection_distribution(&mut self, proj_id: NodeId) -> Result<(), SbroadError> {
-        if !matches!(self.get_relation_node(proj_id)?, Relational::Projection(_)) {
-            return Err(SbroadError::Invalid(
-                Entity::Node,
-                Some(format_smolstr!("expected projection on id: {proj_id:?}")),
-            ));
+    pub fn set_projection_distribution(&mut self, proj_id: usize) -> Result<(), SbroadError> {
+        if !matches!(
+            self.get_relation_node(proj_id)?,
+            Relational::Projection { .. }
+        ) {
+            panic!("Expected projection on id: {proj_id}.")
         };
 
         let output_id = self.get_relational_output(proj_id)?;
         let child_id = self.get_relational_child(proj_id, 0)?;
-
-        if let Distribution::Global = self.get_rel_distribution(child_id)? {
-            self.set_dist(output_id, Distribution::Global)?;
-            return Ok(());
-        }
 
         let mut only_compound_exprs = true;
         for id in self.get_row_list(output_id)? {
@@ -627,62 +617,55 @@ impl Plan {
         child_rel_node: NodeId,
         child_pos_map: &AHashMap<ChildColumnReference, ParentColumnPosition>,
     ) -> Result<Distribution, SbroadError> {
-        if let Node::Relational(relational_op) = self.get_node(child_rel_node)? {
-            let node = self.get_node(relational_op.output())?;
-            if let Node::Expression(Expression::Row(Row {
-                distribution: child_dist,
-                ..
-            })) = node
-            {
-                match child_dist {
-                    None => {
-                        return Err(SbroadError::Invalid(
-                            Entity::Distribution,
-                            Some("distribution is uninitialized".to_smolstr()),
-                        ));
-                    }
-                    Some(Distribution::Single) => return Ok(Distribution::Single),
-                    Some(Distribution::Any) => return Ok(Distribution::Any),
-                    Some(Distribution::Global) => return Ok(Distribution::Global),
-                    Some(Distribution::Segment { keys }) => {
-                        let mut new_keys: HashSet<Key, RepeatableState> =
-                            HashSet::with_hasher(RepeatableState);
-                        for key in keys.iter() {
-                            let mut new_key: Key =
-                                Key::new(Vec::with_capacity(key.positions.len()));
-                            let all_found = key.positions.iter().all(|pos| {
-                                child_pos_map.get(&(child_rel_node, *pos).into()).map_or(
-                                    false,
-                                    |v| {
-                                        new_key.positions.push(*v);
-                                        true
-                                    },
-                                )
-                            });
-
-                            if all_found {
-                                new_keys.insert(new_key);
-                            }
-                        }
-
-                        // Parent's operator output does not contain some
-                        // sharding columns. For example:
-                        // ```sql
-                        // select b from t
-                        // ```
-                        //
-                        // Where `t` is sharded by `a`.
-                        if new_keys.is_empty() {
-                            return Ok(Distribution::Any);
-                        }
-                        return Ok(Distribution::Segment {
-                            keys: new_keys.into(),
+        let rel_node = self.get_relation_node(child_rel_node)?;
+        let output_expr = self.get_expression_node(rel_node.output())?;
+        if let Expression::Row {
+            distribution: child_dist,
+            ..
+        } = output_expr
+        {
+            match child_dist {
+                None => panic!("Unable to calculate distribution from child: it's uninitialized."),
+                Some(Distribution::Single) => Ok(Distribution::Single),
+                Some(Distribution::Any) => Ok(Distribution::Any),
+                Some(Distribution::Global) => Ok(Distribution::Global),
+                Some(Distribution::Segment { keys }) => {
+                    let mut new_keys: HashSet<Key, RepeatableState> =
+                        HashSet::with_hasher(RepeatableState);
+                    for key in keys.iter() {
+                        let mut new_key: Key = Key::new(Vec::with_capacity(key.positions.len()));
+                        let all_found = key.positions.iter().all(|pos| {
+                            child_pos_map
+                                .get(&(child_rel_node, *pos).into())
+                                .map_or(false, |v| {
+                                    new_key.positions.push(*v);
+                                    true
+                                })
                         });
+
+                        if all_found {
+                            new_keys.insert(new_key);
+                        }
                     }
+
+                    // Parent's operator output does not contain some
+                    // sharding columns. For example:
+                    // ```sql
+                    // select b from t
+                    // ```
+                    //
+                    // Where `t` is sharded by `a`.
+                    if new_keys.is_empty() {
+                        return Ok(Distribution::Any);
+                    }
+                    Ok(Distribution::Segment {
+                        keys: new_keys.into(),
+                    })
                 }
             }
+        } else {
+            panic!("Expected Row node.")
         }
-        Err(SbroadError::Invalid(Entity::Relational, None))
     }
 
     /// Sets the `Distribution` of row to given one

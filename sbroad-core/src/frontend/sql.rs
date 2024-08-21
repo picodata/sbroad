@@ -80,26 +80,6 @@ fn get_default_auth_method() -> SmolStr {
     SmolStr::from(DEFAULT_AUTH_METHOD)
 }
 
-/// Helper structure to fix the double linking
-/// problem in the BETWEEN operator.
-/// We transform `left BETWEEN center AND right` to
-/// `left >= center AND left <= right`.
-struct Between {
-    /// Left node id.
-    left_id: NodeId,
-    /// Less or equal node id (`left <= right`)
-    less_eq_id: NodeId,
-}
-
-impl Between {
-    fn new(left_id: NodeId, less_eq_id: NodeId) -> Self {
-        Self {
-            left_id,
-            less_eq_id,
-        }
-    }
-}
-
 // Helper map to store CTE node ids by their names.
 type CTEs = AHashMap<SmolStr, NodeId>;
 
@@ -1521,6 +1501,26 @@ const REFERENCES_MAP_CAPACITY: usize = 50;
 /// in the parsing result returned from pest. Used for preallocating `ParsingPairsMap`.
 const PARSING_PAIRS_MAP_CAPACITY: usize = 100;
 
+/// Helper structure to fix the double linking
+/// problem in the BETWEEN operator.
+/// We transform `left BETWEEN center AND right` to
+/// `left >= center AND left <= right`.
+struct Between {
+    /// Left node id.
+    left_id: usize,
+    /// LEQ node id (`left <= right`)
+    leq_id: usize,
+}
+
+impl Between {
+    fn new(left_id: usize, less_eq_id: usize) -> Self {
+        Self {
+            left_id,
+            leq_id: less_eq_id,
+        }
+    }
+}
+
 /// Helper struct holding values and references needed for `parse_expr` calls.
 struct ExpressionsWorker<'worker, M>
 where
@@ -1531,6 +1531,20 @@ where
     /// Used later to fix them as soon as we need to resolve double-linking problem
     /// of left expression.
     betweens: Vec<Between>,
+    /// Map of { subquery_id -> row_id }
+    /// that is used to fix `betweens`, which children (references under rows)
+    /// may have been changed.
+    /// We can't fix between child (clone expression subtree) in the place of their creation,
+    /// because we'll copy references without adequate `parent` and `target` that we couldn't fix
+    /// later.
+    subquery_replaces: AHashMap<usize, usize>,
+    /// Vec of { (sq_id, ref_ids_to_fix_parent_and_target) }
+    /// After calling `parse_expr` and creating relational node that can contain SubQuery as
+    /// additional child (Selection, Join, Having, OrderBy, GroupBy, Projection) we should pop the
+    /// queue till it's not empty and:
+    /// * Add subqueries to the list of relational children
+    /// * Fix References
+    sub_queries_to_fix_queue: VecDeque<(usize, Vec<usize>)>,
     metadata: &'worker M,
     /// Map of { reference plan_id -> (it's column name, whether it's covered with row)}
     /// We have to save column name in order to use it later for alias creation.
@@ -1557,6 +1571,8 @@ where
     fn new<'plan: 'worker, 'meta: 'worker>(metadata: &'meta M) -> Self {
         Self {
             subquery_ids_queue: VecDeque::new(),
+            subquery_replaces: AHashMap::new(),
+            sub_queries_to_fix_queue: VecDeque::new(),
             metadata,
             betweens: Vec::new(),
             reference_to_name_map: HashMap::with_capacity(REFERENCES_MAP_CAPACITY),
@@ -1595,6 +1611,33 @@ where
             col_map.get(col_name)
         }
     }
+
+    /// Resolve the double linking problem in BETWEEN operator. On the AST to IR step
+    /// we transform `left BETWEEN center AND right` construction into
+    /// `left >= center AND left <= right`, where the same `left` expression is reused
+    /// twice. So, We need to copy the 'left' expression tree from `left >= center` to the
+    /// `left <= right` expression.
+    ///
+    /// Otherwise, we'll have problems on the dispatch stage while taking nodes from the original
+    /// plan to build a sub-plan for the storage. If the same `left` subtree is used twice in
+    /// the plan, these nodes are taken while traversing the `left >= center` expression and
+    /// nothing is left for the `left <= right` sutree.
+    pub(super) fn fix_betweens(&self, plan: &mut Plan) -> Result<(), SbroadError> {
+        for between in &self.betweens {
+            let left_id: usize = if let Some(id) = self.subquery_replaces.get(&between.left_id) {
+                plan.clone_expr_subtree(*id)?
+            } else {
+                plan.clone_expr_subtree(between.left_id)?
+            };
+            let less_eq_expr = plan.get_mut_expression_node(between.leq_id)?;
+            if let Expression::Bool { ref mut left, .. } = less_eq_expr {
+                *left = left_id;
+            } else {
+                panic!("Expected to see LEQ expression.")
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1608,6 +1651,9 @@ enum ParseExpressionInfixOperator {
 enum ParseExpression {
     PlanId {
         plan_id: NodeId,
+    },
+    SubQueryPlanId {
+        plan_id: usize,
     },
     Parentheses {
         child: Box<ParseExpression>,
@@ -1723,6 +1769,57 @@ impl SelectSet {
     }
 }
 
+impl Plan {
+    /// Helper function to populate plan with `SubQuery` represented as a Row of its output.
+    fn add_replaced_subquery<M: Metadata>(
+        &mut self,
+        sq_id: usize,
+        expected_output_size: Option<usize>,
+        worker: &mut ExpressionsWorker<M>,
+    ) -> Result<usize, SbroadError> {
+        let (sq_row_id, new_refs) = self.add_row_from_subquery(sq_id, expected_output_size)?;
+        worker.subquery_replaces.insert(sq_id, sq_row_id);
+        worker.sub_queries_to_fix_queue.push_back((sq_id, new_refs));
+        Ok(sq_row_id)
+    }
+
+    /// Fix subqueries (already represented as rows) for newly created relational node:
+    /// replace its references' `parent` and `target` field with valid values.
+    fn fix_subquery_rows<M: Metadata>(
+        &mut self,
+        worker: &mut ExpressionsWorker<M>,
+        rel_id: usize,
+    ) -> Result<(), SbroadError> {
+        let rel_node = self.get_mut_relation_node(rel_id)?;
+
+        let mut rel_node_children_len = rel_node.children().len();
+        for (sq_id, _) in &worker.sub_queries_to_fix_queue {
+            rel_node.add_sq_child(*sq_id);
+        }
+
+        while !worker.sub_queries_to_fix_queue.is_empty() {
+            let (_, new_refs) = worker
+                .sub_queries_to_fix_queue
+                .pop_front()
+                .expect("Expected to get res on non-empty `sub_queries_to_fix_queue`.");
+            for new_ref_id in new_refs {
+                let new_ref = self.get_mut_expression_node(new_ref_id)?;
+                if let Expression::Reference {
+                    parent, targets, ..
+                } = new_ref
+                {
+                    *parent = Some(rel_id);
+                    *targets = Some(vec![rel_node_children_len]);
+                } else {
+                    panic!("Expected SubQuery reference to fix.")
+                }
+            }
+            rel_node_children_len += 1;
+        }
+        Ok(())
+    }
+}
+
 impl ParseExpression {
     #[allow(clippy::too_many_lines)]
     fn populate_plan<M>(
@@ -1735,6 +1832,9 @@ impl ParseExpression {
     {
         let plan_id = match self {
             ParseExpression::PlanId { plan_id } => *plan_id,
+            ParseExpression::SubQueryPlanId { plan_id } => {
+                plan.add_replaced_subquery(*plan_id, Some(1), worker)?
+            }
             ParseExpression::Parentheses { child } => {
                 let child_plan_id = child.populate_plan(plan, worker)?;
 
@@ -1845,22 +1945,57 @@ impl ParseExpression {
             } => {
                 let left_plan_id = left.populate_plan(plan, worker)?;
                 let left_row_id = plan.row(left_plan_id)?;
+                let left_is_row = !matches!(plan.get_node(left_row_id)?, Node::Parameter(_))
+                    && matches!(
+                        plan.get_expression_node(left_row_id)?,
+                        Expression::Row { .. }
+                    );
+                let left_row_children_number = if left_is_row {
+                    plan.get_row_list(left_row_id)?.len()
+                } else {
+                    1
+                };
+
+                // TODO: Remove ParseExpression::Parentheses as a standalone expression.
+                //       On the stage of local SQL generation, add parentheses next to
+                //       specific operators (+, AND) based on priorities.
 
                 // Workaround specific for In operator:
                 // During parsing it's hard for us to distinguish Row and ExpressionInParentheses.
                 // Under In operator we expect to see Row even if there is a single expression
                 // covered in parentheses. Here we reinterpret ExpressionInParentheses as Row.
-                let right_plan_id = if let ParseExpressionInfixOperator::InfixBool(Bool::In) = op {
-                    if let ParseExpression::Parentheses { child } = *right.clone() {
-                        let reinterpreted_right = ParseExpression::Row {
-                            children: vec![*child],
-                        };
-                        reinterpreted_right.populate_plan(plan, worker)?
-                    } else {
-                        right.populate_plan(plan, worker)?
-                    }
-                } else {
-                    right.populate_plan(plan, worker)?
+                let right_plan_id = match op {
+                    ParseExpressionInfixOperator::InfixBool(op) => match op {
+                        Bool::In => {
+                            if let ParseExpression::Parentheses { child } = &**right {
+                                let reinterpreted_right = ParseExpression::Row {
+                                    children: vec![(**child).clone()],
+                                };
+                                reinterpreted_right.populate_plan(plan, worker)?
+                            } else if let ParseExpression::SubQueryPlanId { plan_id } = &**right {
+                                plan.add_replaced_subquery(
+                                    *plan_id,
+                                    Some(left_row_children_number),
+                                    worker,
+                                )?
+                            } else {
+                                right.populate_plan(plan, worker)?
+                            }
+                        }
+                        Bool::Eq | Bool::Gt | Bool::GtEq | Bool::Lt | Bool::LtEq | Bool::NotEq => {
+                            if let ParseExpression::SubQueryPlanId { plan_id } = &**right {
+                                plan.add_replaced_subquery(
+                                    *plan_id,
+                                    Some(left_row_children_number),
+                                    worker,
+                                )?
+                            } else {
+                                right.populate_plan(plan, worker)?
+                            }
+                        }
+                        _ => right.populate_plan(plan, worker)?,
+                    },
+                    _ => right.populate_plan(plan, worker)?,
                 };
 
                 // In case:
@@ -1999,7 +2134,10 @@ impl ParseExpression {
                 plan.nodes.add_row(plan_children_ids, None)
             }
             ParseExpression::Exists { is_not, child } => {
-                let child_plan_id = child.populate_plan(plan, worker)?;
+                let ParseExpression::SubQueryPlanId { plan_id } = &**child else {
+                    panic!("Expected SubQuery under EXISTS.")
+                };
+                let child_plan_id = plan.add_replaced_subquery(*plan_id, None, worker)?;
                 let op_id = plan.add_unary(Unary::Exists, child_plan_id)?;
                 if *is_not {
                     plan.add_unary(Unary::Not, op_id)?
@@ -2295,11 +2433,10 @@ where
                     ParseExpression::PlanId { plan_id: ref_id }
                 }
                 Rule::SubQuery => {
-                    let subquery_plan_id = *worker.subquery_ids_queue
-                        .back()
+                    let subquery_plan_id = worker.subquery_ids_queue
+                        .pop_front()
                         .expect("Corresponding expression subquery is not found");
-                    worker.subquery_ids_queue.pop_back();
-                    ParseExpression::PlanId{ plan_id: subquery_plan_id }
+                    ParseExpression::SubQueryPlanId { plan_id: subquery_plan_id }
                 }
                 Rule::Row => {
                     let mut children = Vec::new();
@@ -3069,9 +3206,12 @@ impl AbstractSyntaxTree {
                             PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
                         let mut reference_met = false;
                         for LevelNode(_, node_id) in expr_tree.iter(expr_plan_node_id) {
-                            if let Expression::Reference { .. } = plan.get_expression_node(node_id)? {
-                                reference_met = true;
-                                break;
+                            if let Expression::Reference { targets, .. } = plan.get_expression_node(node_id)? {
+                                if targets.is_some() {
+                                    // Subquery reference met.
+                                    reference_met = true;
+                                    break
+                                }
                             }
                         }
 
@@ -3112,7 +3252,8 @@ impl AbstractSyntaxTree {
 
             order_by_elements.push(OrderByElement { entity, order_type });
         }
-        let plan_node_id = plan.add_order_by(projection_plan_id, order_by_elements)?;
+        let (order_by_id, plan_node_id) = plan.add_order_by(projection_plan_id, order_by_elements)?;
+        plan.fix_subquery_rows(worker, order_by_id)?;
         map.add(node_id, plan_node_id);
         Ok(())
     }
@@ -3160,7 +3301,7 @@ impl AbstractSyntaxTree {
                     let rel_child_node = plan.get_relation_node(rel_child_id_plan)?;
                     if let Relational::ScanSubQuery(_) = rel_child_node {
                         // We want `SubQuery` ids to be used only during expressions parsing.
-                        worker.subquery_ids_queue.pop_back();
+                        worker.subquery_ids_queue.pop_front();
                     }
 
                     map.add(id, rel_child_id_plan);
@@ -3208,7 +3349,7 @@ impl AbstractSyntaxTree {
                         .expect("child node id is not found among sub-query children.");
                     let plan_child_id = map.get(*ast_child_id)?;
                     let plan_sq_id = plan.add_sub_query(plan_child_id, None)?;
-                    worker.subquery_ids_queue.push_front(plan_sq_id);
+                    worker.subquery_ids_queue.push_back(plan_sq_id);
                     map.add(id, plan_sq_id);
                 }
                 Rule::VTableMaxRows => {
@@ -3252,6 +3393,7 @@ impl AbstractSyntaxTree {
                         children.push(expr_id);
                     }
                     let groupby_id = plan.add_groupby_from_ast(&children)?;
+                    plan.fix_subquery_rows(&mut worker, groupby_id)?;
                     map.add(id, groupby_id);
                 }
                 Rule::Join => {
@@ -3308,6 +3450,7 @@ impl AbstractSyntaxTree {
 
                     let plan_join_id =
                         plan.add_join(plan_left_id, plan_right_id, condition_expr_id, kind)?;
+                    plan.fix_subquery_rows(&mut worker, plan_join_id)?;
                     map.add(id, plan_join_id);
                 }
                 Rule::Selection | Rule::Having => {
@@ -3336,6 +3479,7 @@ impl AbstractSyntaxTree {
                         Rule::Having => plan.add_having(&[plan_rel_child_id], expr_plan_node_id)?,
                         _ => panic!("Expected to see Selection or Having."),
                     };
+                    plan.fix_subquery_rows(&mut worker, plan_node_id)?;
                     map.add(id, plan_node_id);
                 }
                 Rule::OrderBy => {
@@ -3462,6 +3606,7 @@ impl AbstractSyntaxTree {
 
                     let projection_id =
                         plan.add_proj_internal(plan_rel_child_id, &proj_columns, is_distinct)?;
+                    plan.fix_subquery_rows(&mut worker, projection_id)?;
                     map.add(id, projection_id);
                 }
                 Rule::Values => {
@@ -3472,6 +3617,7 @@ impl AbstractSyntaxTree {
                         let expr_id =
                             parse_expr(Pairs::single(row_pair), &[], &mut worker, &mut plan)?;
                         let values_row_id = plan.add_values_row(expr_id, &mut col_idx)?;
+                        plan.fix_subquery_rows(&mut worker, values_row_id)?;
                         plan_value_row_ids.push(values_row_id);
                     }
                     let plan_values_id = plan.add_values(plan_value_row_ids)?;
@@ -3603,7 +3749,9 @@ impl AbstractSyntaxTree {
                             }
                         }
                     }
-                    let update_id = plan.add_update(&scan_relation, &update_defs, rel_child_id)?;
+                    let (proj_id, update_id) =
+                        plan.add_update(&scan_relation, &update_defs, rel_child_id)?;
+                    plan.fix_subquery_rows(&mut worker, proj_id)?;
                     map.add(id, update_id);
                 }
                 Rule::Delete => {
@@ -3656,6 +3804,7 @@ impl AbstractSyntaxTree {
 
                             let plan_select_id =
                                 plan.add_select(&[plan_scan_id], expr_plan_node_id)?;
+                            plan.fix_subquery_rows(&mut worker, plan_select_id)?;
                             (plan_select_id, relation_name)
                         }
                         _ => {
@@ -4136,8 +4285,8 @@ impl AbstractSyntaxTree {
 
         plan.tier = tiers.next().flatten().map(Clone::clone);
 
-        let replaces = plan.replace_sq_with_references()?;
-        plan.fix_betweens(&worker.betweens, &replaces)?;
+        // The problem is that we crete Between structures before replacing subqueries.
+        worker.fix_betweens(&mut plan)?;
         Ok(plan)
     }
 }

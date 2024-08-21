@@ -6,7 +6,7 @@ use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
-use crate::errors::{Action, Entity, SbroadError};
+use crate::errors::{Entity, SbroadError};
 use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::api::children::Children;
 use crate::ir::distribution::{Distribution, Key, KeySet};
@@ -229,6 +229,18 @@ impl Strategy {
     /// Update policy in case `child_id` key is already in the `children_policy` map.
     fn add_child(&mut self, child_id: NodeId, policy: MotionPolicy, program: Program) {
         self.children_policy.insert(child_id, (policy, program));
+    }
+
+    fn get_rel_ids(&self) -> AHashSet<usize> {
+        let mut vec_ids = Vec::new();
+        for id in self.children_policy.keys() {
+            vec_ids.push(*id);
+        }
+        let mut set_ids = AHashSet::new();
+        for id in vec_ids {
+            set_ids.insert(id);
+        }
+        set_ids
     }
 }
 
@@ -585,11 +597,8 @@ impl Plan {
         let parent_id = strategy.parent_id;
         let children = self.get_relational_children(parent_id)?;
         if children.is_empty() {
-            return Err(SbroadError::FailedTo(
-                Action::Add,
-                Some(Entity::Motion),
-                "trying to add motions under the leaf relational node".into(),
-            ));
+            // E.g., case of ValuesRow without SubQueries children.
+            return Ok(());
         }
 
         // Check that all children we need to add motions exist in the current relational node.
@@ -736,15 +745,17 @@ impl Plan {
         Ok(None)
     }
 
-    /// Resolve sub-query conflicts with motion policies.
+    /// Calculate Motion strategies for `SubQueries`.
+    /// For the special cases of subqueries under IN/EXISTS operators, apply special logic.
+    /// For other cases cover subqueries with Full motion.
     fn resolve_sub_query_conflicts(
         &mut self,
-        select_id: NodeId,
-        filter_id: NodeId,
+        rel_parent_id: NodeId,
+        expr_id: NodeId,
     ) -> Result<Strategy, SbroadError> {
-        let mut strategy = Strategy::new(select_id);
+        let mut strategy = Strategy::new(rel_parent_id);
 
-        let not_nodes = self.get_not_unary_nodes(filter_id);
+        let not_nodes = self.get_not_unary_nodes(expr_id);
         let mut not_nodes_children = HashSet::with_capacity(not_nodes.len());
         for level_node in &not_nodes {
             let not_node_id = level_node.1;
@@ -756,7 +767,7 @@ impl Plan {
             }
         }
 
-        let bool_nodes = self.get_bool_nodes_with_row_children(filter_id);
+        let bool_nodes = self.get_bool_nodes_with_row_children(expr_id);
         for LevelNode(_, bool_node) in &bool_nodes {
             let bool_op = BoolOp::from_expr(self, *bool_node)?;
             self.set_distribution(bool_op.left)?;
@@ -764,7 +775,7 @@ impl Plan {
         }
 
         for LevelNode(_, bool_node) in &bool_nodes {
-            let strategies = self.get_sq_node_strategies_for_bool_op(select_id, *bool_node)?;
+            let strategies = self.get_sq_node_strategies_for_bool_op(rel_parent_id, *bool_node)?;
             for (id, policy) in strategies {
                 // In case NOT operator is covering expression with subquery like in
                 // `not (... in ...)` expression, we have to change motion policy to Full.
@@ -776,19 +787,22 @@ impl Plan {
             }
         }
 
-        let unary_nodes = self.get_unary_nodes_with_row_children(filter_id);
-        for level_node in &unary_nodes {
-            let unary_node = level_node.1;
-            let unary_strategy = self.get_sq_node_strategy_for_unary_op(select_id, unary_node)?;
+        let unary_nodes = self.get_unary_nodes_with_row_children(expr_id);
+        for LevelNode(_, unary_node) in &unary_nodes {
+            let unary_strategy =
+                self.get_sq_node_strategy_for_unary_op(rel_parent_id, *unary_node)?;
             if let Some((id, policy)) = unary_strategy {
                 strategy.add_child(id, policy, Program::default());
             }
         }
 
-        if let Distribution::Global =
-            self.get_rel_distribution(self.get_relational_child(select_id, 0)?)?
-        {
-            self.fix_sq_strategy_for_global_tbl(select_id, filter_id, &mut strategy)?;
+        let rel = self.get_relation_node(rel_parent_id)?;
+        if !rel.children().is_empty() {
+            if let Distribution::Global =
+                self.get_rel_distribution(self.get_relational_child(rel_parent_id, 0)?)?
+            {
+                self.fix_sq_strategy_for_global_tbl(rel_parent_id, expr_id, &mut strategy)?;
+            }
         }
 
         Ok(strategy)
@@ -1208,11 +1222,10 @@ impl Plan {
                 }
             }
 
-            let bool_op = if let Expression::Bool { .. } = expr {
-                BoolOp::from_expr(self, node_id)?
-            } else {
+            let Expression::Bool { left, right, .. } = expr else {
                 continue;
             };
+            let bool_op = BoolOp::from_expr(self, node_id)?;
 
             // Try to improve full motion policy in the sub-queries.
             // We don't influence the inner child here, so the inner map is empty
@@ -1222,13 +1235,18 @@ impl Plan {
             // Note, that we don't have to call `get_sq_node_strategy_for_unary_op` here, because
             // the only strategy it can return is `Motion::Full` for its child and all subqueries
             // are covered with `Motion::Full` by default.
-            let sq_strategies = self.get_sq_node_strategies_for_bool_op(rel_id, node_id)?;
-            let sq_strategies_len = sq_strategies.len();
-            for (id, policy) in sq_strategies {
-                strategy.add_child(id, policy, Program::default());
-            }
-            if sq_strategies_len > 0 {
-                continue;
+
+            let left_expr = self.get_expression_node(*left)?;
+            let right_expr = self.get_expression_node(*right)?;
+            if left_expr.is_row() && right_expr.is_row() {
+                let sq_strategies = self.get_sq_node_strategies_for_bool_op(rel_id, node_id)?;
+                let sq_strategies_len = sq_strategies.len();
+                for (id, policy) in sq_strategies {
+                    strategy.add_child(id, policy, Program::default());
+                }
+                if sq_strategies_len > 0 {
+                    continue;
+                }
             }
 
             // Ok, we don't have any sub-queries.
@@ -1239,9 +1257,29 @@ impl Plan {
                 (Expression::Arithmetic(_), _) | (_, Expression::Arithmetic(_)) => {
                     MotionPolicy::Full
                 }
+                (Expression::Row { .. }, Expression::Row { .. }) => {
+                    match bool_op.op {
+                        Bool::Between => {
+                            unreachable!("Between in redistribution")
+                        }
+                        Bool::Eq | Bool::In => {
+                            self.join_policy_for_eq(rel_id, bool_op.left, bool_op.right)?
+                        }
+                        Bool::Gt | Bool::GtEq | Bool::Lt | Bool::LtEq | Bool::NotEq => {
+                            MotionPolicy::Full
+                        }
+                        Bool::And | Bool::Or => {
+                            // "a and 1" or "a or 1" expressions make no sense.
+                            return Err(SbroadError::Unsupported(
+                                Entity::Operator,
+                                Some("unsupported boolean operation And or Or".into()),
+                            ));
+                        }
+                    }
+                }
                 (
-                    Expression::Bool(_) | Expression::Unary(_),
-                    Expression::Bool(_) | Expression::Unary(_),
+                    Expression::Bool(_) | Expression::Unary(_) | Expression::Row(_),
+                    Expression::Bool(_) | Expression::Unary(_) | Expression::Row(_),
                 ) => {
                     let left_policy = inner_map
                         .get(&bool_op.left)
@@ -1262,27 +1300,10 @@ impl Plan {
                         }
                     }
                 }
-                (Expression::Row(_), Expression::Row(_)) => {
-                    match bool_op.op {
-                        Bool::Between => {
-                            unreachable!("Between in redistribution")
-                        }
-                        Bool::Eq | Bool::In => {
-                            self.join_policy_for_eq(rel_id, bool_op.left, bool_op.right)?
-                        }
-                        Bool::Gt | Bool::GtEq | Bool::Lt | Bool::LtEq | Bool::NotEq => {
-                            MotionPolicy::Full
-                        }
-                        Bool::And | Bool::Or => {
-                            // "a and 1" or "a or 1" expressions make no sense.
-                            return Err(SbroadError::Unsupported(
-                                Entity::Operator,
-                                Some("unsupported boolean operation And or Or".into()),
-                            ));
-                        }
-                    }
-                }
-                (Expression::Constant(_), Expression::Bool(_) | Expression::Unary(_)) => inner_map
+                (
+                    Expression::Constant(_),
+                    Expression::Bool(_) | Expression::Unary(_),
+                ) => inner_map
                     .get(&bool_op.right)
                     .cloned()
                     .unwrap_or(MotionPolicy::Full),
@@ -1291,9 +1312,9 @@ impl Plan {
                     .cloned()
                     .unwrap_or(MotionPolicy::Full),
                 _ => {
-                    return Err(SbroadError::Unsupported(
-                        Entity::Operator,
-                        Some("unsupported boolean operation".into()),
+                    return Err(SbroadError::Invalid(
+                        Entity::Expression,
+                        Some(format_smolstr!("Unable to resolve join conflict for left ({left_expr:?}) and right ({right_expr:?}) expressions.")),
                     ));
                 }
             };
@@ -1359,10 +1380,10 @@ impl Plan {
     fn fix_sq_strategy_for_global_tbl(
         &self,
         rel_id: NodeId,
-        cond_id: NodeId,
+        expr_id: NodeId,
         strategy: &mut Strategy,
     ) -> Result<(), SbroadError> {
-        let chains = self.get_dnf_chains(cond_id)?;
+        let chains = self.get_dnf_chains(expr_id)?;
         let mut subqueries: Vec<NodeId> = vec![];
         let mut chain_count: usize = 0;
         for mut chain in chains {
@@ -1534,6 +1555,8 @@ impl Plan {
             strategy.add_child(*sq, MotionPolicy::Full, Program::default());
         }
 
+        // TODO: this code won't be executed because of (Single, Single) check above.
+        //
         // If one child has Distribution::Global and the other child
         // Distribution::Single, then motion is not needed.
         // The fastest way is to execute the subtree on single node,
@@ -1780,6 +1803,8 @@ impl Plan {
         &mut self,
         rel_id: NodeId,
     ) -> Result<Strategy, SbroadError> {
+        // TODO: This logic seems strange to me as soon as we add Motion::Full over child
+        //       that is already a Motion.
         let mut map = Strategy::new(rel_id);
         let child_id = self.dml_child_id(rel_id)?;
         let child_node = self.get_relation_node(child_id)?;
@@ -2129,6 +2154,71 @@ impl Plan {
         Ok(map)
     }
 
+    /// Set dist from subqueries or clone it from output.
+    fn try_dist_from_subqueries(&mut self, id: usize, output: usize) -> Result<(), SbroadError> {
+        if let Some(dist) = self.dist_from_subqueries(id)? {
+            self.set_dist(output, dist)?;
+        } else {
+            self.set_distribution(output)?;
+        }
+        Ok(())
+    }
+
+    /// Cover `SubQueries` that wasn't matched as part of IN/EXISTS operators
+    /// with motion nodes.
+    ///
+    /// `already_fixed` is a set of `SubQuery` ids which lies under IN/EXISTS operators and which
+    /// weren't covered with Motion nodes. We should skip those nodes.
+    /// Some of `SubQueries` under IN/EXISTS were covered with Motion nodes. Their ids are still in
+    /// the `already_fixed`, but we identify them checking whether the node is covered with Motion.
+    fn fix_additional_subqueries(
+        &mut self,
+        rel_id: usize,
+        already_fixed: &AHashSet<usize>,
+    ) -> Result<(), SbroadError> {
+        let mut strategy = Strategy::new(rel_id);
+        let rel_required_children_len = self
+            .get_required_children_len(rel_id)?
+            .unwrap_or_else(|| panic!("Unexpected node to get required children number."));
+        let rel_children_len = self.get_relational_children(rel_id)?.len();
+        for sq_index in rel_required_children_len..rel_children_len {
+            let sq_id = self.get_relational_child(rel_id, sq_index)?;
+            if already_fixed.contains(&sq_id) {
+                continue;
+            }
+            let sq = self.get_relation_node(sq_id)?;
+            if matches!(sq, Relational::Motion { .. }) {
+                continue;
+            }
+
+            let sq_dist = self.get_rel_distribution(sq_id)?;
+
+            // We can apply the same logic out of this function:
+            // * We have a relational operator that has a required and possibly Distribution::Segment(some_key)
+            // * Our sq may have the same required children and the same Distribution::Segment(some_key)
+            // in such a case we won't have to apply any motions
+            //
+            // Otherwise the only thing we can do is to add Motion::Full to support subqueries.
+            if !matches!(sq_dist, Distribution::Global) {
+                // Query example showing that we always need to apply Motion::Full for subqueries:
+                // Given: table t(a) with 2 rows:
+                // * shard_1: { 1 }
+                // * shard_2: { 2 }
+                // `select (select a from t) from t`
+                // It seems like instead of Motion::Full we could set Motion::Segment on column a for
+                // subquery so we have to send less data. But in such a case we'd get the following scenario:
+                // * shard_1: select a from t = 1
+                // * shard_2: select a from t = 2
+                // * total result = {1, 2} that seems right
+                // but semantically we subquery execution should fail on each of the shards because
+                // subquery returns more than 1 row.
+                strategy.add_child(sq_id, MotionPolicy::Full, Program::default());
+            }
+        }
+        self.create_motion_nodes(strategy)?;
+        Ok(())
+    }
+
     /// Add motion nodes to the plan tree.
     ///
     /// # Errors
@@ -2163,28 +2253,18 @@ impl Plan {
             // Some transformations (Union) need to add new nodes above
             // themselves, because we don't store parent references,
             // we update child reference when DFS reaches parent node.
-            let mut retired = Vec::new();
             for child_id in &node.children() {
                 if let Some(new_id) = old_new.get(child_id) {
                     self.change_child(id, *child_id, *new_id)?;
-                    retired.push(*child_id);
+                    old_new.remove(child_id);
                 }
-            }
-            for node_id in retired {
-                old_new.remove(&node_id);
             }
 
             match node {
-                // At the moment our grammar and IR constructors
-                // don't allow projection and values row with
-                // sub queries.
-                RelOwned::ScanRelation(ScanRelation { output, .. })
-                | RelOwned::ScanSubQuery(ScanSubQuery { output, .. })
-                | RelOwned::GroupBy(GroupBy { output, .. })
-                | RelOwned::Intersect(Intersect { output, .. })
-                | RelOwned::Having(Having { output, .. })
-                | RelOwned::ValuesRow(ValuesRow { output, .. }) => {
-                    self.set_distribution(output)?;
+                RelOwned::Motion { .. } => {
+                    // We can apply this transformation only once,
+                    // i.e. to the plan without any motion nodes.
+                    panic!("IR mustn't contain Motion nodes at the stage of redistribution.")
                 }
                 RelOwned::Limit(Limit { output, limit, .. }) => {
                     let rel_child_id = self.get_relational_child(id, 0)?;
@@ -2215,8 +2295,64 @@ impl Plan {
                         }
                     }
                 }
-                RelOwned::OrderBy(OrderBy { output, .. }) => {
+                RelOwned::ScanRelation(ScanRelation { output, .. })
+                | RelOwned::ScanSubQuery(ScanSubQuery { output, .. })
+                | RelOwned::Intersect(Intersect { output, .. })
+                | RelOwned::Having(Having { output, .. }) => {
+                    // Note: For `Having` true distribution is calculated
+                    //       at the end of `add_two_stage_aggregation` function
+                    //       after Map-Reduce transformation is applied.
+
+                    // Leaf nodes that calculate distribution only out of their output
+                    // (native or resulted from children).
+                    self.set_distribution(output)?;
+                }
+                RelOwned::Values(Values { output, .. }) => {
+                    self.set_dist(output, Distribution::Global)?;
+                }
+                RelOwned::GroupBy(GroupBy {
+                    output, gr_cols, ..
+                }) => {
+                    // Previously there was no additional logic for creating Motions for local GroupBy?
+                    let mut fixed_subquery_ids = AHashSet::new();
+                    for gr_col in gr_cols {
+                        let gr_col_strategy = self.resolve_sub_query_conflicts(id, gr_col)?;
+                        fixed_subquery_ids.extend(gr_col_strategy.get_rel_ids());
+                        self.create_motion_nodes(gr_col_strategy)?;
+                    }
+                    self.fix_additional_subqueries(id, &fixed_subquery_ids)?;
+
+                    self.try_dist_from_subqueries(id, output)?;
+                }
+                RelOwned::Selection(Selection {
+                    output,
+                    filter: data,
+                    ..
+                })
+                | RelOwned::ValuesRow(ValuesRow { output, data, .. }) => {
+                    let strategy = self.resolve_sub_query_conflicts(id, data)?;
+                    let fixed_subquery_ids = strategy.get_rel_ids();
+                    self.create_motion_nodes(strategy)?;
+                    self.fix_additional_subqueries(id, &fixed_subquery_ids)?;
+
+                    self.try_dist_from_subqueries(id, output)?;
+                }
+                RelOwned::OrderBy(OrderBy {
+                    output,
+                    order_by_elements,
+                    ..
+                }) => {
                     let rel_child_id = self.get_relational_child(id, 0)?;
+
+                    let mut fixed_subquery_ids = AHashSet::new();
+                    for order_by_el in order_by_elements {
+                        if let OrderByEntity::Expression { expr_id } = order_by_el.entity {
+                            let strategy = self.resolve_sub_query_conflicts(id, expr_id)?;
+                            fixed_subquery_ids.extend(strategy.get_rel_ids());
+                            self.create_motion_nodes(strategy)?;
+                        }
+                    }
+                    self.fix_additional_subqueries(id, &fixed_subquery_ids)?;
 
                     let child_dist =
                         self.get_distribution(self.get_relational_output(rel_child_id)?)?;
@@ -2231,13 +2367,12 @@ impl Plan {
                     }
                     self.set_dist(output, Distribution::Single)?;
                 }
-                RelOwned::Values(Values { output, .. }) => {
-                    self.set_dist(output, Distribution::Global)?;
-                }
-                RelOwned::Projection(Projection {
-                    output: proj_output_id,
-                    ..
-                }) => {
+                RelOwned::Projection(Projection { output, .. }) => {
+                    let strategy = self.resolve_sub_query_conflicts(id, output)?;
+                    let fixed_subquery_ids = strategy.get_rel_ids();
+                    self.create_motion_nodes(strategy)?;
+                    self.fix_additional_subqueries(id, &fixed_subquery_ids)?;
+
                     let child_dist = self.get_distribution(
                         self.get_relational_output(self.get_relational_child(id, 0)?)?,
                     )?;
@@ -2249,27 +2384,15 @@ impl Plan {
                         // then we don't need two stage transformation,
                         // we can calculate aggregates / GroupBy in one
                         // stage, because all data will reside on a single node.
-                        self.set_dist(proj_output_id, child_dist.clone())?;
+                        if let Some(dist) = self.dist_from_subqueries(id)? {
+                            self.set_dist(output, dist)?;
+                        } else {
+                            self.set_dist(output, child_dist.clone())?;
+                        }
                     } else if !self.add_two_stage_aggregation(id)? {
                         // if there are no aggregates or GroupBy, just take distribution
                         // from child.
                         self.set_projection_distribution(id)?;
-                    }
-                }
-                RelOwned::Motion { .. } => {
-                    // We can apply this transformation only once,
-                    // i.e. to the plan without any motion nodes.
-                    return Err(SbroadError::DuplicatedValue(SmolStr::from(
-                        "IR already has Motion nodes.",
-                    )));
-                }
-                RelOwned::Selection(Selection { output, filter, .. }) => {
-                    let strategy = self.resolve_sub_query_conflicts(id, filter)?;
-                    self.create_motion_nodes(strategy)?;
-                    if let Some(dist) = self.dist_from_subqueries(id)? {
-                        self.set_dist(output, dist)?;
-                    } else {
-                        self.set_distribution(output)?;
                     }
                 }
                 RelOwned::Join(Join {
@@ -2352,8 +2475,9 @@ impl Plan {
         }
 
         if !old_new.is_empty() {
-            assert!(
-                old_new.len() == 1,
+            assert_eq!(
+                old_new.len(),
+                1,
                 "add_motions: old_new map has too many entries"
             );
             self.set_top(*old_new.values().next().unwrap())?;

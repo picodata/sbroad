@@ -1074,9 +1074,23 @@ impl Plan {
         let (child_id, proj_output_cols, groupby_local_aliases, grouping_positions) =
             self.create_columns_for_local_proj(aggr_infos, child_id, grouping_exprs)?;
         let proj_output = self.nodes.add_row(proj_output_cols, None);
+
+        let ref_rel_nodes = self.get_relational_nodes_from_row(proj_output)?;
+
+        let mut children = vec![child_id];
+
+        for ref_rel_node_id in ref_rel_nodes {
+            let rel_node = self.get_relation_node(ref_rel_node_id)?;
+            if matches!(rel_node, Relational::ScanSubQuery { .. })
+                && self.is_additional_child(ref_rel_node_id)?
+            {
+                children.push(ref_rel_node_id);
+            }
+        }
+
         let proj = Projection {
             output: proj_output,
-            children: vec![child_id],
+            children,
             is_distinct: false,
         };
         let proj_id = self.add_relational(proj.into())?;
@@ -1815,11 +1829,15 @@ impl Plan {
             )?;
         }
 
-        // resolve subquery conflicts in HAVING
         if let Some(having_id) = having_id {
-            if let Relational::Having(Having { filter, .. }) = self.get_relation_node(having_id)? {
-                let strategy = self.resolve_sub_query_conflicts(having_id, *filter)?;
+            if let Relational::Having(Having { filter, output, .. }) = self.get_relation_node(having_id)? {
+                let (filter, output) = (*filter, *output);
+                let strategy = self.resolve_sub_query_conflicts(having_id, filter)?;
+                let fixed_subquery_ids = strategy.get_rel_ids();
                 self.create_motion_nodes(strategy)?;
+                self.fix_additional_subqueries(having_id, &fixed_subquery_ids)?;
+
+                self.try_dist_from_subqueries(having_id, output)?;
             }
         }
 

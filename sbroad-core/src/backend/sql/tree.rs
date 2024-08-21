@@ -603,7 +603,7 @@ impl<'p> SyntaxPlan<'p> {
                 }
                 _ => {}
             }
-            panic!("Expected plan node {plan_id:?} but got {id:?}");
+            panic!("Checking syntax node: expected plan node {plan_id:?} but got {id:?}.");
         }
     }
 
@@ -749,10 +749,9 @@ impl<'p> SyntaxPlan<'p> {
             .get_node(id)
             .expect("node {id} must exist in the plan");
         match node {
-            Node::Ddl(..) => panic!("DDL node {node:?} is not supported in the syntax plan"),
-            Node::Acl(..) => panic!("ACL node {node:?} is not supported in the syntax plan"),
-            Node::Block(..) => panic!("Block node {node:?} is not supported in the syntax plan"),
-            Node::Plugin(..) => panic!("Plugin node {node:?} is not supported in the syntax plan"),
+            Node::Plugin(..) | Node::Ddl(..) | Node::Acl(..) | Node::Block(..) => {
+                panic!("Node {node:?} is not supported in the syntax plan")
+            }
             Node::Invalid(..) | Node::Parameter(..) => {
                 let sn = SyntaxNode::new_parameter(id);
                 self.nodes.push_sn_plan(sn);
@@ -1010,13 +1009,15 @@ impl<'p> SyntaxPlan<'p> {
         let (_, order_by) = self.prologue_rel(id);
         let Relational::OrderBy(OrderBy {
             order_by_elements,
-            child,
+            children,
             ..
         }) = order_by
         else {
             panic!("expect ORDER BY node");
         };
-        let child_plan_id = *child;
+        let child_plan_id = *children
+            .first()
+            .expect("OrderBy must have first relational child.");
         let mut elems = order_by_elements.clone();
 
         let mut children: Vec<usize> = Vec::with_capacity(elems.len() * 3 - 1);
@@ -1072,6 +1073,13 @@ impl<'p> SyntaxPlan<'p> {
         };
         let child_plan_id = *children.first().expect("PROJECTION child");
         let output = *output;
+
+        for sq_id in children.clone().iter().skip(1).rev() {
+            // Pop sq from the stack and do nothing with them.
+            // We've already handled them as a part of the `output`.
+            self.pop_from_stack(*sq_id, id);
+        }
+
         let child_sn_id = self.pop_from_stack(child_plan_id, id);
         let row_sn_id = self.pop_from_stack(output, id);
         // We don't need the row node itself, only its children. Otherwise we'll produce
@@ -1184,6 +1192,11 @@ impl<'p> SyntaxPlan<'p> {
 
         let mut nodes = Vec::with_capacity(syntax_children.len() * 2 - 1);
         // Reverse the order of the children back.
+        let first = sn_children.pop().expect("at least one child in VALUES");
+
+        // Consume the output from the stack.
+        self.pop_from_stack(output_plan_id, id);
+
         let arena = &mut self.nodes;
         for child_id in syntax_children.iter().skip(1).rev() {
             nodes.push(*child_id);
@@ -1372,101 +1385,106 @@ impl<'p> SyntaxPlan<'p> {
             panic!("Expected ROW node");
         };
 
-        // In projections with a huge amount of columns it can be
-        // very expensive to retrieve corresponding relational nodes.
-        let rel_ids = plan
-            .get_relational_nodes_from_row(id)
-            .expect("row relational nodes");
+        let first_child_id = *list.first().expect("Row must contain at least one child");
+        let first_list_child = plan
+            .get_expression_node(first_child_id)
+            .expect("expression node expected");
+        if matches!(first_list_child, Expression::Reference { .. }) {
+            let referred_rel_id = *plan
+                .get_relational_from_reference_node(first_child_id)
+                .expect("rel id expected");
+            let referred_rel_node = plan
+                .get_relation_node(referred_rel_id)
+                .expect("rel node expected");
 
-        if let Some(motion_id) = plan
-            .get_motion_among_rel_nodes(&rel_ids)
-            .expect("motion lookup")
-        {
-            // Logic of replacing row child with vtable (corresponding to motion) is
-            // applicable only in case the child is Reference appeared from transformed
-            // SubQuery (Like in case `Exists` or `In` operator or in expression like
-            // `select * from t where b = (select a from t)`).
-            // There are other cases of row containing references to `Motion` nodes when
-            // we shouldn't replace them with vtable (e.g. aggregates' stable functions
-            // which arguments may point to `Motion` node).
-            let first_child_id = *list.first().expect("row should have at least one child");
-            let first_child = plan
-                .get_expression_node(first_child_id)
-                .expect("row child is expression");
-            let first_child_is_ref = matches!(first_child, Expression::Reference(_));
+            // Case of Motion.
+            if referred_rel_node.is_motion() {
+                // Logic of replacing row child with vtable (corresponding to motion) is
+                // applicable only in case the child is Reference appeared from transformed
+                // SubQuery (Like in case `Exists` or `In` operator or in expression like
+                // `select * from t where b = (select a from t)`).
+                // There are other cases of row containing references to `Motion` nodes when
+                // we shouldn't replace them with vtable (e.g. aggregates' stable functions
+                // which arguments may point to `Motion` node).
+                let first_child_id = *list.first().expect("row should have at least one child");
+                let first_child = plan
+                    .get_expression_node(first_child_id)
+                    .expect("row child is expression");
+                let first_child_is_ref = matches!(first_child, Expression::Reference { .. });
 
-            // Replace motion node to virtual table node.
-            let vtable = self
-                .plan
-                .get_motion_vtable(motion_id)
-                .expect("motion virtual table");
-            let needs_replacement = vtable.get_alias().is_none()
-                && first_child_is_ref
-                && plan
-                    .is_additional_child(motion_id)
-                    .expect("motion id is valid");
-            if needs_replacement {
-                // Remove columns from the stack.
-                for child_id in list.iter().rev() {
-                    let _ = self.pop_from_stack(*child_id, id);
+                // Replace motion node to virtual table node.
+                let vtable = self
+                    .plan
+                    .get_motion_vtable(referred_rel_id)
+                    .expect("motion virtual table");
+                let needs_replacement = vtable.get_alias().is_none()
+                    && first_child_is_ref
+                    && plan
+                        .is_additional_child(referred_rel_id)
+                        .expect("motion id is valid");
+                if needs_replacement {
+                    // Remove columns from the stack.
+                    for child_id in list.iter().rev() {
+                        let _ = self.pop_from_stack(*child_id, id);
 
-                    // Remove the referred motion from the stack (if any).
-                    let expr = plan
-                        .get_expression_node(*child_id)
-                        .expect("row child is expression");
-                    if matches!(expr, Expression::Reference(_)) {
-                        let referred_id = plan
-                            .get_relational_from_reference_node(*child_id)
-                            .expect("referred id");
-                        self.pop_from_stack(referred_id, id);
+                        // Remove the referred motion from the stack (if any).
+                        let expr = plan
+                            .get_expression_node(*child_id)
+                            .expect("row child is expression");
+                        if matches!(expr, Expression::Reference { .. }) {
+                            let referred_id = *plan
+                                .get_relational_from_reference_node(*child_id)
+                                .expect("referred id");
+                            self.pop_from_stack(referred_id, id);
+                        }
                     }
-                }
 
-                // Add virtual table node to the stack.
-                let arena = &mut self.nodes;
-                let children = vec![
-                    arena.push_sn_non_plan(SyntaxNode::new_open()),
-                    arena.push_sn_non_plan(SyntaxNode::new_vtable(motion_id)),
-                    arena.push_sn_non_plan(SyntaxNode::new_close()),
-                ];
-                let sn = SyntaxNode::new_pointer(id, None, children);
-                arena.push_sn_plan(sn);
-                return;
+                    // Add virtual table node to the stack.
+                    let arena = &mut self.nodes;
+                    let children = vec![
+                        arena.push_sn_non_plan(SyntaxNode::new_open()),
+                        arena.push_sn_non_plan(SyntaxNode::new_vtable(referred_rel_id)),
+                        arena.push_sn_non_plan(SyntaxNode::new_close()),
+                    ];
+                    let sn = SyntaxNode::new_pointer(id, None, children);
+                    arena.push_sn_plan(sn);
+                    return;
+                }
             }
-        }
 
-        if let Some(sq_id) = plan
-            .get_sub_query_among_rel_nodes(&rel_ids)
-            .expect("subquery id")
-        {
-            // Replace current row with the referred sub-query
-            // (except the case when sub-query is located in the FROM clause).
-            if plan
-                .is_additional_child(sq_id)
-                .expect("subquery id is valid")
-            {
-                let mut sq_sn_id = None;
+            // Case of SubQuery.
+            if matches!(referred_rel_node, Relational::ScanSubQuery { .. }) {
+                // Replace current row with the referred sub-query
+                // (except the case when sub-query is located in the FROM clause).
 
-                // Remove columns from the stack.
-                for child_id in list.iter().rev() {
-                    let _ = self.pop_from_stack(*child_id, id);
+                // We have to check whether SubQuery is additional child, because it may also
+                // be a required child in query like `SELECT COLUMN_1 FROM (VALUES (1))`.
+                if plan
+                    .is_additional_child(referred_rel_id)
+                    .expect("subquery id is valid")
+                {
+                    let mut sq_sn_id = None;
 
-                    // Remove the referred sub-query from the stack (if any).
-                    let expr = plan
-                        .get_expression_node(*child_id)
-                        .expect("row child is expression");
-                    if matches!(expr, Expression::Reference(_)) {
-                        let referred_id = plan
-                            .get_relational_from_reference_node(*child_id)
-                            .expect("referred id");
-                        sq_sn_id = Some(self.pop_from_stack(referred_id, id));
+                    // Remove columns from the stack.
+                    for child_id in list.iter().rev() {
+                        let _ = self.pop_from_stack(*child_id, id);
+
+                        // Remove the referred sub-query from the stack (if any).
+                        let expr = plan
+                            .get_expression_node(*child_id)
+                            .expect("row child is expression");
+                        if matches!(expr, Expression::Reference { .. }) {
+                            let referred_id = *plan
+                                .get_relational_from_reference_node(*child_id)
+                                .expect("referred id");
+                            sq_sn_id = Some(self.pop_from_stack(referred_id, id));
+                        }
                     }
+
+                    // Restore the sub-query node on the top of the stack.
+                    self.push_on_stack(sq_sn_id.expect("sub-query id"));
+                    return;
                 }
-
-                // Restore the sub-query node on the top of the stack.
-                self.push_on_stack(sq_sn_id.expect("sub-query id"));
-
-                return;
             }
         }
 
@@ -1584,24 +1602,23 @@ impl<'p> SyntaxPlan<'p> {
             let sn_node = self.nodes.get_sn(sn_id);
             let sn_plan_node_pair = self.get_plan_node(&sn_node.data)?;
 
-            let nodes_to_add =
-                if let Some((Node::Expression(node_expr), sn_plan_node_id)) = sn_plan_node_pair {
-                    match node_expr {
-                        Expression::Alias(Alias { child, .. }) => {
-                            handle_reference(sn_id, need_comma, *child)
-                        }
-                        _ => handle_reference(sn_id, need_comma, sn_plan_node_id),
-                    }
-                } else {
-                    // As it's not ad Alias under Projection output, we don't have to
-                    // dead with its machinery flags.
-                    let mut nodes_to_add = Vec::new();
-                    nodes_to_add.push(NodeToAdd::SnId(sn_id));
-                    if need_comma {
-                        nodes_to_add.push(NodeToAdd::Comma)
-                    }
-                    nodes_to_add
-                };
+            let nodes_to_add = if let Some((Node::Expression(node_expr), sn_plan_node_id)) =
+                sn_plan_node_pair
+            {
+                match node_expr {
+                    Expression::Alias(Alias { child, .. }) => handle_reference(sn_id, need_comma, *child),
+                    _ => handle_reference(sn_id, need_comma, sn_plan_node_id),
+                }
+            } else {
+                // As it's not ad Alias under Projection output, we don't have to
+                // dead with its machinery flags.
+                let mut nodes_to_add = Vec::new();
+                nodes_to_add.push(NodeToAdd::SnId(sn_id));
+                if need_comma {
+                    nodes_to_add.push(NodeToAdd::Comma)
+                }
+                nodes_to_add
+            };
 
             for node in nodes_to_add {
                 match node {

@@ -613,6 +613,196 @@ fn exec_plan_subtree_having_without_groupby() {
 }
 
 #[test]
+fn exec_plan_subquery_as_expression_under_projection() {
+    let sql = r#"SELECT (values (1)) from "test_space""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!("{}", r#"SELECT (VALUES (?)) as "COL_1" FROM "test_space""#,),
+            vec![Value::Unsigned(1u64)]
+        )
+    );
+}
+
+#[test]
+fn exec_plan_subquery_as_expression_under_projection_several() {
+    let sql = r#"SELECT (values (1)), (values (2)) from "test_space""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT (VALUES (?)) as "COL_1", (VALUES (?)) as "COL_2" FROM "test_space""#,
+            ),
+            vec![Value::Unsigned(1u64), Value::Unsigned(2u64)]
+        )
+    );
+}
+
+#[test]
+fn exec_plan_subquery_as_expression_under_selection() {
+    let sql = r#"SELECT "id" FROM "test_space" WHERE (VALUES (true))"#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "test_space"."id" FROM "test_space" WHERE (VALUES (?))"#,
+            ),
+            vec![Value::Boolean(true)]
+        )
+    );
+}
+
+#[test]
+fn exec_plan_subquery_as_expression_under_order_by() {
+    let sql = r#"SELECT "id" FROM "test_space" ORDER BY "id" + (VALUES (1))"#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+
+    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let motion_id = query.get_motion_id(0, 0);
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("COLUMN_1")));
+    reshard_vtable(&query, motion_id, &mut virtual_table);
+
+    vtables.insert(motion_id, Rc::new(virtual_table));
+
+    let exec_plan = query.get_mut_exec_plan();
+    exec_plan.set_vtables(vtables);
+
+    let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
+    let sql = get_sql_from_execution_plan(
+        exec_plan,
+        motion_child_id,
+        Snapshot::Oldest,
+        &Buckets::All,
+        "test",
+    );
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            String::from(r#"SELECT "test_space"."id" FROM "test_space""#),
+            vec![]
+        )
+    );
+
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "id" FROM (SELECT "COLUMN_1" FROM "TMP_test_6") ORDER BY ("id") + (VALUES (?))"#,
+            ),
+            vec![Value::Unsigned(1)]
+        )
+    );
+}
+
+#[test]
+fn exec_plan_subquery_as_expression_under_projection_nested() {
+    let sql = r#"SELECT (values ((values (1)))) from "test_space""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT (VALUES ((VALUES (?)))) as "COL_1" FROM "test_space""#,
+            ),
+            vec![Value::Unsigned(1)]
+        )
+    );
+}
+
+#[test]
+fn exec_plan_subquery_as_expression_under_group_by() {
+    let sql = r#"SELECT COUNT(*) FROM "test_space" GROUP BY "id" + (VALUES (1))"#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+
+    let motion_id = query.get_motion_id(0, 0);
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("COLUMN_1")));
+    reshard_vtable(&query, motion_id, &mut virtual_table);
+
+    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    vtables.insert(motion_id, Rc::new(virtual_table));
+
+    let exec_plan = query.get_mut_exec_plan();
+    exec_plan.set_vtables(vtables);
+
+    let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
+    let sql = get_sql_from_execution_plan(
+        exec_plan,
+        motion_child_id,
+        Snapshot::Oldest,
+        &Buckets::All,
+        "test",
+    );
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT ("test_space"."id") + (VALUES (?)) as "column_29", count (*) as "count_43" FROM "test_space" GROUP BY ("test_space"."id") + (VALUES (?))"#,
+            ),
+            vec![Value::Unsigned(1u64), Value::Unsigned(1u64)]
+        )
+    );
+
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT sum ("count_43") as "COL_1" FROM (SELECT "COLUMN_1" FROM "TMP_test_9") GROUP BY "column_29""#,
+            ),
+            vec![]
+        )
+    );
+}
+
+#[test]
 fn global_table_scan() {
     let sql = r#"SELECT * from "global_t""#;
     let coordinator = RouterRuntimeMock::new();
@@ -872,7 +1062,7 @@ fn global_union_all3() {
             rs_id: 1,
             pattern: r#"SELECT "global_t"."a" FROM "global_t" WHERE ("global_t"."b") in (SELECT "COL_1" FROM "TMP_test_0136") UNION ALL SELECT "COL_1" as "f" FROM (SELECT "COL_1" FROM "TMP_test_35") GROUP BY "COL_1""#.to_string(),
             params: vec![],
-            vtables_map: collection!(sq_motion_id => Rc::new(sq_vtable), groupby_motion_id => Rc::new(groupby_vtable2)),
+            vtables_map: collection!(groupby_motion_id => Rc::new(groupby_vtable2), sq_motion_id => Rc::new(sq_vtable)),
         },
     ];
 

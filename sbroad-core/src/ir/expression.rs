@@ -1201,22 +1201,34 @@ impl Plan {
     /// Project all the columns from the child's subquery node.
     /// New columns don't have aliases.
     ///
+    /// `expected_output_size` is:
+    /// * 1 in case of scalar `SubQuery`. `(values (1)) = 1`
+    /// * Output size of left child of IN operator. `(1, 2) in (select a, b from t)`
+    /// * None in case of EXISTS operator. `exists (select * from t)`
+    ///
+    /// Returns a pair of:
+    /// * Created row id
+    /// * Vec of created references ids whose `parent` and `target` should be changed.
+    ///
     /// # Errors
     /// - children nodes are inconsistent with the target position
     pub(crate) fn add_row_from_subquery(
         &mut self,
-        children: &[NodeId],
-        target: usize,
-        parent: Option<NodeId>,
-    ) -> Result<NodeId, SbroadError> {
-        let sq_id = *children.get(target).ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                "invalid target index: {target} (children: {children:?})",
-            ))
-        })?;
+        sq_id: NodeId,
+        expected_output_size: Option<usize>,
+    ) -> Result<(NodeId, Vec<NodeId>), SbroadError> {
         let sq_rel = self.get_relation_node(sq_id)?;
         let sq_output_id = sq_rel.output();
         let sq_alias_ids_len = self.get_row_list(sq_output_id)?.len();
+        if let Some(expected_output_size) = expected_output_size {
+            if expected_output_size != sq_alias_ids_len {
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some(format_smolstr!("SubQuery expected to have {expected_output_size} rows output, but got {sq_alias_ids_len}."))
+                ));
+            }
+        }
+
         let mut new_refs = Vec::with_capacity(sq_alias_ids_len);
         for pos in 0..sq_alias_ids_len {
             let alias_id = *self
@@ -1224,13 +1236,11 @@ impl Plan {
                 .get(pos)
                 .expect("subquery output row already checked");
             let alias_type = self.get_expression_node(alias_id)?.calculate_type(self)?;
-            let ref_id = self
-                .nodes
-                .add_ref(parent, Some(vec![target]), pos, alias_type, None);
+            let ref_id = self.nodes.add_ref(None, None, pos, alias_type, None);
             new_refs.push(ref_id);
         }
-        let row_id = self.nodes.add_row(new_refs, None);
-        Ok(row_id)
+        let row_id = self.nodes.add_row(new_refs.clone(), None);
+        Ok((row_id, new_refs))
     }
 
     /// Project columns from the join's left branch.
@@ -1293,12 +1303,6 @@ impl Plan {
     /// In a case of a reference in the Motion node
     /// within a dispatched IR to the storage, returns
     /// the Motion node itself.
-    ///
-    /// # Errors
-    /// - reference is invalid
-    ///
-    /// # Panics
-    /// - Plan is in inconsistent state.
     pub fn get_relational_from_reference_node(
         &self,
         ref_id: NodeId,
@@ -1438,11 +1442,13 @@ impl Plan {
     }
 
     /// The node is a trivalent (boolean or NULL).
-    ///
-    /// # Errors
-    /// - If node is not an expression.
-    pub fn is_trivalent(&self, expr_id: NodeId) -> Result<bool, SbroadError> {
-        let expr = self.get_expression_node(expr_id)?;
+    pub fn is_trivalent(&self, expr_id: usize) -> Result<bool, SbroadError> {
+        let expr_node = self.get_node(expr_id)?;
+        let expr = match expr_node {
+            Node::Parameter(_) => return Ok(true),
+            Node::Expression(expr) => expr,
+            _ => panic!("Unsupported node to check `is_trivalent`: {expr_node:?}."),
+        };
         match expr {
             Expression::Bool(_)
             | Expression::Arithmetic(_)
@@ -1459,6 +1465,7 @@ impl Plan {
                     return self.is_trivalent(*inner_id);
                 }
             }
+            Expression::Reference { col_type, .. } => return Ok(matches!(col_type, Type::Boolean)),
             _ => {}
         }
         Ok(false)

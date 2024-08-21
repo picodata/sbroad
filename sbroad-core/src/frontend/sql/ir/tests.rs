@@ -3825,6 +3825,102 @@ fn front_alter_system_check_parses_ok() {
     }
 }
 
+#[test]
+fn front_subqueries_interpreted_as_expression() {
+    let input = r#"select (values (2)) from "test_space""#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (ROW($0) -> "COL_1")
+    scan "test_space"
+subquery $0:
+scan
+        values
+            value row (data=ROW(2::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_subqueries_interpreted_as_expression_as_required_child() {
+    let input = r#"select * from (select (values (1)) from "test_space")"#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("COL_1"::unsigned -> "COL_1")
+    scan
+        projection (ROW($0) -> "COL_1")
+            scan "test_space"
+subquery $0:
+scan
+                values
+                    value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_subqueries_interpreted_as_expression_nested() {
+    let input = r#"select (values ((values (2)))) from "test_space""#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (ROW($1) -> "COL_1")
+    scan "test_space"
+subquery $0:
+scan
+                    values
+                        value row (data=ROW(2::unsigned))
+subquery $1:
+scan
+        values
+            value row (data=ROW(ROW($0)))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_subqueries_interpreted_as_expression_under_group_by() {
+    let input = r#"SELECT COUNT(*) FROM "test_space" GROUP BY "id" + (VALUES (1))"#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (sum(("count_43"::integer))::decimal -> "COL_1")
+    group by ("column_29"::unsigned) output: ("column_29"::unsigned -> "column_29", "count_43"::integer -> "count_43")
+        motion [policy: segment([ref("column_29")])]
+            scan
+                projection (ROW("test_space"."id"::unsigned) + ROW($1) -> "column_29", count((*::integer))::integer -> "count_43")
+                    group by (ROW("test_space"."id"::unsigned) + ROW($0)) output: ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op", "test_space"."bucket_id"::unsigned -> "bucket_id")
+                        scan "test_space"
+subquery $0:
+scan
+                            values
+                                value row (data=ROW(1::unsigned))
+subquery $1:
+scan
+                        values
+                            value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    println!("{}", plan.as_explain().unwrap());
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
 #[cfg(test)]
 mod cte;
 #[cfg(test)]

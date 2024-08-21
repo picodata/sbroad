@@ -386,6 +386,8 @@ impl Plan {
     /// updated and then creates `Projection` and `Update` nodes
     /// according to that. For details, see [`UpdateStrategy`].
     ///
+    /// Returns ids of both `Projection` and `Update`.
+    ///
     /// # Projection format
     /// For sharded update:
     /// ```text
@@ -441,7 +443,7 @@ impl Plan {
         relation: &str,
         update_defs: &HashMap<ColumnPosition, ExpressionId, RepeatableState>,
         rel_child_id: NodeId,
-    ) -> Result<NodeId, SbroadError> {
+    ) -> Result<(NodeId, NodeId), SbroadError> {
         // Create Reference node from given table column.
         fn create_ref_from_column(
             plan: &mut Plan,
@@ -644,7 +646,7 @@ impl Plan {
         let update_id = self.add_relational(update_node.into())?;
         self.replace_parent_in_subtree(upd_output, None, Some(update_id))?;
 
-        Ok(update_id)
+        Ok((proj_id, update_id))
     }
 
     /// Adds insert node.
@@ -1101,6 +1103,10 @@ impl Plan {
 
     /// Add `OrderBy` node into the plan.
     ///
+    /// Returns both ids of:
+    /// * `OrderBy` node and
+    /// * Top projection node
+    ///
     /// # Errors
     /// - Unable to add output row from child.
     /// - Unable to replace parent in subtree.
@@ -1111,10 +1117,10 @@ impl Plan {
         &mut self,
         child: NodeId,
         order_by_elements: Vec<OrderByElement>,
-    ) -> Result<NodeId, SbroadError> {
+    ) -> Result<(NodeId, NodeId), SbroadError> {
         let output = self.add_row_for_output(child, &[], true, None)?;
         let order_by = OrderBy {
-            child,
+            children: vec![child],
             output,
             order_by_elements: order_by_elements.clone(),
         };
@@ -1131,7 +1137,7 @@ impl Plan {
         }
         self.replace_parent_in_subtree(output, None, Some(plan_order_by_id))?;
         let top_proj_id = self.add_proj(plan_order_by_id, &[], false, true)?;
-        Ok(top_proj_id)
+        Ok((plan_order_by_id, top_proj_id))
     }
 
     /// Adds sub query scan node.
@@ -1479,20 +1485,19 @@ impl Plan {
     ///
     /// # Errors
     /// - Node is not Join, Having, Selection
-    pub fn get_required_children_len(&self, node_id: NodeId) -> Result<usize, SbroadError> {
-        let len = match self.get_relation_node(node_id)? {
+    pub fn get_required_children_len(&self, rel_id: NodeId) -> Result<Option<usize>, SbroadError> {
+        let rel_node = self.get_relation_node(rel_id)?;
+        let len = match rel_node {
             Relational::Join { .. } => 2,
-            Relational::Having { .. } | Relational::Selection { .. } => 1,
-            _ => {
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some(format_smolstr!(
-                        "expected Join, Having or Selection on id ({node_id})"
-                    )),
-                ))
-            }
+            Relational::Having { .. }
+            | Relational::Selection { .. }
+            | Relational::Projection { .. }
+            | Relational::GroupBy { .. }
+            | Relational::OrderBy { .. } => 1,
+            Relational::ValuesRow { .. } => 0,
+            _ => return Ok(None),
         };
-        Ok(len)
+        Ok(Some(len))
     }
 
     /// Finds the parent of the given relational node.
@@ -1737,15 +1742,10 @@ impl Plan {
     /// # Errors
     /// - Failed to get plan top
     /// - Node returned by the relational iterator is not relational (bug)
-    pub fn is_additional_child(&self, node_id: usize) -> Result<bool, SbroadError> {
+    pub fn is_additional_child(&self, sq_id: usize) -> Result<bool, SbroadError> {
         for (id, node) in self.nodes.iter().enumerate() {
-            if let Node::Relational(rel_node) = node {
-                let children = rel_node.children();
-                let to_skip = self.get_required_children_len(id)?;
-                let Some(to_skip) = to_skip else {
-                    continue;
-                };
-                if children.iter().skip(to_skip).any(|&c| c == node_id) {
+            if let Node::Relational(_) = node {
+                if self.is_additional_child_of_rel(id, sq_id)? {
                     return Ok(true);
                 }
             }
@@ -1763,15 +1763,14 @@ impl Plan {
         sq_id: NodeId,
     ) -> Result<bool, SbroadError> {
         let children = self.get_relational_children(rel_id)?;
-        match self.get_relation_node(rel_id)? {
-            Relational::Selection { .. }
-            | Relational::Projection { .. }
-            | Relational::Having { .. } => Ok(children.get(0) != Some(&sq_id)),
-            Relational::Join { .. } => {
-                Ok(children.get(0) != Some(&sq_id) && children.get(1) != Some(&sq_id))
-            }
-            _ => Ok(false),
+        let to_skip = self.get_required_children_len(rel_id)?;
+        let Some(to_skip) = to_skip else {
+            return Ok(false);
+        };
+        if children.iter().skip(to_skip).any(|&c| c == sq_id) {
+            return Ok(true);
         }
+        Ok(false)
     }
 
     /// Get `Motion`'s node policy

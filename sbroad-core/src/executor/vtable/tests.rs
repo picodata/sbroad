@@ -4,6 +4,8 @@ use crate::ir::tests::{column_integer_user_non_null, vcolumn_integer_user_non_nu
 use crate::ir::transformation::redistribution::{MotionKey, Target};
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
+use tarantool::decimal;
+use tarantool::decimal::Decimal;
 
 /// Test initialisation of the virtual table.
 #[test]

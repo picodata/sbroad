@@ -186,19 +186,24 @@ fn explain_except1() {
 
 #[test]
 fn motion_subquery_plan() {
-    let query = r#"SELECT * FROM (
-SELECT "id", "FIRST_NAME" FROM "test_space" WHERE "sys_op" > 0 and "sysFrom" < 0
-UNION ALL
-SELECT "id", "FIRST_NAME" FROM "test_space_hist" WHERE "sys_op" < 0
-) as "t"
-WHERE "id" IN (SELECT "id"
-   FROM (
-      SELECT "id", "FIRST_NAME" FROM "test_space" WHERE "sys_op" > 0
-      UNION ALL
-      SELECT "id", "FIRST_NAME" FROM "test_space_hist" WHERE "sys_op" < 0
-  ) as "t2"
-  WHERE "t2"."id" = 4)
-  OR "id" IN (SELECT "identification_number" FROM "hash_testing" WHERE "identification_number" = 5 AND "product_code" = '123')
+    let query = r#"
+    SELECT * FROM (
+        SELECT "id", "FIRST_NAME" FROM "test_space" WHERE "sys_op" > 0 and "sysFrom" < 0
+        UNION ALL
+        SELECT "id", "FIRST_NAME" FROM "test_space_hist" WHERE "sys_op" < 0
+    ) as "t"
+    WHERE
+    "id" IN (SELECT "id"
+        FROM (
+            SELECT "id", "FIRST_NAME" FROM "test_space" WHERE "sys_op" > 0
+            UNION ALL
+            SELECT "id", "FIRST_NAME" FROM "test_space_hist" WHERE "sys_op" < 0
+        ) as "t2"
+        WHERE "t2"."id" = 4)
+    OR "id" IN (SELECT "identification_number"
+        FROM "hash_testing"
+        WHERE "identification_number" = 5 AND "product_code" = '123'
+        )
 "#;
 
     let plan = sql_to_optimized_ir(query, vec![]);
@@ -208,7 +213,7 @@ WHERE "id" IN (SELECT "id"
 
     let mut actual_explain = String::new();
     actual_explain.push_str(r#"projection ("t"."id"::unsigned -> "id", "t"."FIRST_NAME"::string -> "FIRST_NAME")
-    selection ROW("t"."id"::unsigned) in ROW($0) or ROW("t"."id"::unsigned) in ROW($1)
+    selection ROW("t"."id"::unsigned) in ROW($1) or ROW("t"."id"::unsigned) in ROW($0)
         scan "t"
             union all
                 projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
@@ -218,6 +223,12 @@ WHERE "id" IN (SELECT "id"
                     selection ROW("test_space_hist"."sys_op"::unsigned) < ROW(0::unsigned)
                         scan "test_space_hist"
 subquery $0:
+motion [policy: segment([ref("identification_number")])]
+            scan
+                projection ("hash_testing"."identification_number"::integer -> "identification_number")
+                    selection ROW("hash_testing"."identification_number"::integer) = ROW(5::unsigned) and ROW("hash_testing"."product_code"::string) = ROW('123'::string)
+                        scan "hash_testing"
+subquery $1:
 scan
             projection ("t2"."id"::unsigned -> "id")
                 selection ROW("t2"."id"::unsigned) = ROW(4::unsigned)
@@ -229,12 +240,6 @@ scan
                             projection ("test_space_hist"."id"::unsigned -> "id", "test_space_hist"."FIRST_NAME"::string -> "FIRST_NAME")
                                 selection ROW("test_space_hist"."sys_op"::unsigned) < ROW(0::unsigned)
                                     scan "test_space_hist"
-subquery $1:
-motion [policy: segment([ref("identification_number")])]
-            scan
-                projection ("hash_testing"."identification_number"::integer -> "identification_number")
-                    selection ROW("hash_testing"."identification_number"::integer) = ROW(5::unsigned) and ROW("hash_testing"."product_code"::string) = ROW('123'::string)
-                        scan "hash_testing"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

@@ -364,7 +364,7 @@ impl Plan {
             }
             // Print children.
             match relation {
-                ref node @ (Relational::Join(_)
+                Relational::Join(_)
                 | Relational::Projection(_)
                 | Relational::Except(_)
                 | Relational::Delete(_)
@@ -373,15 +373,17 @@ impl Plan {
                 | Relational::ScanSubQuery(_)
                 | Relational::Selection(_)
                 | Relational::Values(_)
+                | Relational::OrderBy(_)
+                | Relational::Limit(_)
                 | Relational::Motion(_)
                 | Relational::Union(_)
                 | Relational::UnionAll(_)
                 | Relational::Update(_)
                 | Relational::Having(_)
                 | Relational::GroupBy(_)
-                | Relational::ValuesRow(_)) => {
+                | Relational::ValuesRow(_) => {
                     writeln_with_tabulation(buf, tabulation_number + 1, "Children:")?;
-                    for child in &node.children() {
+                    for child in &relation.children() {
                         writeln_with_tabulation(
                             buf,
                             tabulation_number + 2,
@@ -389,9 +391,7 @@ impl Plan {
                         )?;
                     }
                 }
-                Relational::Limit(Limit { child, .. })
-                | Relational::OrderBy(OrderBy { child, .. })
-                | Relational::ScanCte(ScanCte { child, .. }) => {
+                Relational::ScanCte(ScanCte { child, .. }) => {
                     writeln_with_tabulation(buf, tabulation_number + 1, "Children:")?;
                     writeln_with_tabulation(
                         buf,

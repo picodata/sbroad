@@ -1,5 +1,6 @@
 use crate::collection;
 use crate::ir::distribution::{Distribution, Key};
+use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::node::{Node64, NodeId};
 use crate::ir::relation::Column;

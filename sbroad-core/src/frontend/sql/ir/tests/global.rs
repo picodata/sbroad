@@ -303,12 +303,13 @@ vtable_max_rows = 5000
 fn front_sql_global_tbl_sq6() {
     // Reading from global subquery should not produce motion
     let input = r#"
-    select "a", "f" from "t" inner join "t2"
-    on ("t"."a", "t"."b") = ("t2"."e", "t2"."f") OR
-    "t"."c" in (select "a" as a1 from "global_t") OR
-    "t"."d" not in (select "a" as a1 from "global_t") AND
-    exists (select "a" * 20 as a1 from "global_t" where "a" = 1)
-    where "e" in (select "a" * 10 from "global_t")
+    select "a", "f"
+    from "t" inner join "t2"
+        on ("t"."a", "t"."b") = ("t2"."e", "t2"."f") OR
+           "t"."c" in (select "a" as a1 from "global_t") OR
+           "t"."d" not in (select "a" as a1 from "global_t") AND
+           exists (select "a" * 20 as a1 from "global_t" where "a" = 1)
+        where "e" in (select "a" * 10 from "global_t")
     "#;
 
     let plan = sql_to_optimized_ir(input, vec![]);

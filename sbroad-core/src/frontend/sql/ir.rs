@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use ahash::AHashMap;
 use pest::iterators::Pair;
 use smol_str::format_smolstr;
 use tarantool::decimal::Decimal;
 
-use crate::errors::{Action, Entity, SbroadError};
+use crate::errors::{Entity, SbroadError};
 use crate::frontend::sql::ast::Rule;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::node::expression::{ExprOwned, Expression, MutExpression};
@@ -22,8 +22,6 @@ use crate::ir::tree::traversal::{LevelNode, PostOrder, EXPR_CAPACITY};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
 use crate::ir::Plan;
-
-use super::Between;
 
 impl Value {
     /// Creates `Value` from pest pair.
@@ -113,30 +111,6 @@ impl Translation {
     }
 }
 
-/// Helper struct used for `SubQuery` -> Reference replacement in `gather_sq_for_replacement`.
-#[derive(Hash, PartialEq, Debug)]
-struct SubQuery {
-    /// Relational operator that is a parent of current SubQuery.
-    /// E.g. Selection (in case SubQuery is met in WHERE expression).
-    relational: NodeId,
-    /// Expression operator in which this SubQuery is met.
-    /// E.g. `Exists`.
-    operator: NodeId,
-    /// SubQuery id in plan.
-    sq: NodeId,
-}
-impl Eq for SubQuery {}
-
-impl SubQuery {
-    fn new(relational: NodeId, operator: NodeId, sq: NodeId) -> SubQuery {
-        SubQuery {
-            relational,
-            operator,
-            sq,
-        }
-    }
-}
-
 struct CloneExprSubtreeMap {
     // Map of { old_node_id -> new_node_id } for cloning nodes.
     inner: AHashMap<NodeId, NodeId>,
@@ -167,180 +141,7 @@ impl CloneExprSubtreeMap {
 }
 
 impl Plan {
-    fn gather_sq_for_replacement(&self) -> Result<HashSet<SubQuery, RepeatableState>, SbroadError> {
-        let mut set: HashSet<SubQuery, RepeatableState> = HashSet::with_hasher(RepeatableState);
-        // Traverse expression trees of the selection and join nodes.
-        // Gather all sub-queries in the boolean expressions there.
-        for (relational_id, _node) in self.nodes.iter64().enumerate() {
-            let node = self.get_node(NodeId {
-                offset: u32::try_from(relational_id).unwrap(),
-                arena_type: ArenaType::Arena64,
-            })?;
-            match node {
-                Node::Relational(
-                    Relational::Selection(Selection { filter: tree, .. })
-                    | Relational::Join(Join {
-                        condition: tree, ..
-                    })
-                    | Relational::Having(Having { filter: tree, .. }),
-                ) => {
-                    let capacity = self.nodes.len();
-                    let mut expr_post = PostOrder::with_capacity(
-                        |node| self.nodes.expr_iter(node, false),
-                        capacity,
-                    );
-                    for LevelNode(_, op_id) in expr_post.iter(*tree) {
-                        let expression_node = self.get_node(op_id)?;
-                        if let Node::Expression(Expression::Bool(BoolExpr {
-                            left, right, ..
-                        })) = expression_node
-                        {
-                            let children = &[*left, *right];
-                            for child in children {
-                                if let Node::Relational(Relational::ScanSubQuery { .. }) =
-                                    self.get_node(*child)?
-                                {
-                                    let relational_id = NodeId {
-                                        offset: u32::try_from(relational_id).unwrap(),
-                                        arena_type: ArenaType::Arena64,
-                                    };
-                                    set.insert(SubQuery::new(relational_id, op_id, *child));
-                                }
-                            }
-                        } else if let Node::Expression(Expression::Unary(UnaryExpr {
-                            child, ..
-                        })) = expression_node
-                        {
-                            if let Node::Relational(Relational::ScanSubQuery { .. }) =
-                                self.get_node(*child)?
-                            {
-                                let relational_id = NodeId {
-                                    offset: u32::try_from(relational_id).unwrap(),
-                                    arena_type: ArenaType::Arena64,
-                                };
-                                set.insert(SubQuery::new(relational_id, op_id, *child));
-                            }
-                        }
-                    }
-                }
-                _ => continue,
-            }
-        }
-        Ok(set)
-    }
-
-    /// Replace sub-queries with references to the sub-query.
-    pub(super) fn replace_sq_with_references(
-        &mut self,
-    ) -> Result<AHashMap<NodeId, NodeId>, SbroadError> {
-        let set = self.gather_sq_for_replacement()?;
-        let mut replaces: AHashMap<NodeId, NodeId> = AHashMap::with_capacity(set.len());
-        for sq in set {
-            // Append sub-query to relational node if it is not already there (can happen with BETWEEN).
-            match self.get_mut_node(sq.relational)? {
-                MutNode::Relational(
-                    MutRelational::Selection(Selection { children, .. })
-                    | MutRelational::Join(Join { children, .. })
-                    | MutRelational::Having(Having { children, .. }),
-                ) => {
-                    // O(n) can become a problem.
-                    if !children.contains(&sq.sq) {
-                        children.push(sq.sq);
-                    }
-                }
-                _ => {
-                    return Err(SbroadError::Invalid(
-                        Entity::Relational,
-                        Some("Sub-query is not in selection or join node".into()),
-                    ))
-                }
-            }
-
-            // Generate a reference to the sub-query.
-            let rel = self.get_relation_node(sq.relational)?;
-            let children = match rel {
-                Relational::Join(Join { children, .. })
-                | Relational::Having(Having { children, .. })
-                | Relational::Selection(Selection { children, .. }) => children.clone(),
-                _ => {
-                    return Err(SbroadError::Invalid(
-                        Entity::Relational,
-                        Some("Sub-query is not in selection, group by or join node".into()),
-                    ))
-                }
-            };
-            let position: usize = children.iter().position(|&x| x == sq.sq).ok_or_else(|| {
-                SbroadError::FailedTo(Action::Build, None, "a reference to the sub-query".into())
-            })?;
-            let row_id = self.add_row_from_subquery(&children, position, Some(sq.relational))?;
-
-            // Replace sub-query with reference.
-            let op = self.get_mut_expression_node(sq.operator)?;
-            if let MutExpression::Bool(BoolExpr {
-                ref mut left,
-                ref mut right,
-                ..
-            }) = op
-            {
-                if *left == sq.sq {
-                    *left = row_id;
-                } else if *right == sq.sq {
-                    *right = row_id;
-                } else {
-                    return Err(SbroadError::Invalid(
-                        Entity::Expression,
-                        Some("Sub-query is not a left or right operand".into()),
-                    ));
-                }
-                replaces.insert(sq.sq, row_id);
-            } else if let MutExpression::Unary(UnaryExpr { child, .. }) = op {
-                *child = row_id;
-                replaces.insert(sq.sq, row_id);
-            } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Expression,
-                    Some("Sub-query is not in a boolean expression".into()),
-                ));
-            }
-        }
-        Ok(replaces)
-    }
-
-    /// Resolve the double linking problem in BETWEEN operator. On the AST to IR step
-    /// we transform `left BETWEEN center AND right` construction into
-    /// `left >= center AND left <= right`, where the same `left` expression is reused
-    /// twice. So, We need to copy the 'left' expression tree from `left >= center` to the
-    /// `left <= right` expression.
-    ///
-    /// Otherwise we'll have problems on the dispatch stage while taking nodes from the original
-    /// plan to build a sub-plan for the storage. If the same `left` subtree is used twice in
-    /// the plan, these nodes are taken while traversing the `left >= center` expression and
-    /// nothing is left for the `left <= right` sutree.
-    pub(super) fn fix_betweens(
-        &mut self,
-        betweens: &[Between],
-        replaces: &AHashMap<NodeId, NodeId>,
-    ) -> Result<(), SbroadError> {
-        for between in betweens {
-            let left_id: NodeId = if let Some(id) = replaces.get(&between.left_id) {
-                self.clone_expr_subtree(*id)?
-            } else {
-                self.clone_expr_subtree(between.left_id)?
-            };
-            let less_eq_expr = self.get_mut_expression_node(between.less_eq_id)?;
-            if let MutExpression::Bool(BoolExpr { ref mut left, .. }) = less_eq_expr {
-                *left = left_id;
-            } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Expression,
-                    Some("expected a boolean Expression".into()),
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn clone_expr_subtree(&mut self, top_id: NodeId) -> Result<NodeId, SbroadError> {
+    pub(crate) fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, SbroadError> {
         let mut subtree =
             PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
         subtree.populate_nodes(top_id);
@@ -690,7 +491,7 @@ impl SubtreeCloner {
                 *gr_cols = self.copy_list(gr_cols)?;
             }
             RelOwned::OrderBy(OrderBy {
-                child: _,
+                children: _,
                 order_by_elements,
                 output: _,
             }) => {
