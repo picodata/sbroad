@@ -29,7 +29,7 @@ use std::rc::Rc;
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::{helpers::materialize_values, Router, TableVersionMap, Vshard};
+use crate::executor::engine::{Router, TableVersionMap, Vshard};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::Cache;
 use crate::frontend::Ast;
@@ -209,23 +209,32 @@ where
                 if let Relational::Motion(Motion { policy, .. }) = motion {
                     match policy {
                         MotionPolicy::Segment(_) => {
-                            // if child is values, then we can materialize it
+                            // If child is values, then we can materialize it
                             // on the router.
-                            if let Some(virtual_table) =
-                                materialize_values(&mut self.exec_plan, *motion_id)?
-                            {
+                            let motion_child_id =
+                                self.get_exec_plan().get_motion_child(*motion_id)?;
+                            let motion_child = self
+                                .get_exec_plan()
+                                .get_ir_plan()
+                                .get_relation_node(motion_child_id)?;
+
+                            if matches!(motion_child, Relational::Values { .. }) {
+                                let virtual_table = self
+                                    .coordinator
+                                    .materialize_values(&mut self.exec_plan, motion_child_id)?;
                                 self.exec_plan.set_motion_vtable(
                                     motion_id,
                                     virtual_table,
                                     &vshard,
                                 )?;
                                 self.get_mut_exec_plan().unlink_motion_subtree(*motion_id)?;
+                                continue;
                             }
                         }
                         // Skip it and dispatch the query to the segments
                         // (materialization would be done on the segments). Note that we
                         // will operate with vtables for LocalSegment motions via calls like
-                        // `if let Ok(virtual_table) = self.exec_plan.get_motion_vtable(node_id)`
+                        // `self.exec_plan.contains_vtable_for_motion(node_id)`
                         // in order to define whether virtual table was materialized for values.
                         MotionPolicy::LocalSegment(_) => {
                             continue;

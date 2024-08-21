@@ -1,4 +1,4 @@
-use smol_str::{format_smolstr, SmolStr, ToSmolStr};
+use smol_str::{SmolStr, ToSmolStr};
 use std::any::Any;
 
 use std::cell::RefCell;
@@ -1323,10 +1323,19 @@ impl Router for RouterRuntimeMock {
         if let Some(virtual_table) = self.virtual_tables.borrow().get(motion_node_id) {
             Ok(virtual_table.clone())
         } else {
-            Err(SbroadError::NotFound(
-                Entity::VirtualTable,
-                format_smolstr!("for motion node {motion_node_id:?}"),
-            ))
+            panic!("Virtual table for motion with id {motion_node_id} not found.")
+        }
+    }
+
+    fn materialize_values(
+        &self,
+        _exec_plan: &mut ExecutionPlan,
+        values_id: usize,
+    ) -> Result<VirtualTable, SbroadError> {
+        if let Some(virtual_table) = self.virtual_tables.borrow().get(&values_id) {
+            Ok(virtual_table.clone())
+        } else {
+            panic!("Virtual table for values with id {values_id} not found.")
         }
     }
 

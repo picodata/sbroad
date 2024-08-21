@@ -316,6 +316,21 @@ pub trait Router: QueryCache {
     fn get_current_vshard_object(&self) -> Result<Self::VshardImplementor, SbroadError> {
         self.get_vshard_object_by_tier(self.get_current_tier_name()?.as_ref())
     }
+
+    /// Materialize values (on router).
+    /// We have two scenarios of vtable materialization:
+    /// 1.) In case we're working with VALUES containing **only** constants, we copy them
+    ///     directly into the structure of Vtable.
+    /// 2.) In case we met under VALUES smth different from constants we execute local
+    ///     SQL on the router and fill the vtable with result.
+    ///
+    /// # Errors
+    /// - Values of inconsistent types met.
+    fn materialize_values(
+        &self,
+        exec_plan: &mut ExecutionPlan,
+        values_id: usize,
+    ) -> Result<VirtualTable, SbroadError>;
 }
 
 /// Struct representing table stats that we get directly from replicaset system table.

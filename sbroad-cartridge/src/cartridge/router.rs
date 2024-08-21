@@ -27,8 +27,8 @@ use sbroad::errors::{Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::{
     helpers::{
-        dispatch_impl, explain_format, materialize_motion, sharding_key_from_map,
-        sharding_key_from_tuple,
+        dispatch_impl, explain_format, materialize_motion, materialize_values,
+        sharding_key_from_map, sharding_key_from_tuple,
     },
     Router, Statistics,
 };
@@ -268,6 +268,14 @@ impl Router for RouterRuntime {
         buckets: &Buckets,
     ) -> Result<VirtualTable, SbroadError> {
         materialize_motion(self, plan, *motion_node_id, buckets)
+    }
+
+    fn materialize_values(
+        &self,
+        exec_plan: &mut ExecutionPlan,
+        values_id: usize,
+    ) -> Result<VirtualTable, SbroadError> {
+        materialize_values(self, exec_plan, values_id)
     }
 
     fn extract_sharding_key_from_map<'rec>(

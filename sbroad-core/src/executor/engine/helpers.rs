@@ -33,6 +33,7 @@ use crate::executor::engine::{QueryCache, StorageCache};
 use crate::executor::protocol::{EncodedTables, SchemaInfo};
 use crate::ir::operator::ConflictStrategy;
 use crate::ir::value::{EncodedValue, LuaValue, MsgPackValue};
+use crate::ir::{ExecuteOptions, Node, NodeId};
 use crate::otm::child_span;
 use crate::utils::ByteCounter;
 use crate::{
@@ -47,7 +48,7 @@ use crate::{
         ir::{ExecutionPlan, QueryType},
         protocol::{Binary, EncodedOptionalData, OptionalData, RequiredData},
         result::{ConsumerResult, MetadataColumn, ProducerResult},
-        vtable::{VTableTuple, VirtualTable},
+        vtable::{calculate_vtable_unified_types, VTableTuple, VirtualTable},
     },
     ir::{
         distribution::Distribution,
@@ -948,18 +949,31 @@ pub fn dispatch_by_buckets(
     }
 }
 
-#[allow(clippy::too_many_lines)]
-pub(crate) fn materialize_values(
-    plan: &mut ExecutionPlan,
-    motion_node_id: NodeId,
-) -> Result<Option<VirtualTable>, SbroadError> {
-    // Check that the motion node has a local segment policy.
-    let motion_node = plan.get_ir_plan().get_relation_node(motion_node_id)?;
-    if let Relational::Motion(Motion {
-        policy: MotionPolicy::LocalSegment(_),
-        ..
-    }) = motion_node
-    {
+/// Transform result of local Tarantool execution to `VirtualTable`.
+///
+/// # Errors
+/// - Unable to apply downcast.
+pub fn downcast_execution_result_to_vtable(
+    result: Box<dyn Any>,
+    column_names: Vec<SmolStr>,
+) -> Result<VirtualTable, SbroadError> {
+    if let Ok(tuple) = result.downcast::<Tuple>() {
+        let mut data = tuple.decode::<Vec<ProducerResult>>().map_err(|_| {
+            SbroadError::Invalid(
+                Entity::ProducerResult,
+                Some(format_smolstr!(
+                    "Unable to decode ProducerResult from tuple."
+                )),
+            )
+        })?;
+        data.get_mut(0)
+            .ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::ProducerResult,
+                    Some("Unable to get producer result from the tuple".into()),
+                )
+            })?
+            .as_virtual_table(column_names)
     } else {
         return Ok(None);
     };
@@ -972,124 +986,127 @@ pub(crate) fn materialize_values(
     let child_id = plan.get_motion_child(motion_node_id)?;
     if !matches!(
         plan.get_ir_plan().get_relation_node(child_id)?,
-        Relational::Values(_)
+        Relational::Values { .. }
     ) {
         return Ok(None);
     }
-    let child_node = plan.get_mut_ir_plan().replace_with_stub(child_id);
-    if let NodeOwned::Relational(RelOwned::Values(Values {
+}
+
+/// Helper function reused for Cartridge/Picodata `materialize_values` method of Router.
+///
+/// # Errors
+/// - Types mismatch.
+///
+/// # Panics
+/// - Passed node is not Values.
+pub fn materialize_values(
+    runtime: &impl Router,
+    exec_plan: &mut ExecutionPlan,
+    values_id: usize,
+) -> Result<VirtualTable, SbroadError> {
+    let child_node = exec_plan.get_ir_plan().get_node(values_id)?;
+
+    let Node::Relational(Relational::Values {
         ref children,
         output,
-        ..
-    })) = child_node
-    {
-        // Build a new virtual table (check that all the rows are made of constants only).
-        let mut vtable = VirtualTable::new();
-        vtable.get_mut_tuples().reserve(children.len());
+    }) = child_node
+    else {
+        panic!("Values node expected. Got {child_node:?}.")
+    };
 
-        let columns_len = if let Some(first_row_id) = children.first() {
-            let row_node = plan.get_ir_plan().get_relation_node(*first_row_id)?;
-            let Relational::ValuesRow(ValuesRow { data, .. }) = row_node else {
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some(format_smolstr!("Expected ValuesRow, got {row_node:?}")),
-                ));
-            };
-            plan.get_ir_plan()
-                .get_expression_node(*data)?
-                .get_row_list()?
-                .len()
-        } else {
-            return Err(SbroadError::Invalid(
-                Entity::Node,
-                Some(format_smolstr!(
-                    "Values node {child_node:?} must contain children"
-                )),
-            ));
+    let children = children.clone();
+    let output = *output;
+
+    let mut vtable = VirtualTable::new();
+    vtable.get_mut_tuples().reserve(children.len());
+
+    let first_row_id = children
+        .first()
+        .expect("Values node must contain children.");
+    let row_node = exec_plan.get_ir_plan().get_relation_node(*first_row_id)?;
+    let Relational::ValuesRow { data, .. } = row_node else {
+        panic!("Expected ValuesRow, got {row_node:?}.")
+    };
+    let columns_len = exec_plan
+        .get_ir_plan()
+        .get_expression_node(*data)?
+        .get_row_list()
+        .len();
+
+    // Flag indicating whether VALUES contains only constants.
+    let mut only_constants = true;
+    // Ids of constants that we have to replace with parameters.
+    // We'll need to use it only in case
+    let mut constants_to_erase: Vec<usize> = Vec::new();
+    for row_id in &children {
+        let row_node = exec_plan.get_ir_plan().get_relation_node(*row_id)?;
+        let Relational::ValuesRow { data, .. } = row_node else {
+            panic!("Expected ValuesRow under Values. Got {row_node:?}.")
         };
-        let mut nullable_column_indices = HashSet::with_capacity(columns_len);
-        for row_id in children {
-            let row_node = plan.get_ir_plan().get_relation_node(*row_id)?;
-            if let Relational::ValuesRow(ValuesRow { data, children, .. }) = row_node {
-                // Check that there are no subqueries in the values node.
-                // (If any we'll need to materialize them first with dispatch
-                // to the storages.)
-                if !children.is_empty() {
-                    return Err(SbroadError::Invalid(
-                        Entity::Node,
-                        Some("VALUES rows supports only constants in its columns.".to_smolstr()),
-                    ));
-                }
-                let data = *data;
-                // Check that all the values are constants.
-                let columns_len = plan.get_ir_plan().get_row_list(data)?.len();
-                let mut row: VTableTuple = Vec::with_capacity(columns_len);
-                for idx in 0..columns_len {
-                    let column_id =
-                        *plan
-                            .get_ir_plan()
-                            .get_row_list(data)?
-                            .get(idx)
-                            .ok_or_else(|| {
-                                SbroadError::NotFound(
-                                    Entity::Column,
-                                    format_smolstr!("at position {idx} in the row"),
-                                )
-                            })?;
-                    let column_node = plan.get_mut_ir_plan().replace_with_stub(column_id);
-                    if let NodeOwned::Expression(ExprOwned::Constant(Constant { value, .. })) =
-                        column_node
-                    {
-                        if let Value::Null = value {
-                            nullable_column_indices.insert(idx);
-                        }
-                        row.push(value);
-                    } else {
-                        return Err(SbroadError::Invalid(
-                            Entity::Node,
-                            Some(format_smolstr!(
-                                "VALUES rows supports only constants in its columns (got: {column_node:?})."
-                            )),
-                        ));
-                    }
-                }
-                vtable.add_tuple(row);
+        let data_row_list: Vec<usize> = exec_plan.get_ir_plan().get_row_list(*data)?.to_vec();
+        let mut row: VTableTuple = Vec::with_capacity(columns_len);
+        for idx in 0..columns_len {
+            let column_id = *data_row_list
+                .get(idx)
+                .unwrap_or_else(|| panic!("Column not found at position {idx} in the row."));
+            let column_node = exec_plan.get_ir_plan().get_node(column_id)?;
+            if let Node::Expression(Expression::Constant { value, .. }) = column_node {
+                constants_to_erase.push(column_id);
+                row.push(value.clone());
             } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some(format_smolstr!(
-                        "value node child ({child_id:?}) is not a values row node!"
-                    )),
-                ));
+                only_constants = false;
+                break;
             }
         }
-        // Build virtual table's columns.
-        let output_cols = plan.get_ir_plan().get_row_list(output)?;
-        let columns = vtable.get_mut_columns();
-        columns.reserve(output_cols.len());
-        for (idx, column_id) in enumerate(output_cols) {
-            let is_nullable = nullable_column_indices.contains(&idx);
-            let alias = plan.get_ir_plan().get_expression_node(*column_id)?;
-            if let Expression::Alias(Alias { name, .. }) = alias {
-                let column = Column {
-                    name: name.clone(),
-                    r#type: Type::Scalar,
-                    role: ColumnRole::User,
-                    is_nullable,
-                };
-                columns.push(column);
-            } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some(format_smolstr!(
-                        "output column ({column_id:?}) is not an alias node!"
-                    )),
-                ));
-            }
+
+        if !only_constants {
+            break;
         }
-        return Ok(Some(vtable));
+        vtable.add_tuple(row);
     }
-    Ok(None)
+
+    let mut column_names: Vec<SmolStr> = Vec::new();
+    let output_cols = exec_plan
+        .get_ir_plan()
+        .get_expression_node(output)?
+        .get_row_list();
+    for column_id in output_cols {
+        let alias = exec_plan.get_ir_plan().get_expression_node(*column_id)?;
+        if let Expression::Alias { name, .. } = alias {
+            column_names.push(name.clone());
+        } else {
+            panic!("Output column ({column_id}) is not an alias node.")
+        }
+    }
+
+    let mut vtable = if only_constants {
+        // Otherwise `dispatch` call will replace nodes on Parameters.
+        for column_id in constants_to_erase {
+            let column_node_ref = exec_plan.get_mut_ir_plan().get_mut_node(column_id)?;
+            let _ = std::mem::replace(column_node_ref, Node::Parameter(None));
+        }
+
+        // Create vtable columns with default column field (that will be fixed later).
+        let columns = vtable.get_mut_columns();
+        columns.reserve(column_names.len());
+        for _ in 0..columns_len {
+            let column = Column::default();
+            columns.push(column);
+        }
+        vtable
+    } else {
+        // We need to execute VALUES as a local SQL.
+        let result = runtime.dispatch(exec_plan, values_id, &Buckets::Any)?;
+        downcast_execution_result_to_vtable(result, column_names)?
+    };
+
+    let unified_types = calculate_vtable_unified_types(&vtable)?;
+    vtable.cast_values(&unified_types)?;
+
+    let child_node_ref = exec_plan.get_mut_ir_plan().get_mut_node(values_id)?;
+    let _ = std::mem::replace(child_node_ref, Node::Parameter(None));
+
+    Ok(vtable)
 }
 
 /// Materialize a motion subtree into a virtual table.
