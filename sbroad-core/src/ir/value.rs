@@ -15,7 +15,7 @@ use tarantool::tuple::{FieldType, KeyDefPart};
 use tarantool::uuid::Uuid;
 
 use crate::error;
-use crate::errors::{Action, Entity, SbroadError};
+use crate::errors::{Entity, SbroadError};
 use crate::executor::hash::ToHashString;
 use crate::ir::relation::Type;
 use crate::ir::value::double::Double;
@@ -782,62 +782,37 @@ impl Value {
     /// - the value cannot be cast to the given type.
     #[allow(clippy::too_many_lines)]
     pub fn cast(&self, column_type: &Type) -> Result<EncodedValue, SbroadError> {
+        let cast_error = SbroadError::Invalid(
+            Entity::Value,
+            Some(format_smolstr!("Failed to cast {self} to {column_type}.")),
+        );
+
         match column_type {
             Type::Any => Ok(self.into()),
-            Type::Map => match self {
+            Type::Array | Type::Map => match self {
                 Value::Null => Ok(Value::Null.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into map"),
-                )),
-            },
-            Type::Array => match self {
-                Value::Null => Ok(Value::Null.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into array"),
-                )),
+                _ => Err(cast_error),
             },
             Type::Boolean => match self {
                 Value::Boolean(_) => Ok(self.into()),
                 Value::Null => Ok(Value::Null.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into boolean"),
-                )),
+                _ => Err(cast_error),
             },
             Type::Datetime => match self {
                 Value::Null => Ok(Value::Null.into()),
                 Value::Datetime(_) => Ok(self.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into datetime"),
-                )),
+                _ => Err(cast_error),
             },
             Type::Decimal => match self {
                 Value::Decimal(_) => Ok(self.into()),
                 Value::Double(v) => Ok(Value::Decimal(
-                    Decimal::from_str(&format!("{v}")).map_err(|e| {
-                        SbroadError::FailedTo(
-                            Action::Serialize,
-                            Some(Entity::Value),
-                            format_smolstr!("{e:?}"),
-                        )
-                    })?,
+                    Decimal::from_str(&format!("{v}")).map_err(|_| cast_error)?,
                 )
                 .into()),
                 Value::Integer(v) => Ok(Value::Decimal(Decimal::from(*v)).into()),
                 Value::Unsigned(v) => Ok(Value::Decimal(Decimal::from(*v)).into()),
                 Value::Null => Ok(Value::Null.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into decimal"),
-                )),
+                _ => Err(cast_error),
             },
             Type::Double => match self {
                 Value::Double(_) => Ok(self.into()),
@@ -845,130 +820,61 @@ impl Value {
                 Value::Integer(v) => Ok(Value::Double(Double::from(*v)).into()),
                 Value::Unsigned(v) => Ok(Value::Double(Double::from(*v)).into()),
                 Value::Null => Ok(Value::Null.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into double"),
-                )),
+                _ => Err(cast_error),
             },
             Type::Integer => match self {
                 Value::Integer(_) => Ok(self.into()),
-                Value::Decimal(v) => Ok(Value::Integer(v.to_i64().ok_or_else(|| {
-                    SbroadError::FailedTo(
-                        Action::Serialize,
-                        Some(Entity::Value),
-                        format_smolstr!("{self:?} into integer"),
-                    )
-                })?)
-                .into()),
+                Value::Decimal(v) => Ok(Value::Integer(v.to_i64().ok_or(cast_error)?).into()),
                 Value::Double(v) => v
                     .to_string()
                     .parse::<i64>()
                     .map(Value::Integer)
                     .map(EncodedValue::from)
-                    .map_err(|e| {
-                        SbroadError::FailedTo(
-                            Action::Serialize,
-                            Some(Entity::Value),
-                            e.to_smolstr(),
-                        )
-                    }),
-                Value::Unsigned(v) => Ok(Value::Integer(i64::try_from(*v).map_err(|e| {
-                    SbroadError::FailedTo(
-                        Action::Serialize,
-                        Some(Entity::Value),
-                        format_smolstr!("u64 {v} into i64: {e}"),
-                    )
-                })?)
-                .into()),
+                    .map_err(|_| cast_error),
+                Value::Unsigned(v) => {
+                    Ok(Value::Integer(i64::try_from(*v).map_err(|_| cast_error)?).into())
+                }
                 Value::Null => Ok(Value::Null.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into integer"),
-                )),
+                _ => Err(cast_error),
             },
             Type::Scalar => match self {
-                Value::Tuple(_) => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into scalar"),
-                )),
+                Value::Tuple(_) => Err(cast_error),
                 _ => Ok(self.into()),
             },
             Type::String => match self {
                 Value::String(_) => Ok(self.into()),
                 Value::Null => Ok(Value::Null.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into string"),
-                )),
+                _ => Err(cast_error),
             },
             Type::Uuid => match self {
                 Value::Uuid(_) => Ok(self.into()),
-                Value::String(v) => Ok(Value::Uuid(Uuid::parse_str(v).map_err(|e| {
-                    SbroadError::FailedTo(
-                        Action::Serialize,
-                        Some(Entity::Value),
-                        format_smolstr!("uuid {v} into string: {e}"),
-                    )
-                })?)
-                .into()),
+                Value::String(v) => {
+                    Ok(Value::Uuid(Uuid::parse_str(v).map_err(|_| cast_error)?).into())
+                }
                 Value::Null => Ok(Value::Null.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into uuid"),
-                )),
+                _ => Err(cast_error),
             },
             Type::Number => match self {
                 Value::Integer(_) | Value::Decimal(_) | Value::Double(_) | Value::Unsigned(_) => {
                     Ok(self.into())
                 }
                 Value::Null => Ok(Value::Null.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into number"),
-                )),
+                _ => Err(cast_error),
             },
             Type::Unsigned => match self {
                 Value::Unsigned(_) => Ok(self.into()),
-                Value::Integer(v) => Ok(Value::Unsigned(u64::try_from(*v).map_err(|e| {
-                    SbroadError::FailedTo(
-                        Action::Serialize,
-                        Some(Entity::Value),
-                        format_smolstr!("i64 {v} into u64: {e}"),
-                    )
-                })?)
-                .into()),
-                Value::Decimal(v) => Ok(Value::Unsigned(v.to_u64().ok_or_else(|| {
-                    SbroadError::FailedTo(
-                        Action::Serialize,
-                        Some(Entity::Value),
-                        format_smolstr!("{self:?} into unsigned"),
-                    )
-                })?)
-                .into()),
+                Value::Integer(v) => {
+                    Ok(Value::Unsigned(u64::try_from(*v).map_err(|_| cast_error)?).into())
+                }
+                Value::Decimal(v) => Ok(Value::Unsigned(v.to_u64().ok_or(cast_error)?).into()),
                 Value::Double(v) => v
                     .to_string()
                     .parse::<u64>()
                     .map(Value::Unsigned)
                     .map(EncodedValue::from)
-                    .map_err(|_| {
-                        SbroadError::FailedTo(
-                            Action::Serialize,
-                            Some(Entity::Value),
-                            format_smolstr!("{self:?} into unsigned"),
-                        )
-                    }),
+                    .map_err(|_| cast_error),
                 Value::Null => Ok(Value::Null.into()),
-                _ => Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Value),
-                    format_smolstr!("{self:?} into unsigned"),
-                )),
+                _ => Err(cast_error),
             },
         }
     }

@@ -192,7 +192,7 @@ update_queries.test_invalid = function()
     _, err = api:call("sbroad.execute", {
         [[ update "testing_space" set "product_units" = 'hello']], {}
     })
-    t.assert_str_contains(tostring(err), "(FailedTo(Serialize, Some(Value)")
+    t.assert_str_contains(tostring(err), "Failed to cast 'hello' to integer.")
 
     -- table name can't specified on the left side of update
     _, err = api:call("sbroad.execute", {
