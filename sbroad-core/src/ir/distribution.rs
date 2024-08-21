@@ -177,9 +177,7 @@ impl Distribution {
             ) => Distribution::Any,
             (Distribution::Global, Distribution::Global) => Distribution::Global,
             (Distribution::Single, _) | (_, Distribution::Single) => {
-                return Err(SbroadError::Invalid(
-                    Entity::Distribution,
-                    Some(format_smolstr!("union child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
+                panic!("Union (all) child has unexpected distribution Single. Left: {left:?}, right: {right:?}.");
             }
             (
                 Distribution::Segment {
@@ -199,8 +197,7 @@ impl Distribution {
                     Distribution::Segment { keys: keys.into() }
                 }
             }
-        };
-        Ok(dist)
+        }
     }
 
     /// Calculate a new distribution for the `Except` output tuple.
@@ -209,9 +206,7 @@ impl Distribution {
             (Distribution::Global, _) => right.clone(),
             (_, Distribution::Global) => left.clone(),
             (Distribution::Single, _) | (_, Distribution::Single) => {
-                return Err(SbroadError::Invalid(
-                    Entity::Distribution,
-                    Some(format_smolstr!("union/except child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
+                panic!("Except child has unexpected distribution Single. Left: {left:?}, right: {right:?}");
             }
             (Distribution::Any, _) | (_, Distribution::Any) => Distribution::Any,
             (
@@ -232,20 +227,17 @@ impl Distribution {
                     Distribution::Segment { keys: keys.into() }
                 }
             }
-        };
-        Ok(dist)
+        }
     }
 
     /// Calculate a new distribution for the tuple combined from two different tuples.
-    fn join(left: &Distribution, right: &Distribution) -> Result<Distribution, SbroadError> {
-        let dist = match (left, right) {
+    fn join(left: &Distribution, right: &Distribution) -> Distribution {
+        match (left, right) {
             (Distribution::Any, Distribution::Any) => Distribution::Any,
             (Distribution::Single, Distribution::Global | Distribution::Single)
             | (Distribution::Global, Distribution::Single) => Distribution::Single,
             (Distribution::Single, _) | (_, Distribution::Single) => {
-                return Err(SbroadError::Invalid(
-                    Entity::Distribution,
-                    Some(format_smolstr!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
+                panic!("Join child has unexpected distribution Single. Left: {left:?}, right: {right:?}");
             }
             (Distribution::Global, Distribution::Global) => {
                 // This case is handled by `dist_from_subqueries`.
@@ -277,17 +269,7 @@ impl Distribution {
                     Distribution::Segment { keys: keys.into() }
                 }
             }
-        };
-        Ok(dist)
-    }
-
-    #[must_use]
-    pub fn is_unknown(&self) -> bool {
-        if let Distribution::Any = self {
-            return true;
         }
-
-        false
     }
 }
 
@@ -473,13 +455,8 @@ impl Plan {
         // output.
         let children = self.get_relational_children(proj_id)?;
         let ref_info = ReferenceInfo::new(output_id, self, &children)?;
-        if let ReferredNodes::Single(child_id) = ref_info.referred_children {
-            let child_dist =
-                self.dist_from_child(child_id, &ref_info.child_column_to_parent_col)?;
-            self.set_dist(output_id, child_dist)?;
-        } else {
-            return Err(SbroadError::Invalid(Entity::ReferredNodes, None));
-        }
+        let child_dist = self.dist_from_child(child_id, &ref_info.child_column_to_parent_col)?;
+        self.set_dist(output_id, child_dist)?;
 
         Ok(())
     }
@@ -550,14 +527,8 @@ impl Plan {
                 })
             });
             if all_found {
-                if let MutExpression::Row(Row {
-                    ref mut distribution,
-                    ..
-                }) = self.get_mut_expression_node(row_id)?
-                {
-                    let keys: HashSet<Key, RepeatableState> = collection! { new_key };
-                    *distribution = Some(Distribution::Segment { keys: keys.into() });
-                }
+                let keys: HashSet<Key, RepeatableState> = collection! { new_key };
+                self.set_dist(row_id, Distribution::Segment { keys: keys.into() })?;
             }
         } else {
             // Working with all other nodes.
@@ -566,21 +537,12 @@ impl Plan {
             match ref_info.referred_children {
                 ReferredNodes::None => {
                     // Row contains reference that doesn't point to any relational node.
-                    panic!("the row contains no references");
+                    panic!("Row reference doesn't point to relational node.");
                 }
                 ReferredNodes::Single(child_id) => {
                     let suggested_dist =
                         self.dist_from_child(child_id, &ref_info.child_column_to_parent_col)?;
-                    let output = self.get_mut_expression_node(row_id)?;
-                    if let MutExpression::Row(Row {
-                        ref mut distribution,
-                        ..
-                    }) = output
-                    {
-                        if distribution.is_none() {
-                            *distribution = Some(suggested_dist);
-                        }
-                    }
+                    self.set_dist(row_id, suggested_dist)?;
                 }
                 ReferredNodes::Pair(n1, n2) => {
                     // Union, join
@@ -596,7 +558,7 @@ impl Plan {
                     // Reference points to more than two relational children nodes,
                     // that is impossible.
                     panic!(
-                        "Row contains multiple references to the same node (and in is not VALUES)"
+                        "Row contains multiple references to the same node (and it is not VALUES)"
                     );
                 }
             }
@@ -639,7 +601,8 @@ impl Plan {
         let mut suggested_dist = Some(Distribution::Global);
         for sq_idx in required_children_len..children_len {
             let sq_id = self.get_relational_child(node_id, sq_idx)?;
-            match self.get_rel_distribution(sq_id)? {
+            let sq_dist = self.get_rel_distribution(sq_id)?;
+            match sq_dist {
                 Distribution::Segment { .. } => {
                     suggested_dist = Some(Distribution::Any);
                 }
@@ -754,31 +717,16 @@ impl Plan {
 
         let parent = self.get_relation_node(parent_id)?;
         let new_dist = match parent {
-            Relational::Except { .. } => Distribution::except(&left_dist, &right_dist)?,
+            Relational::Except { .. } => Distribution::except(&left_dist, &right_dist),
             Relational::Union { .. } | Relational::UnionAll { .. } => {
-                Distribution::union(&left_dist, &right_dist)?
+                Distribution::union(&left_dist, &right_dist)
             }
-            Relational::Join { .. } => Distribution::join(&left_dist, &right_dist)?,
+            Relational::Join { .. } => Distribution::join(&left_dist, &right_dist),
             _ => {
-                return Err(SbroadError::Invalid(
-                    Entity::Relational,
-                    Some("expected Except, UnionAll or InnerJoin".to_smolstr()),
-                ));
+                panic!("Expected Except, Union(All) or Join node");
             }
         };
-        let expr = self.get_mut_expression_node(row_id)?;
-        if let MutExpression::Row(Row {
-            ref mut distribution,
-            ..
-        }) = expr
-        {
-            *distribution = Some(new_dist);
-        } else {
-            return Err(SbroadError::Invalid(
-                Entity::Expression,
-                Some("expected Row".to_smolstr()),
-            ));
-        };
+        self.set_dist(row_id, new_dist)?;
 
         Ok(())
     }
@@ -817,22 +765,6 @@ impl Plan {
     /// - Node is not of a row type.
     pub fn get_rel_distribution(&self, rel_id: NodeId) -> Result<&Distribution, SbroadError> {
         self.get_distribution(self.get_relation_node(rel_id)?.output())
-    }
-
-    /// Gets distribution of the row node or initializes it if not set.
-    ///
-    /// # Errors
-    /// - node is invalid
-    /// - node is not a row
-    /// - row contains broken references
-    pub fn get_or_init_distribution(
-        &mut self,
-        row_id: NodeId,
-    ) -> Result<&Distribution, SbroadError> {
-        if let Err(SbroadError::Invalid(Entity::Distribution, _)) = self.get_distribution(row_id) {
-            self.set_distribution(row_id)?;
-        }
-        self.get_distribution(row_id)
     }
 }
 
