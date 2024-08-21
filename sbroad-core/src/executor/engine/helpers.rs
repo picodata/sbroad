@@ -224,7 +224,7 @@ pub fn build_optional_binary(mut exec_plan: ExecutionPlan) -> Result<Binary, Sbr
             // SQL is needed only for the motion node subtree.
             // HACK: we don't actually need SQL when the subtree is already
             //       materialized into a virtual table on the router.
-            let already_materialized = exec_plan.get_motion_vtable(motion_id).is_ok();
+            let already_materialized = exec_plan.contains_vtable_for_motion(motion_id);
 
             if already_materialized {
                 OrderedSyntaxNodes::empty()
@@ -935,7 +935,7 @@ pub fn dispatch_by_buckets(
                     if !vtable.get_bucket_index().is_empty() {
                         return Err(SbroadError::Invalid(
                             Entity::Motion,
-                            Some(format_smolstr!("motion ({motion_id:?}) in subtree with distribution Single, but policy is not Full!")),
+                            Some(format_smolstr!("Motion ({motion_id:?}) in subtree with distribution Single, but policy is not Full.")),
                         ));
                     }
                 }
@@ -1656,10 +1656,9 @@ where
     let space_name = plan.dml_node_table(update_id)?.name().clone();
     let mut result = ConsumerResult::default();
     let is_sharded = plan.is_sharded_update(update_id)?;
-    let build_vtable_locally = optional
+    let build_vtable_locally = !optional
         .exec_plan
-        .get_motion_vtable(update_child_id)
-        .is_err();
+        .contains_vtable_for_motion(update_child_id);
     if build_vtable_locally {
         // it is relevant only for local Update.
         if is_sharded {
@@ -1938,10 +1937,9 @@ where
     let builder = init_delete_tuple_builder(plan, delete_id)?;
     let space_name = plan.dml_node_table(delete_id)?.name().clone();
     let mut result = ConsumerResult::default();
-    let build_vtable_locally = optional
+    let build_vtable_locally = !optional
         .exec_plan
-        .get_motion_vtable(delete_child_id)
-        .is_err();
+        .contains_vtable_for_motion(delete_child_id);
     if build_vtable_locally {
         materialize_vtable_locally(runtime, optional, required, delete_child_id)?;
     }
@@ -1996,10 +1994,9 @@ where
     // The same for `UPDATE`.
 
     // Check is we need to execute an SQL subtree (case 1).
-    let build_vtable_locally = optional
+    let build_vtable_locally = !optional
         .exec_plan
-        .get_motion_vtable(insert_child_id)
-        .is_err();
+        .contains_vtable_for_motion(insert_child_id);
     if build_vtable_locally {
         materialize_vtable_locally(runtime, optional, required, insert_child_id)?;
     }

@@ -130,6 +130,11 @@ impl ExecutionPlan {
         self.vtables = Some(VirtualTableMap::new(vtables));
     }
 
+    pub fn contains_vtable_for_motion(&self, motion_id: usize) -> bool {
+        self.get_vtables()
+            .map_or(false, |map| map.contains_key(&motion_id))
+    }
+
     /// Get motion virtual table
     pub fn get_motion_vtable(&self, motion_id: NodeId) -> Result<Rc<VirtualTable>, SbroadError> {
         if let Some(vtable) = self.get_vtables() {
@@ -309,7 +314,7 @@ impl ExecutionPlan {
             Relational::Motion { .. } | Relational::Insert { .. } | Relational::Delete { .. } => {
                 Err(SbroadError::Invalid(
                     Entity::Relational,
-                    Some("invalid motion child node".to_smolstr()),
+                    Some(format_smolstr!("invalid motion child node: {rel:?}.")),
                 ))
             }
         }

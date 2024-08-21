@@ -351,7 +351,8 @@ where
                     MotionPolicy::LocalSegment(_) => {
                         // See `dispatch` method in `src/executor.rs` in order to understand when
                         // `virtual_table` materialized and when not for LocalSegment.
-                        if let Ok(virtual_table) = self.exec_plan.get_motion_vtable(node_id) {
+                        if self.exec_plan.contains_vtable_for_motion(node_id) {
+                            let virtual_table = self.exec_plan.get_motion_vtable(node_id)?;
                             // In a case of `insert .. values ..` it is possible built a local
                             // segmented virtual table right on the router. So, we can use its
                             // buckets from the index to determine the buckets for the insert.
