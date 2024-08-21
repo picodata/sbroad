@@ -216,6 +216,9 @@ fn test_invalid_schema() {
 
     assert_eq!(
         s.load_schema(test_schema).unwrap_err(),
-        SbroadError::NotImplemented(Entity::Type, "invalid_type".into())
+        SbroadError::Invalid(
+            Entity::Type,
+            Some("Unable to transform invalid_type to Type.".into())
+        )
     );
 }

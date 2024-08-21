@@ -148,7 +148,7 @@ impl Type {
             "decimal" => Ok(Type::Decimal),
             "double" => Ok(Type::Double),
             "integer" => Ok(Type::Integer),
-            "number" => Ok(Type::Number),
+            "number" | "numeric" => Ok(Type::Number),
             "scalar" => Ok(Type::Scalar),
             "string" | "text" => Ok(Type::String),
             "uuid" => Ok(Type::Uuid),
@@ -156,26 +156,9 @@ impl Type {
             "array" => Ok(Type::Array),
             "any" => Ok(Type::Any),
             "map" => Ok(Type::Map),
-            v => Err(SbroadError::NotImplemented(Entity::Type, v.to_smolstr())),
-        }
-    }
-
-    /// Type constructor (in a case of the possibly incorrect input -
-    /// VALUES with the first NULL row can return incorrect type in the metadata).
-    ///
-    /// # Errors
-    /// - Invalid type name.
-    pub fn new_from_possibly_incorrect(s: &str) -> Result<Self, SbroadError> {
-        match s.to_string().to_lowercase().as_str() {
-            "boolean" | "decimal" | "double" | "integer" | "number" | "numeric" | "scalar"
-            | "string" | "uuid" | "text" | "unsigned" => Ok(Type::Scalar),
-            "array" => Ok(Type::Array),
-            "map" => Ok(Type::Map),
-            "datetime" => Ok(Type::Datetime),
-            "any" => Ok(Type::Any),
             v => Err(SbroadError::Invalid(
                 Entity::Type,
-                Some(format_smolstr!("Unexpected type {v} met during ")),
+                Some(format_smolstr!("Unable to transform {v} to Type.")),
             )),
         }
     }
