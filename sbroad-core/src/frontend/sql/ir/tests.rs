@@ -3730,7 +3730,7 @@ fn non_existent_references_in_values_do_not_panic() {
 
     assert!(err
         .to_string()
-        .contains("Reference must point to some relational node"));
+        .contains("Reference \"nonexistent_reference\" met under Values that is unsupported. For string literals use single quotes."));
 }
 
 #[test]

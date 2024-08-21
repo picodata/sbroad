@@ -2218,6 +2218,13 @@ where
                         }
                     };
 
+                    if referred_relation_ids.is_empty() {
+                        return Err(SbroadError::Invalid(
+                            Entity::Expression,
+                            Some(format_smolstr!("Reference {first_identifier} met under Values that is unsupported. For string literals use single quotes."))
+                        ))
+                    }
+
                     let plan_left_id = referred_relation_ids
                         .first()
                         .unwrap_or_else(||
