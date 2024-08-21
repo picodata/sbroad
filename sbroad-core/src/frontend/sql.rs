@@ -1690,22 +1690,22 @@ pub enum SelectOp {
 /// * UNION (ALL)
 /// * EXCEPT
 #[derive(Clone)]
-pub enum SelectExpr {
+pub enum SelectSet {
     PlanId {
         plan_id: NodeId,
     },
     Infix {
         op: SelectOp,
-        left: Box<SelectExpr>,
-        right: Box<SelectExpr>,
+        left: Box<SelectSet>,
+        right: Box<SelectSet>,
     },
 }
 
-impl SelectExpr {
+impl SelectSet {
     fn populate_plan(&self, plan: &mut Plan) -> Result<NodeId, SbroadError> {
         match self {
-            SelectExpr::PlanId { plan_id } => Ok(*plan_id),
-            SelectExpr::Infix { op, left, right } => {
+            SelectSet::PlanId { plan_id } => Ok(*plan_id),
+            SelectSet::Infix { op, left, right } => {
                 let left_id = left.populate_plan(plan)?;
                 let right_id = right.populate_plan(plan)?;
                 match op {
@@ -2542,14 +2542,14 @@ where
 // possible select child (Projection, OrderBy)
 pub(crate) type SelectChildPairTranslation = HashMap<(usize, usize), usize>;
 
-fn parse_select_pratt(
+fn parse_select_set_pratt(
     select_pairs: Pairs<Rule>,
     pos_to_plan_id: &SelectChildPairTranslation,
     ast_to_plan: &Translation,
-) -> Result<SelectExpr, SbroadError> {
+) -> Result<SelectSet, SbroadError> {
     SELECT_PRATT_PARSER
         .map_primary(|primary| {
-            let select_expr = match primary.as_rule() {
+            let select_set = match primary.as_rule() {
                 Rule::Select => {
                     let mut pairs = primary.into_inner();
                     let mut select_child_pair =
@@ -2563,14 +2563,14 @@ fn parse_select_pratt(
                     }
                     let ast_id = pos_to_plan_id.get(&select_child_pair.line_col()).unwrap();
                     let id = ast_to_plan.get(*ast_id)?;
-                    SelectExpr::PlanId { plan_id: id }
+                    SelectSet::PlanId { plan_id: id }
                 }
                 Rule::SelectWithOptionalContinuation => {
-                    parse_select_pratt(primary.into_inner(), pos_to_plan_id, ast_to_plan)?
+                    parse_select_set_pratt(primary.into_inner(), pos_to_plan_id, ast_to_plan)?
                 }
                 rule => unreachable!("Select::parse expected atomic rule, found {:?}", rule),
             };
-            Ok(select_expr)
+            Ok(select_set)
         })
         .map_infix(|lhs, op, rhs| {
             let op = match op.as_rule() {
@@ -2579,7 +2579,7 @@ fn parse_select_pratt(
                 Rule::ExceptOp => SelectOp::Except,
                 rule => unreachable!("Expr::parse expected infix operation, found {:?}", rule),
             };
-            Ok(SelectExpr::Infix {
+            Ok(SelectSet::Infix {
                 op,
                 left: Box::new(lhs?),
                 right: Box::new(rhs?),
@@ -2611,8 +2611,8 @@ fn parse_select(
     ast_to_plan: &Translation,
     plan: &mut Plan,
 ) -> Result<NodeId, SbroadError> {
-    let select_expr = parse_select_pratt(select_pairs, pos_to_ast_id, ast_to_plan)?;
-    select_expr.populate_plan(plan)
+    let select_set = parse_select_set_pratt(select_pairs, pos_to_ast_id, ast_to_plan)?;
+    select_set.populate_plan(plan)
 }
 
 fn parse_create_plugin(
