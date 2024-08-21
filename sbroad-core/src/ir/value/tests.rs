@@ -40,19 +40,19 @@ fn uuid() {
     assert_eq!(v_uid.partial_cmp(&Value::String(t_uid_2.to_string())), None);
 }
 
+#[test]
 fn uuid_negative() {
     assert_eq!(
         Value::String("hello".to_string())
             .cast(&Type::Uuid)
             .unwrap_err(),
-        SbroadError::FailedTo(
-            Action::Serialize,
-            Some(Entity::Value),
-            "uuid hello into string: invalid length: expected one of [36, 32], found 5"
-                .to_smolstr()
+        SbroadError::Invalid(
+            Entity::Value,
+            Some(SmolStr::from("Failed to cast 'hello' to uuid."))
         )
     );
 }
+
 #[test]
 fn decimal() {
     assert_eq!(
