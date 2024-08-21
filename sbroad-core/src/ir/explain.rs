@@ -1044,6 +1044,35 @@ impl FullExplain {
         for LevelNode(level, id) in dft_post.iter(top_id) {
             let mut current_node = ExplainTreePart::with_level(level);
             let node = ir.get_relation_node(id)?;
+
+            let mut get_sq_ref_map = |children: &Vec<usize>, req_children_number| {
+                let mut sq_ref_map: SubQueryRefMap = HashMap::with_capacity(children.len());
+
+                // Note that subqueries are added to the stack in the `children` reveresed order
+                // because of the PostOrder traversal. That's why we apply `rev` here.
+                for sq_id in children.iter().skip(req_children_number).rev() {
+                    let sq_node = stack
+                        .pop()
+                        .unwrap_or_else(|| panic!("Rel node failed to pop a sub-query."));
+                    result.subqueries.push(sq_node);
+                    let offset = result.subqueries.len() - 1;
+                    sq_ref_map.insert(*sq_id, offset);
+                }
+
+                let mut children_to_add = Vec::with_capacity(req_children_number);
+                for _ in 0..req_children_number {
+                    children_to_add.push(stack.pop().unwrap_or_else(|| {
+                        panic!("Expected to pop required child for {current_node:?}")
+                    }));
+                }
+                children_to_add.reverse();
+                for child in children_to_add {
+                    current_node.children.push(child);
+                }
+
+                sq_ref_map
+            };
+
             current_node.current = match &node {
                 Relational::Intersect { .. } => {
                     if let (Some(right), Some(left)) = (stack.pop(), stack.pop()) {
@@ -1067,39 +1096,30 @@ impl FullExplain {
                     }
                     Some(ExplainNode::Except)
                 }
-                Relational::GroupBy(GroupByRel {
-                    gr_cols, output, ..
+                Relational::GroupBy(GroupBy {
+                    gr_cols,
+                    output,
+                    children,
+                    ..
                 }) => {
-                    let child = stack.pop().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "Groupby node must have at least one child".into(),
-                        )
-                    })?;
-                    current_node.children.push(child);
-                    let p = GroupBy::new(ir, gr_cols, *output, &HashMap::new())?;
+                    let sq_ref_map = get_sq_ref_map(children, 1);
+                    let p = GroupBy::new(ir, gr_cols, *output, &sq_ref_map)?;
                     Some(ExplainNode::GroupBy(p))
                 }
-                Relational::OrderBy(OrderByRel {
-                    order_by_elements, ..
+                Relational::OrderBy(OrderBy {
+                    order_by_elements,
+                    children,
+                    ..
                 }) => {
-                    let child = stack.pop().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "OrderBy node must have at least one child".into(),
-                        )
-                    })?;
-                    current_node.children.push(child);
-                    let o_b = OrderBy::new(ir, order_by_elements, &HashMap::new())?;
+                    let sq_ref_map = get_sq_ref_map(children, 1);
+                    let o_b = OrderBy::new(ir, order_by_elements, &sq_ref_map)?;
                     Some(ExplainNode::OrderBy(o_b))
                 }
-                Relational::Projection(ProjectionRel { output, .. }) => {
-                    // TODO: change this logic when we'll enable sub-queries in projection
-                    let child = stack.pop().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "Projection node must have exactly one child".into(),
-                        )
-                    })?;
-                    current_node.children.push(child);
-                    let p = Projection::new(ir, *output, &HashMap::new())?;
+                Relational::Projection(Projection {
+                    output, children, ..
+                }) => {
+                    let sq_ref_map = get_sq_ref_map(children, 1);
+                    let p = Projection::new(ir, *output, &sq_ref_map)?;
                     Some(ExplainNode::Projection(p))
                 }
                 Relational::ScanRelation(ScanRelation {
@@ -1125,30 +1145,8 @@ impl FullExplain {
                 })
                 | Relational::Having(Having {
                     children, filter, ..
-                }) => {
-                    let mut sq_ref_map: SubQueryRefMap = HashMap::with_capacity(children.len() - 1);
-                    if let Some((_, other)) = children.split_first() {
-                        for sq_id in other.iter().rev() {
-                            let sq_node = stack.pop().ok_or_else(|| {
-                                SbroadError::UnexpectedNumberOfValues(
-                                    "Selection node failed to pop a sub-query.".into(),
-                                )
-                            })?;
-                            result.subqueries.push(sq_node);
-                            let offset = result.subqueries.len() - 1;
-                            sq_ref_map.insert(*sq_id, offset);
-                        }
-                        let child = stack.pop().ok_or_else(|| {
-                            SbroadError::UnexpectedNumberOfValues(
-                                "Selection node must have exactly one child".into(),
-                            )
-                        })?;
-                        current_node.children.push(child);
-                    } else {
-                        return Err(SbroadError::UnexpectedNumberOfValues(
-                            "Selection node doesn't have any children".into(),
-                        ));
-                    }
+                } => {
+                    let sq_ref_map = get_sq_ref_map(children, 1);
                     let filter_id = ir.undo.get_oldest(filter).map_or_else(|| *filter, |id| *id);
                     let selection = ColExpr::new(ir, filter_id, &sq_ref_map)?;
                     let explain_node = match &node {
@@ -1249,55 +1247,15 @@ impl FullExplain {
                     kind,
                     ..
                 }) => {
-                    if children.len() < 2 {
-                        return Err(SbroadError::UnexpectedNumberOfValues(
-                            "Join must have at least two children".into(),
-                        ));
-                    }
-                    let (_, subquery_ids) = children.split_at(2);
-                    let mut sq_ref_map: SubQueryRefMap = HashMap::with_capacity(children.len() - 2);
-
-                    for sq_id in subquery_ids.iter().rev() {
-                        let sq_node = stack.pop().ok_or_else(|| {
-                            SbroadError::UnexpectedNumberOfValues(
-                                "Join node failed to pop a sub-query.".into(),
-                            )
-                        })?;
-                        result.subqueries.push(sq_node);
-                        let offset = result.subqueries.len() - 1;
-                        sq_ref_map.insert(*sq_id, offset);
-                    }
-
-                    if let (Some(right), Some(left)) = (stack.pop(), stack.pop()) {
-                        current_node.children.push(left);
-                        current_node.children.push(right);
-                    } else {
-                        return Err(SbroadError::UnexpectedNumberOfValues(
-                            "Join node must have exactly two children".into(),
-                        ));
-                    }
-
+                    let sq_ref_map = get_sq_ref_map(children, 2);
                     let condition = ColExpr::new(ir, *condition, &sq_ref_map)?;
                     Some(ExplainNode::InnerJoin(InnerJoin {
                         condition,
                         kind: kind.clone(),
                     }))
                 }
-                Relational::ValuesRow(ValuesRow { data, children, .. }) => {
-                    let mut sq_ref_map: SubQueryRefMap = HashMap::with_capacity(children.len());
-
-                    for sq_id in children.iter().rev() {
-                        let sq_node = stack.pop().ok_or_else(|| {
-                            SbroadError::UnexpectedNumberOfValues(
-                                "Insert node failed to pop a sub-query.".into(),
-                            )
-                        })?;
-
-                        result.subqueries.push(sq_node);
-                        let offset = result.subqueries.len() - 1;
-                        sq_ref_map.insert(*sq_id, offset);
-                    }
-
+                Relational::ValuesRow { data, children, .. } => {
+                    let sq_ref_map = get_sq_ref_map(children, 0);
                     let row = ColExpr::new(ir, *data, &sq_ref_map)?;
 
                     Some(ExplainNode::ValueRow(row))
