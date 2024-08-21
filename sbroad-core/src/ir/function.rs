@@ -74,7 +74,7 @@ impl Plan {
             name: function.name.to_smolstr(),
             children,
             feature,
-            func_type: function.func_type.clone(),
+            func_type: function.func_type,
             is_system: function.is_system,
         };
         let func_id = self.nodes.push(func_expr.into());

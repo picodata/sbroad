@@ -1816,7 +1816,7 @@ impl Plan {
     fn get_param_type(&self, param_id: NodeId) -> Result<Option<Type>, SbroadError> {
         let node = self.get_node(param_id)?;
         if let Node::Parameter(ty) = node {
-            return Ok(ty.param_type.clone());
+            return Ok(ty.param_type);
         }
         Err(SbroadError::Invalid(
             Entity::Node,
@@ -1824,10 +1824,10 @@ impl Plan {
         ))
     }
 
-    fn set_param_type(&mut self, param_id: NodeId, ty: &Type) -> Result<(), SbroadError> {
+    fn set_param_type(&mut self, param_id: NodeId, ty: Type) -> Result<(), SbroadError> {
         let node = self.get_mut_node(param_id)?;
         if let MutNode::Parameter(param) = node {
-            param.param_type = Some(ty.clone());
+            param.param_type = Some(ty);
             Ok(())
         } else {
             Err(SbroadError::Invalid(
@@ -1869,11 +1869,11 @@ impl Plan {
             let inferred_type = inferred_types.get(*param_idx).unwrap_or_else(|| {
                 panic!("param idx {param_idx} exceeds params count {params_count}")
             });
-            let client_type = client_types.get(*param_idx).cloned().flatten();
+            let client_type = client_types.get(*param_idx).copied().flatten();
             match (param_type, inferred_type, client_type) {
                 (_, _, Some(client_type)) => {
                     // Client provided an explicit type, no additional checks are required.
-                    inferred_types[*param_idx] = Some(client_type.clone());
+                    inferred_types[*param_idx] = Some(client_type);
                 }
                 (Some(param_type), Some(inferred_type), None) => {
                     if &param_type != inferred_type {
@@ -1881,7 +1881,7 @@ impl Plan {
                         return Err(TypeError::AmbiguousParameterType(
                             *param_idx,
                             param_type,
-                            inferred_type.clone(),
+                            *inferred_type,
                         )
                         .into());
                     }
@@ -1907,7 +1907,7 @@ impl Plan {
         //
         // TODO: Avoid cloning of self.pg_params_map.
         for (node_id, param_idx) in &self.pg_params_map.clone() {
-            self.set_param_type(*node_id, &types[*param_idx])?;
+            self.set_param_type(*node_id, types[*param_idx])?;
         }
 
         Ok(types)

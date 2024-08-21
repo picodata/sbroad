@@ -509,9 +509,7 @@ pub fn init_local_update_tuple_builder(
                 commands.push(TupleBuilderCommand::UpdateColToPos(*table_pos, *tuple_pos));
             } else {
                 commands.push(TupleBuilderCommand::UpdateColToCastedPos(
-                    *table_pos,
-                    *tuple_pos,
-                    rel_type.clone(),
+                    *table_pos, *tuple_pos, *rel_type,
                 ));
             }
         }
@@ -548,10 +546,7 @@ pub fn init_local_update_tuple_builder(
             if rel_type == vtable_type {
                 commands.push(TupleBuilderCommand::TakePosition(*pk_pos));
             } else {
-                commands.push(TupleBuilderCommand::TakeAndCastPosition(
-                    *pk_pos,
-                    rel_type.clone(),
-                ));
+                commands.push(TupleBuilderCommand::TakeAndCastPosition(*pk_pos, *rel_type));
             }
         }
         return Ok(commands);
@@ -619,8 +614,7 @@ pub fn init_insert_tuple_builder(
                 commands.push(TupleBuilderCommand::TakePosition(tuple_pos));
             } else {
                 commands.push(TupleBuilderCommand::TakeAndCastPosition(
-                    tuple_pos,
-                    rel_type.clone(),
+                    tuple_pos, *rel_type,
                 ));
             }
         } else {
@@ -739,8 +733,7 @@ fn init_sharded_update_tuple_builder(
                 commands.push(TupleBuilderCommand::TakePosition(tuple_pos));
             } else {
                 commands.push(TupleBuilderCommand::TakeAndCastPosition(
-                    tuple_pos,
-                    rel_type.clone(),
+                    tuple_pos, *rel_type,
                 ));
             }
         } else {

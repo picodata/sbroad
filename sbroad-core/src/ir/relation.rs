@@ -29,7 +29,7 @@ const DEFAULT_VALUE: Value = Value::Null;
 
 /// Supported column types, which is used in a schema only.
 /// This `Type` is derived from the result's metadata.
-#[derive(Serialize, Default, Deserialize, PartialEq, Hash, Debug, Eq, Clone)]
+#[derive(Serialize, Default, Deserialize, PartialEq, Hash, Debug, Eq, Clone, Copy)]
 pub enum Type {
     Any,
     Map,

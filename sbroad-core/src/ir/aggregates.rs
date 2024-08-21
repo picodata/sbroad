@@ -300,7 +300,7 @@ impl SimpleAggregate {
         &self,
         parent: NodeId,
         plan: &mut Plan,
-        fun_type: &RelType,
+        fun_type: RelType,
         mut position_kinds: Vec<PositionKind>,
         is_distinct: bool,
     ) -> Result<NodeId, SbroadError> {
@@ -315,7 +315,7 @@ impl SimpleAggregate {
                 // projection has only one child
                 targets: Some(vec![0]),
                 position,
-                col_type: fun_type.clone(),
+                col_type: fun_type,
                 asterisk_source: None,
             };
             let ref_id = plan.nodes.push(ref_node.into());

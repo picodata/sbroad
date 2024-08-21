@@ -141,7 +141,7 @@ impl EqClassRef {
             self.parent,
             self.targets.clone(),
             self.position,
-            self.col_type.clone(),
+            self.col_type,
             self.asterisk_source.clone(),
         );
         plan.nodes.add_row(vec![id], None)

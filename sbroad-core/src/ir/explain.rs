@@ -267,7 +267,7 @@ impl ColExpr {
                         name.clone(),
                         args,
                         feature.clone(),
-                        func_type.clone(),
+                        *func_type,
                         *is_aggr,
                     );
                     stack.push((func_expr, id));

@@ -468,7 +468,7 @@ impl Plan {
                     )),
                 )
             })?;
-            let col_type = col.r#type.clone();
+            let col_type = col.r#type;
             let node = Reference {
                 // It will be updated using `replace_parent_in_subtree`
                 // in the end of the function.
@@ -718,7 +718,7 @@ impl Plan {
         for (pos, col) in rel.columns.iter().enumerate() {
             let r_id = self
                 .nodes
-                .add_ref(None, None, pos, col.r#type.clone(), None);
+                .add_ref(None, None, pos, col.r#type, None);
             let col_alias_id = self.nodes.add_alias(&col.name, r_id)?;
             refs.push(col_alias_id);
         }
@@ -754,7 +754,7 @@ impl Plan {
         if let Some(rel) = self.relations.get(table) {
             let mut refs: Vec<NodeId> = Vec::with_capacity(rel.columns.len());
             for (pos, col) in rel.columns.iter().enumerate() {
-                let r_id = nodes.add_ref(None, None, pos, col.r#type.clone(), None);
+                let r_id = nodes.add_ref(None, None, pos, col.r#type, None);
                 let col_alias_id = nodes.add_alias(&col.name, r_id)?;
                 refs.push(col_alias_id);
             }

@@ -1644,7 +1644,7 @@ impl Plan {
                 let final_expr = info.aggr.create_final_aggregate_expr(
                     parent,
                     self,
-                    &fun_type,
+                    fun_type,
                     pos_kinds,
                     info.is_distinct,
                 )?;

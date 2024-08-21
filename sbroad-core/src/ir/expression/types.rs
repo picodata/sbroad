@@ -22,7 +22,7 @@ impl Plan {
             )),
             // Parameter nodes must recalculate their type during
             // binding (see `bind_params` function).
-            Node::Parameter(ty) => Ok(ty.param_type.clone().unwrap_or(Type::Scalar)),
+            Node::Parameter(ty) => Ok(ty.param_type.unwrap_or(Type::Scalar)),
             Node::Ddl(_) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("DDL node has no type".to_smolstr()),
@@ -127,7 +127,7 @@ impl Expression<'_> {
             Expression::Cast(Cast { to, .. }) => Ok(to.as_relation_type()),
             Expression::Trim(_) | Expression::Concat(_) => Ok(Type::String),
             Expression::Constant(Constant { value, .. }) => Ok(value.get_type()),
-            Expression::Reference(Reference { col_type, .. }) => Ok(col_type.clone()),
+            Expression::Reference(Reference { col_type, .. }) => Ok(*col_type),
             Expression::Row(Row { list, .. }) => {
                 if let (Some(expr_id), None) = (list.first(), list.get(1)) {
                     let expr = plan.get_expression_node(*expr_id)?;
@@ -151,7 +151,7 @@ impl Expression<'_> {
                     let expr = plan.get_expression_node(*expr_id)?;
                     expr.calculate_type(plan)
                 } else {
-                    Ok(func_type.clone())
+                    Ok(*func_type)
                 }
             }
             Expression::CountAsterisk(_) => Ok(Type::Integer),
