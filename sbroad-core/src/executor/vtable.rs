@@ -585,18 +585,9 @@ impl VirtualTable {
     /// # Errors
     /// - Failed to create tuple
     pub fn to_output(&mut self, motion_aliases: &[SmolStr]) -> Result<Box<dyn Any>, SbroadError> {
-        // In case we form `ProducerResult` by hand (in case Motion is a top node of the plan)
-        // we have alias names with redundant quotes.
-        let fix_double_quotes = |s: &SmolStr| {
-            if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
-                String::from(&s.clone()[1..s.len() - 1])
-            } else {
-                format_smolstr!("\"{}\"", s).to_string()
-            }
-        };
         let mut metadata = Vec::with_capacity(self.columns.len());
         for (col, alias) in self.columns.iter().zip(motion_aliases.iter()) {
-            let meta_column = MetadataColumn::new(fix_double_quotes(alias), col.r#type.to_string());
+            let meta_column = MetadataColumn::new(alias.to_string(), col.r#type.to_string());
             metadata.push(meta_column);
         }
 
