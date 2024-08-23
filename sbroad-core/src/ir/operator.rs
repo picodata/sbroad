@@ -910,7 +910,6 @@ impl Plan {
         child_id: NodeId,
         policy: &MotionPolicy,
         program: Program,
-        need_parentheses: bool,
     ) -> Result<NodeId, SbroadError> {
         let child_rel_node = self.get_relation_node(child_id)?;
         let alias = match child_rel_node {
@@ -952,7 +951,6 @@ impl Plan {
             policy: policy.clone(),
             program,
             output,
-            need_parentheses,
         };
         let motion_id = self.add_relational(motion.into())?;
         self.replace_parent_in_subtree(output, None, Some(motion_id))?;

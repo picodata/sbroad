@@ -610,21 +610,7 @@ impl Plan {
                 if let MotionPolicy::None = policy {
                     children_with_motions.push(child);
                 } else {
-                    // Notes on NOT covering VTable read with parentheses:
-                    // * CTE scan will cover vtable scan itself
-                    // * Union [All] and Except don't require them
-                    let parent_rel_node = self.get_relation_node(parent_id)?;
-                    let need_parentheses = !matches!(parent_rel_node, Relational::Union { .. })
-                        && !matches!(parent_rel_node, Relational::ScanCte { .. })
-                        && !matches!(parent_rel_node, Relational::Except { .. })
-                        && !matches!(parent_rel_node, Relational::UnionAll { .. });
-
-                    children_with_motions.push(self.add_motion(
-                        child,
-                        policy,
-                        program,
-                        need_parentheses,
-                    )?);
+                    children_with_motions.push(self.add_motion(child, policy, program)?);
                 }
             } else {
                 children_with_motions.push(child);
@@ -2323,10 +2309,6 @@ impl Plan {
                         id,
                         &MotionPolicy::Full,
                         Program::new(vec![MotionOpcode::RemoveDuplicates]),
-                        // Query like
-                        // `... union (...)`
-                        // in not allowed.
-                        false,
                     )?;
                     old_new.insert(id, new_top_id);
                 }

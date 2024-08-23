@@ -196,7 +196,6 @@ nodes:
                     0
           program: [ReshardIfNeeded]
           output: 29
-          need_parentheses: true
 relations:
   tables:
     t1:

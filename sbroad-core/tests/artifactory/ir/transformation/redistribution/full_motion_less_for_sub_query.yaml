@@ -185,7 +185,6 @@ nodes:
           policy: Full
           program: [ReshardIfNeeded]
           output: 29
-          need_parentheses: true
 relations:
   tables:
     t2:

@@ -568,7 +568,9 @@ impl<'p> SyntaxPlan<'p> {
             panic!("Expected plan syntax node");
         };
         if *id != plan_id {
-            // If it is a motion and we need its child instead.
+            // There are some nodes that leave their children on stack instead of themselves. E.g.:
+            // * Motion with policy Local which doesn't pop its children (see `add_motion`)
+            // * Row which references SubQuery (and leaves it on the stack instead of itself)
             let plan = self.plan.get_ir_plan();
             let node = plan.get_node(plan_id).expect("node in the plan must exist");
             match node {
@@ -599,9 +601,120 @@ impl<'p> SyntaxPlan<'p> {
 
     /// Pop syntax node identifier from the stack with a check, that the popped syntax
     /// node wraps an expected plan node.
-    fn pop_from_stack(&mut self, plan_id: NodeId) -> usize {
+    fn pop_from_stack(&mut self, plan_id: NodeId, parent_id: NodeId) -> usize {
         let sn_id = self.nodes.stack.pop().expect("stack must be non-empty");
         self.check_plan_node(sn_id, plan_id);
+
+        let requested_plan_node = self
+            .plan
+            .get_ir_plan()
+            .get_node(plan_id)
+            .expect("Plan node expected for popping.");
+
+        if let Node::Relational(Relational::Motion { children, .. }) = requested_plan_node {
+            let motion_child_id = children.first();
+            let motion_to_fix_id = if let Some(motion_child_id) = motion_child_id {
+                let motion_child_node = self
+                    .plan
+                    .get_ir_plan()
+                    .get_node(*motion_child_id)
+                    .expect("motion child id is incorrect");
+                if matches!(
+                    motion_child_node,
+                    Node::Relational(Relational::Motion { .. })
+                ) {
+                    *motion_child_id
+                } else {
+                    plan_id
+                }
+            } else {
+                plan_id
+            };
+
+            let motion_to_fix_node = self
+                .plan
+                .get_ir_plan()
+                .get_relation_node(motion_to_fix_id)
+                .expect("Plan node expected for popping.");
+            if let Relational::Motion {
+                policy, program, ..
+            } = motion_to_fix_node
+            {
+                let mut should_cover_with_parentheses = true;
+
+                let empty_table_op = program
+                    .0
+                    .iter()
+                    .find(|op| matches!(op, MotionOpcode::SerializeAsEmptyTable(_)));
+                if matches!(
+                    empty_table_op,
+                    Some(MotionOpcode::SerializeAsEmptyTable(true))
+                ) {
+                    // In `add_motion` we've created an `Inline` node for that case.
+                    return sn_id;
+                }
+                let vtable_alias = if policy.is_local()
+                    && matches!(
+                        empty_table_op,
+                        Some(MotionOpcode::SerializeAsEmptyTable(false))
+                    ) {
+                    // We don't want to generate a `SyntaxData::VTable` node
+                    // in case of Local policy with empty_table_op.
+                    // See `add_motion` function for details.
+                    return sn_id;
+                } else {
+                    let vtable = self
+                        .plan
+                        .get_motion_vtable(motion_to_fix_id)
+                        .expect("motion virtual table");
+                    vtable.get_alias().cloned()
+                };
+
+                let parent_node = self
+                    .plan
+                    .get_ir_plan()
+                    .get_node(parent_id)
+                    .expect("Motion parent plan node expected.");
+                if let Node::Relational(rel_node) = parent_node {
+                    should_cover_with_parentheses = !matches!(
+                        rel_node,
+                        Relational::Union { .. }
+                            | Relational::UnionAll { .. }
+                            | Relational::Except { .. }
+                            | Relational::ScanCte { .. }
+                            | Relational::Limit { .. }
+                    );
+
+                    if !should_cover_with_parentheses {
+                        assert!(
+                            vtable_alias.is_none(),
+                            "Virtual table under Union/UnionAll/Except/CTE must not have an alias."
+                        );
+                    }
+                }
+
+                let arena = &mut self.nodes;
+                let vtable_sn_node = SyntaxNode::new_vtable(motion_to_fix_id);
+                let fixed_children = if should_cover_with_parentheses {
+                    let mut fixed_children: Vec<usize> = vec![
+                        arena.push_sn_non_plan(SyntaxNode::new_open()),
+                        arena.push_sn_non_plan(vtable_sn_node),
+                        arena.push_sn_non_plan(SyntaxNode::new_close()),
+                    ];
+                    if let Some(name) = vtable_alias {
+                        assert!(!name.is_empty(), "Virtual table has an empty alias name");
+                        let alias = SyntaxNode::new_alias(name);
+                        fixed_children.push(arena.push_sn_non_plan(alias));
+                    }
+                    fixed_children
+                } else {
+                    vec![arena.push_sn_non_plan(vtable_sn_node)]
+                };
+                let motion_sn_node = self.nodes.get_mut_sn(sn_id);
+                motion_sn_node.right = fixed_children;
+            }
+        }
+
         sn_id
     }
 
@@ -642,11 +755,13 @@ impl<'p> SyntaxPlan<'p> {
                 Relational::ScanCte { .. } => self.add_cte(id),
                 Relational::ScanSubQuery { .. } => self.add_sq(id),
                 Relational::GroupBy { .. } => self.add_group_by(id),
-                Relational::Selection { .. } | Relational::Having { .. } => self.add_filter(id),
+                Relational::Selection { .. } | Relational::Having { .. } => {
+                    self.add_selection_having(id)
+                }
                 Relational::Except { .. }
                 | Relational::Union { .. }
                 | Relational::UnionAll { .. }
-                | Relational::Intersect { .. } => self.add_set(id),
+                | Relational::Intersect { .. } => self.add_set_rel(id),
                 Relational::ScanRelation { .. } => self.add_scan_relation(id),
                 Relational::Motion { .. } => self.add_motion(id),
                 Relational::ValuesRow { .. } => self.add_values_row(id),
@@ -700,7 +815,7 @@ impl<'p> SyntaxPlan<'p> {
             panic!("expected CTE node");
         };
         let (child, alias) = (*child, alias.clone());
-        let child_sn_id = self.pop_from_stack(child);
+        let child_sn_id = self.pop_from_stack(child, id);
         let arena = &mut self.nodes;
         let children: Vec<usize> = vec![
             arena.push_sn_non_plan(SyntaxNode::new_open()),
@@ -712,7 +827,7 @@ impl<'p> SyntaxPlan<'p> {
         arena.push_sn_plan(sn);
     }
 
-    fn add_filter(&mut self, id: NodeId) {
+    fn add_selection_having(&mut self, id: NodeId) {
         let (plan, rel) = self.prologue_rel(id);
         let (Relational::Selection(Selection {
             children, filter, ..
@@ -728,8 +843,8 @@ impl<'p> SyntaxPlan<'p> {
             Snapshot::Oldest => *plan.undo.get_oldest(filter).map_or_else(|| filter, |id| id),
         };
         let child_plan_id = *children.first().expect("FILTER child");
-        let filter_sn_id = self.pop_from_stack(filter_id);
-        let child_sn_id = self.pop_from_stack(child_plan_id);
+        let filter_sn_id = self.pop_from_stack(filter_id, id);
+        let child_sn_id = self.pop_from_stack(child_plan_id, id);
         let sn = SyntaxNode::new_pointer(id, Some(child_sn_id), vec![filter_sn_id]);
         self.nodes.push_sn_plan(sn);
     }
@@ -748,11 +863,11 @@ impl<'p> SyntaxPlan<'p> {
         let mut syntax_gr_cols = Vec::with_capacity(plan_gr_cols.len());
         // Reuse the same vector to avoid extra allocations
         // (replace plan node ids with syntax node ids).
-        for col_id in &plan_gr_cols {
-            syntax_gr_cols.push(self.pop_from_stack(*col_id));
+        for col_id in &mut sn_gr_cols {
+            *col_id = self.pop_from_stack(*col_id, id);
         }
-        let child_sn_id = self.pop_from_stack(child_plan_id);
-        let mut sn_children = Vec::with_capacity(syntax_gr_cols.len() * 2 - 1);
+        let child_sn_id = self.pop_from_stack(child_plan_id, id);
+        let mut sn_children = Vec::with_capacity(sn_gr_cols.len() * 2 - 1);
         // The columns are in reverse order, so we need to reverse them back.
         if let Some((first, others)) = syntax_gr_cols.split_first() {
             for id in others.iter().rev() {
@@ -784,9 +899,9 @@ impl<'p> SyntaxPlan<'p> {
         };
         let inner_plan_id = *children.get(1).expect("JOIN inner child");
         let outer_plan_id = *children.first().expect("JOIN outer child");
-        let cond_sn_id = self.pop_from_stack(cond_plan_id);
-        let inner_sn_id = self.pop_from_stack(inner_plan_id);
-        let outer_sn_id = self.pop_from_stack(outer_plan_id);
+        let cond_sn_id = self.pop_from_stack(cond_plan_id, id);
+        let inner_sn_id = self.pop_from_stack(inner_plan_id, id);
+        let outer_sn_id = self.pop_from_stack(outer_plan_id, id);
         let arena = &mut self.nodes;
         let sn = SyntaxNode::new_pointer(
             id,
@@ -807,7 +922,6 @@ impl<'p> SyntaxPlan<'p> {
             children,
             program,
             output,
-            need_parentheses,
             ..
         }) = motion
         else {
@@ -822,7 +936,7 @@ impl<'p> SyntaxPlan<'p> {
                 // is not valid and should never be generated in runtime, but let's leave
                 // it for testing.
                 let child_plan_id = first_child.expect("MOTION child");
-                let child_sn_id = self.pop_from_stack(child_plan_id);
+                let child_sn_id = self.pop_from_stack(child_plan_id, id);
                 let sn = SyntaxNode::new_pointer(id, Some(child_sn_id), vec![]);
                 self.nodes.push_sn_plan(sn);
                 return;
@@ -863,42 +977,18 @@ impl<'p> SyntaxPlan<'p> {
             }
             return;
         }
-        let vtable = self
-            .plan
-            .get_motion_vtable(id)
-            .expect("motion virtual table");
-
-        let vtable_alias = vtable.get_alias().cloned();
-        let need_parentheses = *need_parentheses;
 
         // Remove motion's child from the stack (if any).
         if let Some(child_id) = first_child {
-            let _ = self.pop_from_stack(child_id);
+            let _ = self.pop_from_stack(child_id, id);
         }
 
         let arena = &mut self.nodes;
 
-        let sn_children = if need_parentheses || vtable_alias.is_some() {
-            let mut children: Vec<usize> = vec![
-                arena.push_sn_non_plan(SyntaxNode::new_open()),
-                arena.push_sn_non_plan(SyntaxNode::new_vtable(id)),
-                arena.push_sn_non_plan(SyntaxNode::new_close()),
-            ];
-
-            if let Some(name) = vtable_alias {
-                assert!(
-                    !name.is_empty(),
-                    "Virtual table {vtable:?} has an empty alias name"
-                );
-                let alias = SyntaxNode::new_alias(name);
-                children.push(arena.push_sn_non_plan(alias));
-            }
-            children
-        } else {
-            vec![arena.push_sn_non_plan(SyntaxNode::new_vtable(id))]
-        };
-
-        let sn = SyntaxNode::new_pointer(id, None, sn_children);
+        // Motion node children will be fixed later based on the parent node
+        // (sometimes Motion Vtable have to be covered with parentheses and
+        // sometimes not).
+        let sn = SyntaxNode::new_pointer(id, None, vec![]);
         arena.push_sn_plan(sn);
     }
 
@@ -921,7 +1011,7 @@ impl<'p> SyntaxPlan<'p> {
                 let mut nodes = [None, None, None];
                 match elem.entity {
                     OrderByEntity::Expression { expr_id } => {
-                        let expr_sn_id = self.pop_from_stack(expr_id);
+                        let expr_sn_id = self.pop_from_stack(expr_id, id);
                         nodes[2] = Some(expr_sn_id);
                     }
                     OrderByEntity::Index { value } => {
@@ -952,7 +1042,7 @@ impl<'p> SyntaxPlan<'p> {
         // Reverse the order of the children back.
         children.reverse();
 
-        let child_sn_id = self.pop_from_stack(child_plan_id);
+        let child_sn_id = self.pop_from_stack(child_plan_id, id);
 
         let sn = SyntaxNode::new_pointer(id, Some(child_sn_id), children);
         self.nodes.push_sn_plan(sn);
@@ -968,8 +1058,8 @@ impl<'p> SyntaxPlan<'p> {
         };
         let child_plan_id = *children.first().expect("PROJECTION child");
         let output = *output;
-        let child_sn_id = self.pop_from_stack(child_plan_id);
-        let row_sn_id = self.pop_from_stack(output);
+        let child_sn_id = self.pop_from_stack(child_plan_id, id);
+        let row_sn_id = self.pop_from_stack(output, id);
         // We don't need the row node itself, only its children. Otherwise we'll produce
         // redundant parentheses between `SELECT` and `FROM`.
         let sn_from_id = self.nodes.push_sn_non_plan(SyntaxNode::new_from());
@@ -1007,7 +1097,7 @@ impl<'p> SyntaxPlan<'p> {
         arena.push_sn_plan(sn);
     }
 
-    fn add_set(&mut self, id: NodeId) {
+    fn add_set_rel(&mut self, id: NodeId) {
         let (_, set) = self.prologue_rel(id);
         let (Relational::Except(Except { left, right, .. })
         | Relational::Union(Union { left, right, .. })
@@ -1017,8 +1107,8 @@ impl<'p> SyntaxPlan<'p> {
             panic!("Expected SET node");
         };
         let (left, right) = (*left, *right);
-        let right_sn_id = self.pop_from_stack(right);
-        let left_sn_id = self.pop_from_stack(left);
+        let right_sn_id = self.pop_from_stack(right, id);
+        let left_sn_id = self.pop_from_stack(left, id);
         let sn = SyntaxNode::new_pointer(id, Some(left_sn_id), vec![right_sn_id]);
         self.nodes.push_sn_plan(sn);
     }
@@ -1033,7 +1123,7 @@ impl<'p> SyntaxPlan<'p> {
         };
         let child_plan_id = *children.first().expect("SUBQUERY child");
         let sq_alias = alias.clone();
-        let child_sn_id = self.pop_from_stack(child_plan_id);
+        let child_sn_id = self.pop_from_stack(child_plan_id, id);
 
         let arena = &mut self.nodes;
         let mut children: Vec<usize> = vec![
@@ -1053,7 +1143,7 @@ impl<'p> SyntaxPlan<'p> {
         let Relational::ValuesRow(ValuesRow { data, .. }) = row else {
             panic!("Expected VALUES ROW node");
         };
-        let data_sn_id = self.pop_from_stack(*data);
+        let data_sn_id = self.pop_from_stack(*data, id);
         let sn = SyntaxNode::new_pointer(id, None, vec![data_sn_id]);
         self.nodes.push_sn_plan(sn);
     }
@@ -1076,7 +1166,7 @@ impl<'p> SyntaxPlan<'p> {
         }
 
         // Consume the output from the stack.
-        let _ = self.pop_from_stack(output_plan_id);
+        let _ = self.pop_from_stack(output_plan_id, id);
 
         let mut nodes = Vec::with_capacity(syntax_children.len() * 2 - 1);
         // Reverse the order of the children back.
@@ -1100,7 +1190,7 @@ impl<'p> SyntaxPlan<'p> {
             panic!("expected LIMIT node");
         };
         let (limit, child) = (*limit, *child);
-        let child_sn_id = self.pop_from_stack(child);
+        let child_sn_id = self.pop_from_stack(child, id);
         let arena = &mut self.nodes;
         let children: Vec<usize> = vec![
             child_sn_id,
@@ -1118,7 +1208,7 @@ impl<'p> SyntaxPlan<'p> {
             panic!("Expected ALIAS node");
         };
         let (child, name) = (*child, name.clone());
-        let child_sn_id = self.pop_from_stack(child);
+        let child_sn_id = self.pop_from_stack(child, id);
         let plan = self.plan.get_ir_plan();
         // Do not generate an alias in SQL when a column has exactly the same name.
         let child_expr = plan
@@ -1162,8 +1252,8 @@ impl<'p> SyntaxPlan<'p> {
             }
             _ => panic!("Expected binary expression node"),
         };
-        let right_sn_id = self.pop_from_stack(right_plan_id);
-        let left_sn_id = self.pop_from_stack(left_plan_id);
+        let right_sn_id = self.pop_from_stack(right_plan_id, id);
+        let left_sn_id = self.pop_from_stack(left_plan_id, id);
         let children = vec![op_sn_id, right_sn_id];
         let sn = SyntaxNode::new_pointer(id, Some(left_sn_id), children);
         self.nodes.push_sn_plan(sn);
@@ -1186,17 +1276,17 @@ impl<'p> SyntaxPlan<'p> {
         let mut right_vec = Vec::with_capacity(1 + when_blocks.len() * 4 + 1);
         right_vec.push(self.nodes.push_sn_non_plan(SyntaxNode::new_end()));
         if let Some(else_expr_id) = else_expr {
-            right_vec.push(self.pop_from_stack(else_expr_id));
+            right_vec.push(self.pop_from_stack(else_expr_id, id));
             right_vec.push(self.nodes.push_sn_non_plan(SyntaxNode::new_else()));
         }
         for (cond_expr_id, res_expr_id) in when_blocks.iter().rev() {
-            right_vec.push(self.pop_from_stack(*res_expr_id));
+            right_vec.push(self.pop_from_stack(*res_expr_id, id));
             right_vec.push(self.nodes.push_sn_non_plan(SyntaxNode::new_then()));
-            right_vec.push(self.pop_from_stack(*cond_expr_id));
+            right_vec.push(self.pop_from_stack(*cond_expr_id, id));
             right_vec.push(self.nodes.push_sn_non_plan(SyntaxNode::new_when()));
         }
         if let Some(search_expr_id) = search_expr {
-            right_vec.push(self.pop_from_stack(search_expr_id));
+            right_vec.push(self.pop_from_stack(search_expr_id, id));
         }
         right_vec.reverse();
         let sn = SyntaxNode::new_pointer(
@@ -1214,7 +1304,7 @@ impl<'p> SyntaxPlan<'p> {
         };
         let to_alias = SmolStr::from(to);
         let child_plan_id = *child;
-        let child_sn_id = self.pop_from_stack(child_plan_id);
+        let child_sn_id = self.pop_from_stack(child_plan_id, id);
         let arena = &mut self.nodes;
         let children = vec![
             arena.push_sn_non_plan(SyntaxNode::new_open()),
@@ -1233,8 +1323,8 @@ impl<'p> SyntaxPlan<'p> {
             panic!("Expected CONCAT node");
         };
         let (left, right) = (*left, *right);
-        let right_sn_id = self.pop_from_stack(right);
-        let left_sn_id = self.pop_from_stack(left);
+        let right_sn_id = self.pop_from_stack(right, id);
+        let left_sn_id = self.pop_from_stack(left, id);
         let children = vec![
             self.nodes.push_sn_non_plan(SyntaxNode::new_concat()),
             right_sn_id,
@@ -1248,7 +1338,7 @@ impl<'p> SyntaxPlan<'p> {
         let Expression::ExprInParentheses(ExprInParentheses { child }) = expr else {
             panic!("Expected expression in parentheses node");
         };
-        let child_sn_id = self.pop_from_stack(*child);
+        let child_sn_id = self.pop_from_stack(*child, id);
         let arena = &mut self.nodes;
         let children = vec![child_sn_id, arena.push_sn_non_plan(SyntaxNode::new_close())];
         let sn = SyntaxNode::new_pointer(
@@ -1304,7 +1394,7 @@ impl<'p> SyntaxPlan<'p> {
             if needs_replacement {
                 // Remove columns from the stack.
                 for child_id in list.iter().rev() {
-                    let _ = self.pop_from_stack(*child_id);
+                    let _ = self.pop_from_stack(*child_id, id);
 
                     // Remove the referred motion from the stack (if any).
                     let expr = plan
@@ -1314,7 +1404,7 @@ impl<'p> SyntaxPlan<'p> {
                         let referred_id = *plan
                             .get_relational_from_reference_node(*child_id)
                             .expect("referred id");
-                        self.pop_from_stack(referred_id);
+                        self.pop_from_stack(referred_id, id);
                     }
                 }
 
@@ -1345,7 +1435,7 @@ impl<'p> SyntaxPlan<'p> {
 
                 // Remove columns from the stack.
                 for child_id in list.iter().rev() {
-                    let _ = self.pop_from_stack(*child_id);
+                    let _ = self.pop_from_stack(*child_id, id);
 
                     // Remove the referred sub-query from the stack (if any).
                     let expr = plan
@@ -1355,7 +1445,7 @@ impl<'p> SyntaxPlan<'p> {
                         let referred_id = *plan
                             .get_relational_from_reference_node(*child_id)
                             .expect("referred id");
-                        sq_sn_id = Some(self.pop_from_stack(referred_id));
+                        sq_sn_id = Some(self.pop_from_stack(referred_id, id));
                     }
                 }
 
@@ -1371,10 +1461,10 @@ impl<'p> SyntaxPlan<'p> {
         children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_close()));
         if let Some((first, others)) = list.split_first() {
             for child_id in others.iter().rev() {
-                children.push(self.pop_from_stack(*child_id));
+                children.push(self.pop_from_stack(*child_id, id));
                 children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_comma()));
             }
-            children.push(self.pop_from_stack(*first));
+            children.push(self.pop_from_stack(*first, id));
         }
         children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_open()));
         // Need to reverse the order of the children back.
@@ -1401,10 +1491,10 @@ impl<'p> SyntaxPlan<'p> {
         nodes.push(self.nodes.push_sn_non_plan(SyntaxNode::new_close()));
         if let Some((first, others)) = args.split_first() {
             for child_id in others.iter().rev() {
-                nodes.push(self.pop_from_stack(*child_id));
+                nodes.push(self.pop_from_stack(*child_id, id));
                 nodes.push(self.nodes.push_sn_non_plan(SyntaxNode::new_comma()));
             }
-            nodes.push(self.pop_from_stack(*first));
+            nodes.push(self.pop_from_stack(*first, id));
         }
         if let Some(FunctionFeature::Distinct) = feature {
             nodes.push(self.nodes.push_sn_non_plan(SyntaxNode::new_distinct()));
@@ -1430,10 +1520,10 @@ impl<'p> SyntaxPlan<'p> {
         let mut need_from = false;
 
         // Syntax nodes on the stack are in the reverse order.
-        let target_sn_id = self.pop_from_stack(target);
+        let target_sn_id = self.pop_from_stack(target, id);
         let mut pattern_sn_id = None;
         if let Some(pattern) = pattern {
-            pattern_sn_id = Some(self.pop_from_stack(pattern));
+            pattern_sn_id = Some(self.pop_from_stack(pattern, id));
             need_from = true;
         }
 
@@ -1475,7 +1565,7 @@ impl<'p> SyntaxPlan<'p> {
         let operator_node_id = self
             .nodes
             .push_sn_non_plan(SyntaxNode::new_operator(&format!("{op}")));
-        let child_sn_id = self.pop_from_stack(child);
+        let child_sn_id = self.pop_from_stack(child, id);
         // Bool::Or operator already covers itself with parentheses, that's why we
         // don't have to cover it here.
         let sn = if op == Unary::Not && is_and {
