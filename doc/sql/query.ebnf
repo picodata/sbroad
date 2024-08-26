@@ -16,7 +16,7 @@ select      ::= 'SELECT' 'DISTINCT'? projection (',' projection)* 'FROM' scan
                 ('HAVING' expression)?
                 ('ORDER' 'BY' expression ('ASC' | 'DESC')? (',' expression ('ASC' | 'DESC')?)*)?
                 (('UNION' 'ALL'? | 'EXCEPT' 'DISTINCT'?) select)?
-                (LIMIT (unsigned | "ALL" | "NULL"))?
+                ('LIMIT' (unsigned | 'ALL' | 'NULL'))?
 projection  ::= (table '.')? '*' | expression (('AS')? name)? | aggregate
 scan        ::= (table | '(' (query | values) ')') ('AS'? name)?
 expression  ::= ('NOT'* (
@@ -25,11 +25,10 @@ expression  ::= ('NOT'* (
                     | case
                     | cast
                     | current_date
+                    | substr
                     | to_char
                     | to_date
                     | trim
-                    | substr
-                    | '(' expression ')'
                     | 'NOT'? 'EXISTS' '(' (query | values) ')'
                     | '(' (query | values) ')'
                     | '(' expression (',' expression)* ')'
@@ -44,12 +43,12 @@ expression  ::= ('NOT'* (
                     | 'OR'
                 )
                 expression
-aggregate   ::= ('AVG' | 'COUNT' | 'MAX' | 'MIN' | 'SUM' | 'TOTAL') '(' ('DISTINCT'?  expression) ')'
-               | 'GROUP_CONCAT' '(' expression ','  "'" string "'" ')'
+aggregate   ::= ('AVG' | 'COUNT' | 'MAX' | 'MIN' | 'SUM' | 'TOTAL') '(' ('DISTINCT'? expression) ')'
+               | 'GROUP_CONCAT' '(' expression ',' "'" string "'" ')'
 case        ::= 'CASE' expression?
                 ('WHEN' expression 'THEN' expression)+
                 ('ELSE' expression)? 'END'
-cast        ::= ('CAST' '(' expression 'AS' type ')') | (experssion "::" type)
+cast        ::= 'CAST' '(' expression 'AS' type ')' | expression '::' type
 to_char     ::= 'TO_CHAR' '(' expression ',' format ')'
 to_date     ::= 'TO_DATE' '(' expression ',' format ')'
 trim        ::= 'TRIM' '('
@@ -77,7 +76,7 @@ dml         ::= (call | delete | insert | update)
 call        ::= 'CALL' procedure '(' (literal (',' literal)*)? ')'
 delete      ::= 'DELETE' 'FROM' table ('WHERE' expression)?
 insert      ::= 'INSERT' 'INTO' table ('(' column (',' column)* ')')? (query | values)
-                ('ON' 'CONFLICT' 'DO'  ('NOTHING' | 'REPLACE' | 'FAIL'))?
+                ('ON' 'CONFLICT' 'DO' ('NOTHING' | 'REPLACE' | 'FAIL'))?
 update      ::= 'UPDATE' table 'SET'
                 column '=' expression (',' column '=' expression)*
                 ('FROM' scan)? ('WHERE' expression)?
@@ -110,13 +109,12 @@ grant       ::= 'GRANT' (
 ddl         ::= (alter_procedure | create_index | create_procedure | create_table
                 | drop_index | drop_procedure | drop_table | alter_system)
                 ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-alter_system ::= ('ALTER' 'SYSTEM'
-                  (
-                   'RESET' ('ALL' | param_name) |
-                   'SET' param_name ('=' | 'TO') ('DEFAULT' | param_value)
-                  )
-                  ('FOR' ('ALL' 'TIERS' | 'TIER' tier))?
-                 )
+alter_system ::= 'ALTER' 'SYSTEM'
+                    (
+                        'RESET' ('ALL' | param_name)
+                        | 'SET' param_name ('=' | 'TO') ('DEFAULT' | param_value)
+                    )
+                    ('FOR' ('ALL' 'TIERS' | 'TIER' tier))?
 alter_procedure ::= 'ALTER' 'PROCEDURE' procedure ('(' type (',' type)* ')')?
                      'RENAME' 'TO' procedure
 create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' index 'ON' table
@@ -158,7 +156,7 @@ create_table   ::= 'CREATE' 'TABLE' table
                        (',' 'PRIMARY' 'KEY' '(' column (',' column)* ')')?
                    ')'
                    ('USING' ('MEMTX' | 'VINYL'))?
-                   (('DISTRIBUTED' (('BY' '(' column (',' column)*  ')' ('IN' 'TIER' tier)?) | 'GLOBALLY'))?)?
+                   (('DISTRIBUTED' (('BY' '(' column (',' column)* ')' ('IN' 'TIER' tier)?) | 'GLOBALLY'))?)?
 create_user    ::= 'CREATE' 'USER' user 'WITH'? 'PASSWORD' "'" password "'"
                    ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))?
 alter_user     ::= 'ALTER' 'USER' user
