@@ -154,6 +154,9 @@ pub enum MotionOpcode {
     ///
     /// Note: currently this opcode is only used for execution of union all having global
     /// child and sharded child.
+    ///
+    /// Note: look at `disable_serialize_as_empty_opcode` to see where we set the flag value
+    /// to `false`.
     SerializeAsEmptyTable(bool),
     RemoveDuplicates,
 }
