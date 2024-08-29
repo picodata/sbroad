@@ -284,7 +284,9 @@ Identifier = @{ DelimitedIdentifier | RegularIdentifier  }
 EmptyQuery = { WHITESPACE* }
 
 Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
-    ExprInfixOp = _{ Between | ArithInfixOp | CmpInfixOp | ConcatInfixOp | And | Or }
+    ExprInfixOp = _{ Like | Escape | Between | ArithInfixOp | CmpInfixOp | ConcatInfixOp | And | Or }
+        Like = { ^"like" }
+        Escape = { ^"escape" }
         Between       = { NotFlag? ~ ^"between" }
         And           = { ^"and" }
         Or            = @{ ^"or" ~ SP }

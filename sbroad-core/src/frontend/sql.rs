@@ -1457,13 +1457,16 @@ fn parse_param<M: Metadata>(
 lazy_static::lazy_static! {
     static ref PRATT_PARSER: PrattParser<Rule> = {
         use pest::pratt_parser::{Assoc::{Left, Right}, Op};
-        use Rule::{Add, And, Between, ConcatInfixOp, Divide, Eq, Gt, GtEq, In, IsNullPostfix, CastPostfix, Lt, LtEq, Multiply, NotEq, Or, Subtract, UnaryNot};
+        use Rule::{Add, And, Between, ConcatInfixOp, Divide, Eq, Escape, Gt, GtEq, In, IsNullPostfix, CastPostfix, Like, Lt, LtEq, Multiply, NotEq, Or, Subtract, UnaryNot};
 
         // Precedence is defined lowest to highest.
         PrattParser::new()
             .op(Op::infix(Or, Left))
             .op(Op::infix(And, Left))
             .op(Op::prefix(UnaryNot))
+            // ESCAPE must be followed by LIKE
+            .op(Op::infix(Escape, Left))
+            .op(Op::infix(Like, Left))
             .op(Op::infix(Between, Left))
             .op(
                 Op::infix(Eq, Right) | Op::infix(NotEq, Right) | Op::infix(NotEq, Right)
@@ -1655,6 +1658,7 @@ enum ParseExpressionInfixOperator {
     InfixBool(Bool),
     InfixArithmetic(Arithmetic),
     Concat,
+    Escape,
 }
 
 #[derive(Clone, Debug)]
@@ -1678,6 +1682,11 @@ enum ParseExpression {
         name: String,
         args: Vec<ParseExpression>,
         feature: Option<FunctionFeature>,
+    },
+    Like {
+        left: Box<ParseExpression>,
+        right: Box<ParseExpression>,
+        escape: Option<Box<ParseExpression>>,
     },
     Row {
         children: Vec<ParseExpression>,
@@ -1911,6 +1920,29 @@ impl ParseExpression {
                 };
                 plan.nodes.push(trim_expr.into())
             }
+            ParseExpression::Like {
+                left,
+                right,
+                escape,
+            } => {
+                let plan_left_id = left.populate_plan(plan, worker)?;
+                let left_covered_with_row = plan.row(plan_left_id)?;
+
+                let plan_right_id = right.populate_plan(plan, worker)?;
+                let right_covered_with_row = plan.row(plan_right_id)?;
+
+                let escape_covered_with_row = if let Some(escape) = escape {
+                    let plan_escape_id = escape.populate_plan(plan, worker)?;
+                    Some(plan.row(plan_escape_id)?)
+                } else {
+                    None
+                };
+                plan.add_like(
+                    left_covered_with_row,
+                    right_covered_with_row,
+                    escape_covered_with_row,
+                )?
+            }
             ParseExpression::FinalBetween {
                 is_not,
                 left,
@@ -2064,6 +2096,9 @@ impl ParseExpression {
                     ParseExpressionInfixOperator::InfixBool(bool) => {
                         plan.add_cond(left_row_id, bool.clone(), right_row_id)?
                     }
+                    ParseExpressionInfixOperator::Escape => {
+                        unreachable!("escape op is not added to AST")
+                    }
                 };
                 if *is_not {
                     plan.add_unary(Unary::Not, op_plan_id)?
@@ -2190,6 +2225,7 @@ fn find_interim_between(mut expr: &mut ParseExpression) -> Option<(&mut ParseExp
     loop {
         match expr {
             ParseExpression::Infix {
+                // TODO: why we handle AND, but don't handle OR?
                 op: ParseExpressionInfixOperator::InfixBool(Bool::And),
                 right,
                 ..
@@ -2208,6 +2244,29 @@ fn find_interim_between(mut expr: &mut ParseExpression) -> Option<(&mut ParseExp
             _ => break None,
         }
     }
+}
+
+fn connect_escape_to_like_node(
+    mut lhs: ParseExpression,
+    rhs: ParseExpression,
+) -> Result<ParseExpression, SbroadError> {
+    let ParseExpression::Like { escape, .. } = &mut lhs else {
+        return Err(SbroadError::Invalid(
+            Entity::Expression,
+            Some(format_smolstr!(
+                "ESCAPE can go only after LIKE expression, got: {:?}",
+                lhs
+            )),
+        ));
+    };
+    if escape.is_some() {
+        return Err(SbroadError::Invalid(
+            Entity::Expression,
+            Some("escape specified twice: expr1 LIKE expr2 ESCAPE expr 3 ESCAPE expr4".into()),
+        ));
+    }
+    *escape = Some(Box::new(rhs));
+    Ok(lhs)
 }
 
 fn cast_type_from_pair(type_pair: Pair<Rule>) -> Result<CastType, SbroadError> {
@@ -2597,6 +2656,13 @@ where
             let op = match op.as_rule() {
                 Rule::And => ParseExpressionInfixOperator::InfixBool(Bool::And),
                 Rule::Or => ParseExpressionInfixOperator::InfixBool(Bool::Or),
+                Rule::Like => {
+                    return Ok(ParseExpression::Like {
+                        left: Box::new(lhs),
+                        right: Box::new(rhs),
+                        escape: None
+                    })
+                },
                 Rule::Between => {
                     let mut op_inner = op.into_inner();
                     is_not = op_inner.next().is_some();
@@ -2606,6 +2672,7 @@ where
                         right: Box::new(rhs),
                     })
                 },
+                Rule::Escape => ParseExpressionInfixOperator::Escape,
                 Rule::Eq => ParseExpressionInfixOperator::InfixBool(Bool::Eq),
                 Rule::NotEq => ParseExpressionInfixOperator::InfixBool(Bool::NotEq),
                 Rule::Lt => ParseExpressionInfixOperator::InfixBool(Bool::Lt),
@@ -2645,6 +2712,9 @@ where
                     *expr = fb;
                     return Ok(lhs);
                 }
+            }
+            if matches!(op, ParseExpressionInfixOperator::Escape) {
+                return connect_escape_to_like_node(lhs, rhs)
             }
 
             Ok(ParseExpression::Infix {

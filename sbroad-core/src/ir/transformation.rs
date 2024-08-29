@@ -287,6 +287,7 @@ impl Plan {
                     }
                     MutExpression::Concat(_)
                     | MutExpression::Constant(_)
+                    | MutExpression::Like(_)
                     | MutExpression::Reference(_)
                     | MutExpression::CountAsterisk(_) => {}
                 }

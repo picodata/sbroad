@@ -910,6 +910,9 @@ mod cast;
 mod concat;
 
 #[cfg(test)]
+mod like;
+
+#[cfg(test)]
 mod empty_motion;
 
 #[cfg(test)]

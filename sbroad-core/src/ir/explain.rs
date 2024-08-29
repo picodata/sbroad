@@ -45,6 +45,7 @@ enum ColExpr {
         Option<Box<ColExpr>>,
     ),
     Concat(Box<ColExpr>, Box<ColExpr>),
+    Like(Box<ColExpr>, Box<ColExpr>, Option<Box<ColExpr>>),
     StableFunction(SmolStr, Vec<ColExpr>, Option<FunctionFeature>, Type, bool),
     Trim(Option<TrimKind>, Option<Box<ColExpr>>, Box<ColExpr>),
     Row(Row),
@@ -107,6 +108,10 @@ impl Display for ColExpr {
             },
             ColExpr::Row(row) => row.to_string(),
             ColExpr::None => String::new(),
+            ColExpr::Like(l, r, escape) => match escape {
+                Some(e) => format!("{l} LIKE {r} ESCAPE {e}"),
+                None => format!("{l} LIKE {r}"),
+            },
         };
 
         write!(f, "{s}")
@@ -227,6 +232,32 @@ impl ColExpr {
                         )
                     })?;
                     let concat_expr = ColExpr::Concat(Box::new(left), Box::new(right));
+                    stack.push((concat_expr, id));
+                }
+                Expression::Like { .. } => {
+                    let escape = Some(
+                        stack
+                            .pop()
+                            .ok_or_else(|| {
+                                SbroadError::UnexpectedNumberOfValues(
+                                    "stack is empty while processing ESCAPE expression"
+                                        .to_smolstr(),
+                                )
+                            })?
+                            .0,
+                    );
+                    let (right, _) = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing right LIKE expression".to_smolstr(),
+                        )
+                    })?;
+                    let (left, _) = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing left LIKE expression".to_smolstr(),
+                        )
+                    })?;
+                    let concat_expr =
+                        ColExpr::Like(Box::new(left), Box::new(right), escape.map(Box::new));
                     stack.push((concat_expr, id));
                 }
                 Expression::Constant(Constant { value }) => {

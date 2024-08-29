@@ -18,7 +18,7 @@ use std::hash::BuildHasher;
 
 use super::node::expression::Expression;
 use super::node::relational::Relational;
-use super::node::Limit;
+use super::node::{Like, Limit};
 
 /// Helper macros to build a hash map or set
 /// from the list of arguments.
@@ -202,6 +202,19 @@ impl Plan {
                 Expression::Cast(_) => writeln!(buf, "Cast")?,
                 Expression::Trim(_) => writeln!(buf, "Trim")?,
                 Expression::Concat(_) => writeln!(buf, "Concat")?,
+                Expression::Like(Like {
+                    left,
+                    right,
+                    escape,
+                }) => {
+                    writeln!(buf, "Like")?;
+                    writeln_with_tabulation(buf, tabulation_number + 1, "Left child")?;
+                    self.formatted_arena_node(buf, tabulation_number + 1, *left)?;
+                    writeln_with_tabulation(buf, tabulation_number + 1, "Right child")?;
+                    self.formatted_arena_node(buf, tabulation_number + 1, *right)?;
+                    writeln_with_tabulation(buf, tabulation_number + 1, "Escape")?;
+                    self.formatted_arena_node(buf, tabulation_number + 1, *escape)?;
+                }
                 Expression::StableFunction(_) => writeln!(buf, "StableFunction")?,
                 Expression::Unary(UnaryExpr { op, child }) => {
                     writeln!(buf, "Unary [op: {op}]")?;

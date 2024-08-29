@@ -11,9 +11,9 @@ use crate::ir::node::expression::{ExprOwned, Expression};
 use crate::ir::node::relational::{MutRelational, RelOwned, Relational};
 use crate::ir::node::{
     Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, Delete, Except,
-    ExprInParentheses, GroupBy, Having, Insert, Intersect, Join, Limit, Motion, Node, NodeAligned,
-    NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation, ScanSubQuery, Selection,
-    StableFunction, Trim, UnaryExpr, Union, UnionAll, Update, Values, ValuesRow,
+    ExprInParentheses, GroupBy, Having, Insert, Intersect, Join, Like, Limit, Motion, Node,
+    NodeAligned, NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation, ScanSubQuery,
+    Selection, StableFunction, Trim, UnaryExpr, Union, UnionAll, Update, Values, ValuesRow,
 };
 use crate::ir::operator::{OrderByElement, OrderByEntity};
 use crate::ir::transformation::redistribution::MotionOpcode;
@@ -174,6 +174,15 @@ impl Plan {
                     map.replace(left);
                     map.replace(right);
                 }
+                ExprOwned::Like(Like {
+                    ref mut left,
+                    ref mut right,
+                    ref mut escape,
+                }) => {
+                    map.replace(left);
+                    map.replace(right);
+                    map.replace(escape);
+                }
                 ExprOwned::Trim(Trim {
                     ref mut pattern,
                     ref mut target,
@@ -317,6 +326,15 @@ impl SubtreeCloner {
             }) => {
                 *left = self.get_new_id(*left)?;
                 *right = self.get_new_id(*right)?;
+            }
+            ExprOwned::Like(Like {
+                ref mut left,
+                ref mut right,
+                ref mut escape,
+            }) => {
+                *left = self.get_new_id(*left)?;
+                *right = self.get_new_id(*right)?;
+                *escape = self.get_new_id(*escape)?;
             }
             ExprOwned::Trim(Trim {
                 ref mut pattern,

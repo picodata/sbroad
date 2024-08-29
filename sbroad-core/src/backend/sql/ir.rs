@@ -342,6 +342,8 @@ impl ExecutionPlan {
                     SyntaxData::Concat => sql.push_str("||"),
                     SyntaxData::Comma => sql.push(','),
                     SyntaxData::Condition => sql.push_str("ON"),
+                    SyntaxData::Escape => sql.push_str("ESCAPE"),
+                    SyntaxData::Like => sql.push_str("LIKE"),
                     SyntaxData::Distinct => sql.push_str("DISTINCT"),
                     SyntaxData::OrderByPosition(index) => sql.push_str(format!("{index}").as_str()),
                     SyntaxData::OrderByType(order_type) => match order_type {
@@ -450,6 +452,7 @@ impl ExecutionPlan {
                                     | Expression::Cast { .. }
                                     | Expression::Case { .. }
                                     | Expression::Concat { .. }
+                                    | Expression::Like { .. }
                                     | Expression::Row { .. }
                                     | Expression::Trim { .. }
                                     | Expression::Unary { .. } => {}

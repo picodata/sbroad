@@ -2,8 +2,8 @@ use crate::errors::SbroadError;
 use crate::ir::expression::ExpressionId;
 use crate::ir::node::expression::Expression;
 use crate::ir::node::{
-    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, ExprInParentheses, NodeId, Reference, Row,
-    StableFunction, Trim, UnaryExpr,
+    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, ExprInParentheses, Like, NodeId,
+    Reference, Row, StableFunction, Trim, UnaryExpr,
 };
 use crate::ir::operator::Bool;
 use crate::ir::transformation::redistribution::BoolOp;
@@ -84,6 +84,14 @@ impl ReferredMap {
                 | Expression::Concat(Concat { left, right, .. }) => referred
                     .get_or_none(*left)
                     .add(referred.get_or_none(*right)),
+                Expression::Like(Like {
+                    escape,
+                    left,
+                    right,
+                }) => referred
+                    .get_or_none(*left)
+                    .add(referred.get_or_none(*right))
+                    .add(referred.get_or_none(*escape)),
                 Expression::Case(Case {
                     search_expr,
                     when_blocks,
@@ -485,7 +493,7 @@ impl EqualityCols {
     ///
     /// # Returns
     /// - `None` in case this join condition does
-    /// not allow Repartition join.  
+    /// not allow Repartition join.
     /// - Otherwise, returns non-empty `EqualityCols` wrapped in `Option`
     pub fn from_join_condition(
         plan: &Plan,

@@ -7,7 +7,7 @@ use crate::{
 
 use super::{
     Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, CountAsterisk,
-    ExprInParentheses, NodeAligned, NodeId, Reference, Row, StableFunction, Trim, UnaryExpr,
+    ExprInParentheses, Like, NodeAligned, NodeId, Reference, Row, StableFunction, Trim, UnaryExpr,
 };
 
 #[allow(clippy::module_name_repetitions)]
@@ -19,6 +19,7 @@ pub enum ExprOwned {
     Cast(Cast),
     Concat(Concat),
     Constant(Constant),
+    Like(Like),
     Reference(Reference),
     Row(Row),
     StableFunction(StableFunction),
@@ -40,6 +41,7 @@ impl From<ExprOwned> for NodeAligned {
             ExprOwned::Concat(concat) => concat.into(),
             ExprOwned::Constant(constant) => constant.into(),
             ExprOwned::CountAsterisk(count) => count.into(),
+            ExprOwned::Like(like) => like.into(),
             ExprOwned::ExprInParentheses(expr) => expr.into(),
             ExprOwned::Reference(reference) => reference.into(),
             ExprOwned::Row(row) => row.into(),
@@ -70,6 +72,7 @@ pub enum Expression<'a> {
     Cast(&'a Cast),
     Concat(&'a Concat),
     Constant(&'a Constant),
+    Like(&'a Like),
     Reference(&'a Reference),
     Row(&'a Row),
     StableFunction(&'a StableFunction),
@@ -89,6 +92,7 @@ pub enum MutExpression<'a> {
     Cast(&'a mut Cast),
     Concat(&'a mut Concat),
     Constant(&'a mut Constant),
+    Like(&'a mut Like),
     Reference(&'a mut Reference),
     Row(&'a mut Row),
     StableFunction(&'a mut StableFunction),
@@ -186,6 +190,7 @@ impl Expression<'_> {
             Expression::Cast(cast) => ExprOwned::Cast((*cast).clone()),
             Expression::Concat(con) => ExprOwned::Concat((*con).clone()),
             Expression::Constant(constant) => ExprOwned::Constant((*constant).clone()),
+            Expression::Like(like) => ExprOwned::Like((*like).clone()),
             Expression::CountAsterisk(count) => ExprOwned::CountAsterisk((*count).clone()),
             Expression::ExprInParentheses(expr_par) => {
                 ExprOwned::ExprInParentheses((*expr_par).clone())

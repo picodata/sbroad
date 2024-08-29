@@ -161,6 +161,7 @@ fn expression_next<'nodes>(iter: &mut impl ExpressionTreeIterator<'nodes>) -> Op
                             }
                         }
                         Expression::Trim { .. } => iter.handle_trim(expr),
+                        Expression::Like { .. } => iter.handle_like(expr),
                         Expression::Case { .. } => iter.handle_case_iter(expr),
                         Expression::Constant { .. }
                         | Expression::Reference { .. }

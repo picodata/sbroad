@@ -217,6 +217,7 @@ fn subtree_next<'plan>(
                 | Expression::Arithmetic { .. }
                 | Expression::Concat { .. } => iter.handle_left_right_children(expr),
                 Expression::Trim { .. } => iter.handle_trim(expr),
+                Expression::Like { .. } => iter.handle_like(expr),
                 Expression::Row(Row { list, .. })
                 | Expression::StableFunction(StableFunction { children: list, .. }) => {
                     let child_step = *iter.get_child().borrow();

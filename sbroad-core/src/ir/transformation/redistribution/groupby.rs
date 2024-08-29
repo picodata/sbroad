@@ -11,7 +11,7 @@ use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::{MutRelational, Relational};
 use crate::ir::node::{
     Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, ExprInParentheses,
-    GroupBy, Having, NodeId, Projection, Reference, Row, StableFunction, Trim, UnaryExpr,
+    GroupBy, Having, Like, NodeId, Projection, Reference, Row, StableFunction, Trim, UnaryExpr,
 };
 use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
@@ -387,6 +387,9 @@ impl Plan {
     ///
     /// # Errors
     /// - invalid [`Expression::Reference`]s in either of subtrees
+    ///
+    /// # Panics
+    /// - never
     pub fn are_aggregate_subtrees_equal(
         &self,
         lhs: NodeId,
@@ -543,6 +546,24 @@ impl Plan {
                         {
                             return Ok(self
                                 .are_aggregate_subtrees_equal(*left_left, *left_right)?
+                                && self
+                                    .are_aggregate_subtrees_equal(*right_left, *right_right)?);
+                        }
+                    }
+                    Expression::Like(Like {
+                        escape: escape_left,
+                        left: left_left,
+                        right: right_left,
+                    }) => {
+                        if let Expression::Like(Like {
+                            left: left_right,
+                            right: right_right,
+                            escape: escape_right,
+                        }) = right
+                        {
+                            return Ok(self
+                                .are_aggregate_subtrees_equal(*escape_left, *escape_right)?
+                                && self.are_aggregate_subtrees_equal(*left_left, *left_right)?
                                 && self
                                     .are_aggregate_subtrees_equal(*right_left, *right_right)?);
                         }

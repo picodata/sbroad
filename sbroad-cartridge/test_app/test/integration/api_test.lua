@@ -697,3 +697,32 @@ g.test_union_operator_works = function ()
         rows = { {1}, {2} },
     })
 end
+
+g.test_like_works = function ()
+    local api = cluster:server("api-1").net_box
+
+    -- all conditions must evaluate to true
+    local r, err = api:call("sbroad.execute", { [[
+        select id from testing_space
+        where name like '123'
+        and name like '1__'
+        and name like '%2_'
+        and '%_%' like '\%\_\%' escape '\'
+        and 'A' || 'a' like '_' || '%'
+        and 'A' || '_' like '_' || '\_' escape '' || '\'
+        and (values ('a')) like (values ('_'))
+        and (values ('_')) like (values ('\_')) escape (values ('\'))
+        and (select name from testing_space) like (select name from testing_space)
+        and '_' like '\_'
+        and '%' like '\%'
+    ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = { {1} },
+    })
+end
+

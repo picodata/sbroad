@@ -217,6 +217,25 @@ impl ReferenceAsteriskSource {
     }
 }
 
+/// Like expressions.
+///
+/// Example: `a like b escape '\'`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct Like {
+    /// Left child id
+    pub left: NodeId,
+    /// Right child id
+    pub right: NodeId,
+    /// Escape child id
+    pub escape: NodeId,
+}
+
+impl From<Like> for NodeAligned {
+    fn from(value: Like) -> Self {
+        Self::Node32(Node32::Like(value))
+    }
+}
+
 /// Reference to the position in the incoming tuple(s).
 /// Uses a relative pointer as a coordinate system:
 /// - relational node (containing this reference)
@@ -999,6 +1018,7 @@ pub enum Node32 {
     ExprInParentheses(ExprInParentheses),
     Unary(UnaryExpr),
     Concat(Concat),
+    Like(Like),
     Bool(BoolExpr),
     Limit(Limit),
     Arithmetic(ArithmeticExpr),
@@ -1022,6 +1042,7 @@ impl Node32 {
             Node32::Cast(cast) => NodeOwned::Expression(ExprOwned::Cast(cast)),
             Node32::Concat(concat) => NodeOwned::Expression(ExprOwned::Concat(concat)),
             Node32::CountAsterisk(count) => NodeOwned::Expression(ExprOwned::CountAsterisk(count)),
+            Node32::Like(like) => NodeOwned::Expression(ExprOwned::Like(like)),
             Node32::Except(except) => NodeOwned::Relational(RelOwned::Except(except)),
             Node32::ExprInParentheses(expr_in_par) => {
                 NodeOwned::Expression(ExprOwned::ExprInParentheses(expr_in_par))

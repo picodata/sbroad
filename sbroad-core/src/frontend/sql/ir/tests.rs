@@ -3927,6 +3927,8 @@ mod insert;
 #[cfg(test)]
 mod join;
 #[cfg(test)]
+mod like;
+#[cfg(test)]
 mod limit;
 #[cfg(test)]
 mod params;

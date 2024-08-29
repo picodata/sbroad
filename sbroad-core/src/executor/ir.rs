@@ -13,8 +13,9 @@ use crate::ir::node::expression::{Expression, MutExpression};
 use crate::ir::node::relational::{MutRelational, RelOwned, Relational};
 use crate::ir::node::{
     Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Delete, ExprInParentheses,
-    GroupBy, Having, Insert, Join, Motion, Node, Node136, NodeId, NodeOwned, OrderBy, Reference,
-    Row, ScanCte, ScanRelation, Selection, StableFunction, Trim, UnaryExpr, Update, ValuesRow,
+    GroupBy, Having, Insert, Join, Like, Motion, Node, Node136, NodeId, NodeOwned, OrderBy,
+    Reference, Row, ScanCte, ScanRelation, Selection, StableFunction, Trim, UnaryExpr, Update,
+    ValuesRow,
 };
 use crate::ir::operator::{OrderByElement, OrderByEntity};
 use crate::ir::relation::SpaceEngine;
@@ -777,6 +778,15 @@ impl ExecutionPlan {
                     }) => {
                         *left = subtree_map.get_id(*left);
                         *right = subtree_map.get_id(*right);
+                    }
+                    ExprOwned::Like(Like {
+                        escape: ref mut escape_id,
+                        ref mut right,
+                        ref mut left,
+                    }) => {
+                        *left = subtree_map.get_id(*left);
+                        *right = subtree_map.get_id(*right);
+                        *escape_id = subtree_map.get_id(*escape_id);
                     }
                     ExprOwned::Trim(Trim {
                         ref mut pattern,

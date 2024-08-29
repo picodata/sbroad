@@ -1,6 +1,9 @@
 //! IR tree traversal module.
 
-use super::{node::expression::Expression, Nodes, Plan};
+use super::{
+    node::{expression::Expression, Like},
+    Nodes, Plan,
+};
 use crate::ir::node::{
     Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, ExprInParentheses, NodeId, Trim, UnaryExpr,
 };
@@ -33,6 +36,26 @@ trait TreeIterator<'nodes> {
             }
             _ => None,
         }
+    }
+
+    fn handle_like(&mut self, expr: Expression) -> Option<NodeId> {
+        let Expression::Like(Like {
+            left,
+            right,
+            escape: escape_id,
+        }) = expr
+        else {
+            panic!("Like expected")
+        };
+        let child_step = *self.get_child().borrow();
+        let res = match child_step {
+            0 => Some(*left),
+            1 => Some(*right),
+            2 => Some(*escape_id),
+            _ => None,
+        };
+        *self.get_child().borrow_mut() += 1;
+        res
     }
 
     fn handle_left_right_children(&mut self, expr: Expression) -> Option<NodeId> {

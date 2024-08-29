@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::ops::Bound::Included;
 
+use super::node::Like;
 use super::{
     distribution, operator, Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant,
     ExprInParentheses, Expression, LevelNode, MutExpression, MutNode, Node, NodeId, Reference,
@@ -256,6 +257,9 @@ impl<'plan> Comparator<'plan> {
     /// # Errors
     /// - invalid [`Expression::Reference`]s in either of subtrees
     /// - invalid children in some expression
+    ///
+    /// # Panics
+    /// - never
     #[allow(clippy::too_many_lines)]
     pub fn are_subtrees_equal(&self, lhs: NodeId, rhs: NodeId) -> Result<bool, SbroadError> {
         let l = self.plan.get_node(lhs)?;
@@ -354,6 +358,22 @@ impl<'plan> Comparator<'plan> {
                         {
                             return Ok(*to_left == *to_right
                                 && self.are_subtrees_equal(*child_left, *child_right)?);
+                        }
+                    }
+                    Expression::Like(Like {
+                        left: left_left,
+                        right: right_left,
+                        escape: escape_left,
+                    }) => {
+                        if let Expression::Like(Like {
+                            left: left_right,
+                            right: right_right,
+                            escape: escape_right,
+                        }) = right
+                        {
+                            return Ok(self.are_subtrees_equal(*escape_left, *escape_right)?
+                                && self.are_subtrees_equal(*left_left, *left_right)?
+                                && self.are_subtrees_equal(*right_left, *right_right)?);
                         }
                     }
                     Expression::Concat(Concat {
@@ -532,6 +552,15 @@ impl<'plan> Comparator<'plan> {
             Expression::Concat(Concat { left, right }) => {
                 self.hash_for_child_expr(*left, depth);
                 self.hash_for_child_expr(*right, depth);
+            }
+            Expression::Like(Like {
+                left,
+                right,
+                escape: escape_id,
+            }) => {
+                self.hash_for_child_expr(*left, depth);
+                self.hash_for_child_expr(*right, depth);
+                self.hash_for_child_expr(*escape_id, depth);
             }
             Expression::Trim(Trim {
                 kind,
@@ -1451,6 +1480,7 @@ impl Plan {
         };
         match expr {
             Expression::Bool(_)
+            | Expression::Like { .. }
             | Expression::Arithmetic(_)
             | Expression::Unary(_)
             | Expression::Constant(Constant {

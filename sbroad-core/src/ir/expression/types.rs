@@ -101,7 +101,9 @@ impl Expression<'_> {
             | Expression::ExprInParentheses(ExprInParentheses { child }) => {
                 plan.get_node_type(*child)
             }
-            Expression::Bool(_) | Expression::Unary(_) => Ok(Type::Boolean),
+            Expression::Bool(_) | Expression::Unary(_) | Expression::Like { .. } => {
+                Ok(Type::Boolean)
+            }
             Expression::Arithmetic(ArithmeticExpr {
                 left, right, op, ..
             }) => {

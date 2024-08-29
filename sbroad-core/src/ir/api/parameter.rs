@@ -3,8 +3,8 @@ use crate::ir::node::block::{Block, MutBlock};
 use crate::ir::node::expression::{Expression, MutExpression};
 use crate::ir::node::relational::{MutRelational, Relational};
 use crate::ir::node::{
-    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, ExprInParentheses, Having, Join, MutNode,
-    Node64, NodeId, Parameter, Procedure, Row, Selection, StableFunction, Trim, UnaryExpr,
+    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, ExprInParentheses, Having, Join, Like,
+    MutNode, Node64, NodeId, Parameter, Procedure, Row, Selection, StableFunction, Trim, UnaryExpr,
     ValuesRow,
 };
 use crate::ir::tree::traversal::{LevelNode, PostOrder};
@@ -267,6 +267,21 @@ impl<'binder> ParamsBinder<'binder> {
                             );
                         }
                     }
+                    Expression::Like(Like {
+                        escape,
+                        left,
+                        right,
+                    }) => {
+                        for param_id in &[*left, *right] {
+                            self.cover_param_with_row(
+                                *param_id,
+                                true,
+                                &mut param_index,
+                                &mut row_ids,
+                            );
+                        }
+                        self.cover_param_with_row(*escape, true, &mut param_index, &mut row_ids);
+                    }
                     Expression::Trim(Trim {
                         ref pattern,
                         ref target,
@@ -477,6 +492,16 @@ impl<'binder> ParamsBinder<'binder> {
                         ref mut left,
                         ref mut right,
                     }) => {
+                        for param_id in [left, right] {
+                            bind_param(param_id, true, &mut param_index);
+                        }
+                    }
+                    MutExpression::Like(Like {
+                        ref mut escape,
+                        ref mut left,
+                        ref mut right,
+                    }) => {
+                        bind_param(escape, true, &mut param_index);
                         for param_id in [left, right] {
                             bind_param(param_id, true, &mut param_index);
                         }

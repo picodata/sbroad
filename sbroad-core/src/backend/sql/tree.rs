@@ -10,7 +10,7 @@ use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::Relational;
 use crate::ir::node::{
     Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Except, ExprInParentheses, GroupBy,
-    Having, Intersect, Join, Limit, Motion, Node, NodeId, OrderBy, Projection, Reference,
+    Having, Intersect, Join, Like, Limit, Motion, Node, NodeId, OrderBy, Projection, Reference,
     ReferenceAsteriskSource, Row, ScanCte, ScanRelation, ScanSubQuery, Selection, StableFunction,
     Trim, UnaryExpr, Union, UnionAll, Values, ValuesRow,
 };
@@ -35,6 +35,10 @@ pub enum SyntaxData {
     Cast,
     // "case"
     Case,
+    // "escape"
+    Escape,
+    // "like"
+    Like,
     // "when"
     When,
     // "then"
@@ -154,6 +158,22 @@ impl SyntaxNode {
     fn new_case() -> Self {
         SyntaxNode {
             data: SyntaxData::Case,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_escape() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Escape,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_like() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Like,
             left: None,
             right: Vec::new(),
         }
@@ -790,6 +810,7 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_parameter(id);
                     self.nodes.push_sn_plan(sn);
                 }
+                Expression::Like { .. } => self.add_like(id),
                 Expression::Reference { .. } | Expression::CountAsterisk { .. } => {
                     let sn = SyntaxNode::new_pointer(id, None, vec![]);
                     self.nodes.push_sn_plan(sn);
@@ -1351,6 +1372,30 @@ impl<'p> SyntaxPlan<'p> {
             self.nodes.push_sn_non_plan(SyntaxNode::new_concat()),
             right_sn_id,
         ];
+        let sn = SyntaxNode::new_pointer(id, Some(left_sn_id), children);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_like(&mut self, id: NodeId) {
+        let (_, expr) = self.prologue_expr(id);
+        let Expression::Like(Like {
+            left,
+            right,
+            escape: escape_id,
+        }) = expr
+        else {
+            panic!("Expected LIKE node");
+        };
+        let (left, right) = (*left, *right);
+        let escape_sn_id = self.pop_from_stack(*escape_id, id);
+        let right_sn_id = self.pop_from_stack(right, id);
+        let left_sn_id = self.pop_from_stack(left, id);
+        let mut children = vec![
+            self.nodes.push_sn_non_plan(SyntaxNode::new_like()),
+            right_sn_id,
+        ];
+        children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_escape()));
+        children.push(escape_sn_id);
         let sn = SyntaxNode::new_pointer(id, Some(left_sn_id), children);
         self.nodes.push_sn_plan(sn);
     }

@@ -46,6 +46,8 @@ use crate::ir::undo::TransformationLog;
 use crate::ir::value::Value;
 use crate::{collection, error, warn};
 
+use self::node::Like;
+
 // TODO: remove when rust version in bumped in module
 #[allow(elided_lifetimes_in_associated_constant)]
 pub mod acl;
@@ -90,6 +92,7 @@ impl Nodes {
                 Node32::Concat(concat) => Node::Expression(Expression::Concat(concat)),
                 Node32::Cast(cast) => Node::Expression(Expression::Cast(cast)),
                 Node32::CountAsterisk(count) => Node::Expression(Expression::CountAsterisk(count)),
+                Node32::Like(like) => Node::Expression(Expression::Like(like)),
                 Node32::Except(except) => Node::Relational(Relational::Except(except)),
                 Node32::ExprInParentheses(expr) => {
                     Node::Expression(Expression::ExprInParentheses(expr))
@@ -208,6 +211,7 @@ impl Nodes {
                     Node32::CountAsterisk(count) => {
                         MutNode::Expression(MutExpression::CountAsterisk(count))
                     }
+                    Node32::Like(like) => MutNode::Expression(MutExpression::Like(like)),
                     Node32::Except(except) => MutNode::Relational(MutRelational::Except(except)),
                     Node32::ExprInParentheses(expr) => {
                         MutNode::Expression(MutExpression::ExprInParentheses(expr))
@@ -1257,6 +1261,30 @@ impl Plan {
         self.nodes.add_bool(left, op, right)
     }
 
+    /// Add Like operator to the plan.
+    ///
+    /// # Errors
+    /// Returns `SbroadError` when the escape pattern is more than 1 char.
+    pub fn add_like(
+        &mut self,
+        left: NodeId,
+        right: NodeId,
+        escape_id: Option<NodeId>,
+    ) -> Result<NodeId, SbroadError> {
+        let escape_id = if let Some(id) = escape_id {
+            id
+        } else {
+            let s_id = self.add_const(Value::String('\\'.into()));
+            self.nodes.add_row(vec![s_id], None)
+        };
+        let node = Like {
+            left,
+            right,
+            escape: escape_id,
+        };
+        Ok(self.nodes.push(node.into()))
+    }
+
     /// Add node covered with parentheses to the plan.
     ///
     /// # Errors
@@ -1539,6 +1567,7 @@ impl Plan {
     /// # Note
     /// This function assumes that parent expression does NOT have two or more
     /// children with the same id. So, if this happens, only one child will be replaced.
+    #[allow(clippy::too_many_lines)]
     pub fn replace_expression(
         &mut self,
         parent_id: NodeId,
@@ -1592,6 +1621,24 @@ impl Plan {
                 }
                 if *right == old_id {
                     *right = new_id;
+                    return Ok(());
+                }
+            }
+            MutExpression::Like(Like {
+                escape,
+                left,
+                right,
+            }) => {
+                if *left == old_id {
+                    *left = new_id;
+                    return Ok(());
+                }
+                if *right == old_id {
+                    *right = new_id;
+                    return Ok(());
+                }
+                if *escape == old_id {
+                    *escape = new_id;
                     return Ok(());
                 }
             }
