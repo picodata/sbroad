@@ -1526,7 +1526,13 @@ struct ExpressionsWorker<'worker, M>
 where
     M: Metadata,
 {
-    subquery_ids_queue: VecDeque<NodeId>,
+    /// Helper map of { sq_pair -> ast_id } used for identifying SQ nodes
+    /// during both general and Pratt parsing.
+    sq_pair_to_ast_ids: &'worker PairToAstIdTranslation<'worker>,
+    /// Map of { sq_ast_id -> sq_plan_id }.
+    /// Used instead of reference to general `map` using during
+    /// parsing in order no to take an immutable reference on it.
+    sq_ast_to_plan_id: Translation,
     /// Vec of BETWEEN expressions met during parsing.
     /// Used later to fix them as soon as we need to resolve double-linking problem
     /// of left expression.
@@ -1568,9 +1574,13 @@ impl<'worker, M> ExpressionsWorker<'worker, M>
 where
     M: Metadata,
 {
-    fn new<'plan: 'worker, 'meta: 'worker>(metadata: &'meta M) -> Self {
+    fn new<'plan: 'worker, 'meta: 'worker>(
+        metadata: &'meta M,
+        sq_pair_to_ast_ids: &'worker PairToAstIdTranslation,
+    ) -> Self {
         Self {
-            subquery_ids_queue: VecDeque::new(),
+            sq_pair_to_ast_ids,
+            sq_ast_to_plan_id: Translation::with_capacity(sq_pair_to_ast_ids.len()),
             subquery_replaces: AHashMap::new(),
             sub_queries_to_fix_queue: VecDeque::new(),
             metadata,
@@ -2433,10 +2443,13 @@ where
                     ParseExpression::PlanId { plan_id: ref_id }
                 }
                 Rule::SubQuery => {
-                    let subquery_plan_id = worker.subquery_ids_queue
-                        .pop_front()
-                        .expect("Corresponding expression subquery is not found");
-                    ParseExpression::SubQueryPlanId { plan_id: subquery_plan_id }
+                    let sq_ast_id = worker
+                        .sq_pair_to_ast_ids
+                        .get(&primary).expect("SQ ast_id must exist for pest pair");
+                    let plan_id = worker
+                        .sq_ast_to_plan_id
+                        .get(*sq_ast_id)?;
+                    ParseExpression::SubQueryPlanId { plan_id }
                 }
                 Rule::Row => {
                     let mut children = Vec::new();
@@ -3036,6 +3049,11 @@ impl<'pairs_map> ParsingPairsMap<'pairs_map> {
     }
 }
 
+/// Hash map of { pair -> ast_id }, where
+/// * pair (key) -- inner pest structure for AST node
+/// * ast_id (value) -- id of our AST node.
+type PairToAstIdTranslation<'i> = HashMap<Pair<'i, Rule>, usize>;
+
 impl AbstractSyntaxTree {
     /// Build an empty AST.
     fn empty() -> Self {
@@ -3062,6 +3080,7 @@ impl AbstractSyntaxTree {
         query: &'query str,
         pairs_map: &mut ParsingPairsMap<'query>,
         pos_to_ast_id: &mut SelectChildPairTranslation,
+        pairs_to_ast_id: &mut PairToAstIdTranslation<'query>,
     ) -> Result<(), SbroadError> {
         let mut command_pair = match ParseTree::parse(Rule::Command, query) {
             Ok(p) => p,
@@ -3129,6 +3148,9 @@ impl AbstractSyntaxTree {
                 }
                 Rule::Projection | Rule::OrderBy => {
                     pos_to_ast_id.insert(stack_node.pair.line_col(), arena_node_id);
+                }
+                Rule::SubQuery => {
+                    pairs_to_ast_id.insert(stack_node.pair.clone(), arena_node_id);
                 }
                 _ => {}
             }
@@ -3269,6 +3291,7 @@ impl AbstractSyntaxTree {
         metadata: &M,
         pairs_map: &mut ParsingPairsMap,
         pos_to_ast_id: &mut SelectChildPairTranslation,
+        sq_pair_to_ast_ids: &PairToAstIdTranslation,
     ) -> Result<Plan, SbroadError>
     where
         M: Metadata,
@@ -3285,7 +3308,7 @@ impl AbstractSyntaxTree {
         // Counter for `Expression::ValuesRow` output column name aliases ("COLUMN_<`col_idx`>").
         // Is it global for every `ValuesRow` met in the AST.
         let mut col_idx: usize = 0;
-        let mut worker = ExpressionsWorker::new(metadata);
+        let mut worker = ExpressionsWorker::new(metadata, sq_pair_to_ast_ids);
         let mut ctes = CTEs::new();
 
         for level_node in dft_post.iter(top) {
@@ -3299,10 +3322,6 @@ impl AbstractSyntaxTree {
                         .expect("could not find first child id in scan node");
                     let rel_child_id_plan = map.get(*rel_child_id_ast)?;
                     let rel_child_node = plan.get_relation_node(rel_child_id_plan)?;
-                    if let Relational::ScanSubQuery(_) = rel_child_node {
-                        // We want `SubQuery` ids to be used only during expressions parsing.
-                        worker.subquery_ids_queue.pop_front();
-                    }
 
                     map.add(id, rel_child_id_plan);
                     if let Some(ast_alias_id) = node.children.get(1) {
@@ -3349,7 +3368,7 @@ impl AbstractSyntaxTree {
                         .expect("child node id is not found among sub-query children.");
                     let plan_child_id = map.get(*ast_child_id)?;
                     let plan_sq_id = plan.add_sub_query(plan_child_id, None)?;
-                    worker.subquery_ids_queue.push_back(plan_sq_id);
+                    worker.sq_ast_to_plan_id.add(id, plan_sq_id);
                     map.add(id, plan_sq_id);
                 }
                 Rule::VTableMaxRows => {
@@ -4305,15 +4324,31 @@ impl Ast for AbstractSyntaxTree {
         // * Add expressions `ParseNode`s into `arena`
         // * Save copy of them into map of { expr_arena_id -> corresponding pair copy }.
         let mut ast_id_to_pairs_map = ParsingPairsMap::new();
+
+        // Helper variables holding mappings useful for parsing.
+        // Move out of `AbstractSyntaxTree` so as not to add a lifetime template arguments.
         let mut pos_to_ast_id: SelectChildPairTranslation = HashMap::new();
+        let mut sq_pair_to_ast_ids: PairToAstIdTranslation = HashMap::new();
+
         let mut ast = AbstractSyntaxTree::empty();
-        ast.fill(query, &mut ast_id_to_pairs_map, &mut pos_to_ast_id)?;
+        ast.fill(
+            query,
+            &mut ast_id_to_pairs_map,
+            &mut pos_to_ast_id,
+            &mut sq_pair_to_ast_ids,
+        )?;
+
         // Empty query.
         if ast.is_empty() {
             return Ok(Plan::empty());
         }
 
-        ast.resolve_metadata(metadata, &mut ast_id_to_pairs_map, &mut pos_to_ast_id)
+        ast.resolve_metadata(
+            metadata,
+            &mut ast_id_to_pairs_map,
+            &mut pos_to_ast_id,
+            &sq_pair_to_ast_ids,
+        )
     }
 }
 
