@@ -389,7 +389,23 @@ g.test_bucket_id_in_join = function()
     })
 end
 
-g.test_uppercase1 = function()
+g.test_lowercase1 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT id FROM "BROKEN"
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "number"},
+        },
+        rows = {},
+    })
+end
+
+g.test_lowercase2 = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("sbroad.execute", { [[
@@ -405,33 +421,17 @@ g.test_uppercase1 = function()
     })
 end
 
-g.test_uppercase2 = function()
+g.test_lowercase3 = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("sbroad.execute", { [[
-        SELECT "id" FROM "BROKEN"
+        SELECT "a" FROM space_t1
     ]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "id", type = "number"},
-        },
-        rows = {},
-    })
-end
-
-g.test_uppercase3 = function()
-    local api = cluster:server("api-1").net_box
-
-    local r, err = api:call("sbroad.execute", { [[
-        SELECT "id" FROM "BROKEN"
-    ]], {} })
-
-    t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "number"},
+            {name = "a", type = "integer"},
         },
         rows = {},
     })
