@@ -2580,7 +2580,7 @@ fn parse_select(
 /// Generate an alias for the unnamed projection expressions.
 #[must_use]
 pub fn get_unnamed_column_alias(pos: usize) -> SmolStr {
-    format_smolstr!("COL_{pos}")
+    format_smolstr!("col_{pos}")
 }
 
 /// Map of { `AbstractSyntaxTree` node id -> parsing pairs copy, corresponding to ast node }.

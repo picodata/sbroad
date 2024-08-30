@@ -206,7 +206,7 @@ fn agg_cte() {
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection (count(("cte"."a"::string))::integer -> "COL_1")
+        r#"projection (count(("cte"."a"::string))::integer -> "col_1")
     scan cte cte($0)
 subquery $0:
 motion [policy: full]

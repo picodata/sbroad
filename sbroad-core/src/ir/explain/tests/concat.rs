@@ -6,7 +6,7 @@ fn concat1_test() {
         r#"SELECT CAST('1' as string) || 'hello' FROM "t1""#,
         &format!(
             "{}\n{}\n{}\n{}\n{}\n",
-            r#"projection (ROW('1'::string::string) || ROW('hello'::string) -> "COL_1")"#,
+            r#"projection (ROW('1'::string::string) || ROW('hello'::string) -> "col_1")"#,
             r#"    scan "t1""#,
             r#"execution options:"#,
             r#"sql_vdbe_max_steps = 45000"#,

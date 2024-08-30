@@ -99,7 +99,7 @@ g.test_cte = function ()
         SELECT count(b) FROM cte
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "COL_1", type = "integer"} })
+    t.assert_items_equals(r["metadata"], { {name = "col_1", type = "integer"} })
     t.assert_items_equals(r["rows"], { {2} })
 
     -- cte in subquery
@@ -221,4 +221,3 @@ g.test_cte = function ()
     t.assert_items_equals(r["metadata"], { {name = "a", type = "unsigned"} })
     t.assert_items_equals(r["rows"], { {1}, {1}, {1} })
 end
-

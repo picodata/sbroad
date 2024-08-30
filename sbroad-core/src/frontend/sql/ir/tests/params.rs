@@ -147,7 +147,7 @@ fn front_param_in_cast() {
     let plan = sql_to_optimized_ir(pattern, vec![Value::from(1_i64)]);
 
     let expected_explain = String::from(
-        r#"projection (1::integer::int -> "COL_1")
+        r#"projection (1::integer::int -> "col_1")
     scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000

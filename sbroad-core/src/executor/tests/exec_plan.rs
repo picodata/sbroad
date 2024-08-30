@@ -327,12 +327,12 @@ GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#
         PatternWithParams::new(
             format!(
                 "{} {} {} {} {} {} {} {}",
-                r#"SELECT ("column_12") || ("column_12") as "COL_1","#,
-                r#"("column_12") * (?) + (sum ("count_37")) as "COL_2", sum ("sum_42") as "COL_3","#,
-                r#"(sum (DISTINCT "column_49")) / (count (DISTINCT "column_46")) as "COL_4","#,
-                r#"group_concat ("group_concat_58", ?) as "COL_5","#,
-                r#"sum (CAST ("sum_42" as double)) / sum (CAST ("count_61" as double)) as "COL_6","#,
-                r#"total ("total_64") as "COL_7", min ("min_67") as "COL_8", max ("max_70") as "COL_9""#,
+                r#"SELECT ("column_12") || ("column_12") as "col_1","#,
+                r#"("column_12") * (?) + (sum ("count_37")) as "col_2", sum ("sum_42") as "col_3","#,
+                r#"(sum (DISTINCT "column_49")) / (count (DISTINCT "column_46")) as "col_4","#,
+                r#"group_concat ("group_concat_58", ?) as "col_5","#,
+                r#"sum (CAST ("sum_42" as double)) / sum (CAST ("count_61" as double)) as "col_6","#,
+                r#"total ("total_64") as "col_7", min ("min_67") as "col_8", max ("max_70") as "col_9""#,
                 r#"FROM (SELECT "sys_op","sum_42","count_37","sum_49","count_51","group_concat_58","count_61","total_64","min_67","max_70" FROM "TMP_test_70")"#,
                 r#"GROUP BY "column_12""#
             ),
@@ -396,7 +396,7 @@ fn exec_plan_subtree_aggregates_no_groupby() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT sum ("count_13") as "COL_1", sum (DISTINCT "column_19") as "COL_2" FROM (SELECT "column_19","count_13" FROM "TMP_test_12")"#.to_string(),
+            r#"SELECT sum ("count_13") as "col_1", sum (DISTINCT "column_19") as "col_2" FROM (SELECT "column_19","count_13" FROM "TMP_test_12")"#.to_string(),
             vec![]
         ));
 }
@@ -617,7 +617,7 @@ fn exec_plan_subtree_count_asterisk() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT sum ("count_13") as "COL_1" FROM (SELECT "count_13" FROM "TMP_test_7")"#
+            r#"SELECT sum ("count_13") as "col_1" FROM (SELECT "count_13" FROM "TMP_test_7")"#
                 .to_string(),
             vec![]
         )
@@ -696,8 +696,8 @@ fn exec_plan_subtree_having() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {}",
-                r#"SELECT ("column_12") || ("column_12") as "COL_1","#,
-                r#"(sum ("count_60")) + (count (DISTINCT "column_64")) as "COL_2" FROM"#,
+                r#"SELECT ("column_12") || ("column_12") as "col_1","#,
+                r#"(sum ("count_60")) + (count (DISTINCT "column_64")) as "col_2" FROM"#,
                 r#"(SELECT "column_63","column_12","count_58" FROM "TMP_test_22")"#,
                 r#"GROUP BY "column_12" HAVING (sum (DISTINCT "column_64")) > (?)"#
             ),
@@ -779,7 +779,7 @@ fn exec_plan_subtree_having_without_groupby() {
         PatternWithParams::new(
             format!(
                 "{} {} {}",
-                r#"SELECT (sum ("count_41")) + (count (DISTINCT "column_45")) as "COL_1""#,
+                r#"SELECT (sum ("count_41")) + (count (DISTINCT "column_45")) as "col_1""#,
                 r#"FROM (SELECT "column_63","column_12","count_58" FROM "TMP_test_14")"#,
                 r#"HAVING (sum (DISTINCT "column_45")) > (?)"#,
             ),

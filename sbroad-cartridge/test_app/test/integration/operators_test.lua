@@ -613,7 +613,7 @@ g.test_not_with_true_gives_false = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "boolean"},
+            {name = "col_1", type = "boolean"},
         },
         rows = {
             {false}
@@ -631,7 +631,7 @@ g.test_double_not_with_true_gives_true = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "boolean"},
+            {name = "col_1", type = "boolean"},
         },
         rows = {
             {true}
@@ -649,7 +649,7 @@ g.test_not_with_parenthesis = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "boolean"},
+            {name = "col_1", type = "boolean"},
         },
         rows = {
             {true}
@@ -667,7 +667,7 @@ g.test_not_with_and = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "boolean"},
+            {name = "col_1", type = "boolean"},
         },
         rows = {
             {false}
@@ -687,7 +687,7 @@ g.test_not_with_or = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "boolean"},
+            {name = "col_1", type = "boolean"},
         },
         rows = {
             {true}
@@ -771,7 +771,7 @@ g.test_not_between = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "boolean"},
+            {name = "col_1", type = "boolean"},
         },
         rows = {
             {true}

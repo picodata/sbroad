@@ -165,7 +165,7 @@ fn projection_any_dist_for_expr() {
 
     // check explain first
     let expected_explain = SmolStr::from(
-        r#"projection (sum(("count_13"::integer))::decimal -> "COL_1")
+        r#"projection (sum(("count_13"::integer))::decimal -> "col_1")
     motion [policy: full]
         scan
             projection (count(("test_space"."id"::unsigned))::integer -> "count_13")

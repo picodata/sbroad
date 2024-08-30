@@ -46,7 +46,7 @@ g.test_limit = function()
         SELECT count(*) FROM "t" GROUP BY "id" LIMIT 3
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "COL_1", type = "integer"} })
+    t.assert_items_equals(r["metadata"], { {name = "col_1", type = "integer"} })
     t.assert_equals(#r["rows"], 3)
 
     -- cte with limit
@@ -80,4 +80,3 @@ g.test_limit = function()
     t.assert_items_equals(r["metadata"], { {name = "a", type = "number"} })
     t.assert_equals(#r["rows"], 1)
 end
-

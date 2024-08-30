@@ -918,8 +918,8 @@ g2.test_alias = function()
     t.assert_equals(err, nil)
     t.assert_equals(res.metadata, {
         {name = "id", type = "integer"},
-        {name = "COL_1", type = "integer"},
-        {name = "COL_2", type = "integer"},
+        {name = "col_1", type = "integer"},
+        {name = "col_2", type = "integer"},
         {name = "a", type = "integer"},
     })
 
@@ -1138,13 +1138,13 @@ g2.test_arithmetic_in_parens = function()
     t.assert_equals(err, nil)
     t.assert_items_equals(
             without_parens.metadata,
-            { {name = "COL_1", type = "integer"} }
+            { {name = "col_1", type = "integer"} }
     )
     local with_parens, err = api:call("sbroad.execute", { [[select ("a"+"b") from "arithmetic_space"]], {} })
     t.assert_equals(err, nil)
     t.assert_items_equals(
             with_parens.metadata,
-            { {name = "COL_1", type = "integer"} }
+            { {name = "col_1", type = "integer"} }
     )
     t.assert_items_equals(with_parens.rows, without_parens.rows)
 end

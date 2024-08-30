@@ -9,9 +9,9 @@ fn update1() {
 
     let expected_explain = String::from(
         r#"update "test_space"
-"FIRST_NAME" = "COL_0"
+"FIRST_NAME" = "col_0"
     motion [policy: local]
-        projection ('test'::string -> "COL_0", "test_space"."id"::unsigned -> "COL_1")
+        projection ('test'::string -> "col_0", "test_space"."id"::unsigned -> "col_1")
             scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -29,9 +29,9 @@ fn update2() {
 
     let expected_explain = String::from(
         r#"update "test_space"
-"FIRST_NAME" = "COL_0"
+"FIRST_NAME" = "col_0"
     motion [policy: local]
-        projection ('test'::string -> "COL_0", "test_space"."id"::unsigned -> "COL_1")
+        projection ('test'::string -> "col_0", "test_space"."id"::unsigned -> "col_1")
             scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000

@@ -88,7 +88,7 @@ arbitrary_projection.test_arbitrary_valid = function()
         r.metadata,
         {
             {name = "id", type = "integer"},
-            {name = "COL_1", type = "boolean"},
+            {name = "col_1", type = "boolean"},
             {name = "cmp", type = "boolean"},
         }
     )
@@ -116,7 +116,7 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_items_equals(
         r.metadata,
         {
-            { name = "COL_1", type = "boolean" },
+            { name = "col_1", type = "boolean" },
             { name = "cmp", type = "boolean" },
         }
     )
@@ -133,7 +133,7 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_items_equals(
         r.metadata,
         {
-            { name = "COL_1", type = "boolean" },
+            { name = "col_1", type = "boolean" },
             { name = "between", type = "boolean" },
         }
     )
@@ -170,7 +170,7 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "integer"},
+            {name = "col_1", type = "integer"},
         },
         rows = {
             {1}
@@ -303,7 +303,7 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_equals(r, {
         metadata = {
             {name = "id", type = "integer"},
-            {name = "COL_1", type = "scalar"},
+            {name = "col_1", type = "scalar"},
         },
         rows = {
             {1, 1},

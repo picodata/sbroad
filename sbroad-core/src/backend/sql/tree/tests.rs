@@ -138,7 +138,7 @@ fn sql_arbitrary_projection_plan() {
 
     // a + b > c and d is not null
     let and_id = plan.nodes.add_bool(gt_id, Bool::And, not_null_id).unwrap();
-    let alias_id = plan.nodes.add_alias("COL_1", and_id).unwrap();
+    let alias_id = plan.nodes.add_alias("col_1", and_id).unwrap();
 
     let proj_id = plan.add_proj_internal(scan_id, &[alias_id], false).unwrap();
     plan.set_top(proj_id).unwrap();
@@ -226,7 +226,7 @@ fn sql_arbitrary_projection_plan() {
     // alias
     assert_eq!(Some(&SyntaxData::PlanId(25)), nodes_iter.next());
     assert_eq!(
-        Some(&SyntaxData::Alias("COL_1".to_smolstr())),
+        Some(&SyntaxData::Alias("col_1".to_smolstr())),
         nodes_iter.next()
     );
     // from

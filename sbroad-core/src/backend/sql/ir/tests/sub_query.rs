@@ -150,7 +150,7 @@ fn sub_query_exists() {
         format!(
             "{} {}",
             r#"SELECT "test_space"."FIRST_NAME" FROM "test_space""#,
-            r#"WHERE exists (SELECT ? as "COL_1" FROM "hash_testing")"#
+            r#"WHERE exists (SELECT ? as "col_1" FROM "hash_testing")"#
         ),
         vec![Value::from(0_u64)],
     );

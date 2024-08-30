@@ -324,7 +324,7 @@ g.test_explain_arithmetic_projection = function()
     t.assert_equals(
         r,
         {
-            "projection (ROW(\"arithmetic_space\".\"id\"::integer) + ROW(2::unsigned) -> \"COL_1\")",
+            "projection (ROW(\"arithmetic_space\".\"id\"::integer) + ROW(2::unsigned) -> \"col_1\")",
             "    scan \"arithmetic_space\"",
             "execution options:",
             "sql_vdbe_max_steps = 45000",
@@ -340,7 +340,7 @@ g.test_explain_arithmetic_projection = function()
         r,
         -- luacheck: max line length 210
         {
-            "projection (ROW(\"arithmetic_space\".\"a\"::integer) + ROW(\"arithmetic_space\".\"b\"::integer) * ROW(\"arithmetic_space\".\"c\"::integer) -> \"COL_1\")",
+            "projection (ROW(\"arithmetic_space\".\"a\"::integer) + ROW(\"arithmetic_space\".\"b\"::integer) * ROW(\"arithmetic_space\".\"c\"::integer) -> \"col_1\")",
             "    scan \"arithmetic_space\"",
             "execution options:",
             "sql_vdbe_max_steps = 45000",
@@ -356,7 +356,7 @@ g.test_explain_arithmetic_projection = function()
         r,
         -- luacheck: max line length 210
         {
-            "projection ((ROW(\"arithmetic_space\".\"a\"::integer) + ROW(\"arithmetic_space\".\"b\"::integer)) * ROW(\"arithmetic_space\".\"c\"::integer) -> \"COL_1\")",
+            "projection ((ROW(\"arithmetic_space\".\"a\"::integer) + ROW(\"arithmetic_space\".\"b\"::integer)) * ROW(\"arithmetic_space\".\"c\"::integer) -> \"col_1\")",
             "    scan \"arithmetic_space\"",
             "execution options:",
             "sql_vdbe_max_steps = 45000",
@@ -372,7 +372,7 @@ g.test_explain_arithmetic_projection = function()
         r,
         -- luacheck: max line length 160
         {
-            "projection (ROW(\"arithmetic_space\".\"a\"::integer) > ROW(\"arithmetic_space\".\"b\"::integer) -> \"COL_1\")",
+            "projection (ROW(\"arithmetic_space\".\"a\"::integer) > ROW(\"arithmetic_space\".\"b\"::integer) -> \"col_1\")",
             "    scan \"arithmetic_space\"",
             "execution options:",
             "sql_vdbe_max_steps = 45000",
@@ -387,7 +387,7 @@ g.test_explain_arithmetic_projection = function()
     t.assert_equals(
         r,
         {
-            "projection (ROW(\"arithmetic_space\".\"a\"::integer) is null -> \"COL_1\")",
+            "projection (ROW(\"arithmetic_space\".\"a\"::integer) is null -> \"col_1\")",
             "    scan \"arithmetic_space\"",
             "execution options:",
             "sql_vdbe_max_steps = 45000",

@@ -414,7 +414,7 @@ left_join.test_sq_with_full_motion = function()
         "subquery $0:",
         "motion [policy: full]",
         "            scan",
-        "                projection (ROW(\"arithmetic_space\".\"a\"::integer) + ROW(1::unsigned) -> \"COL_1\")",
+        "                projection (ROW(\"arithmetic_space\".\"a\"::integer) + ROW(1::unsigned) -> \"col_1\")",
         "                    scan \"arithmetic_space\"",
         "execution options:",
         "sql_vdbe_max_steps = 45000",
@@ -616,7 +616,7 @@ left_join.test_groupby_after_join = function()
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
         { name = "a", type = "integer" },
-        { name = "COL_1", type = "decimal" },
+        { name = "col_1", type = "decimal" },
     })
     t.assert_items_equals(r.rows, {
         {nil, 0},

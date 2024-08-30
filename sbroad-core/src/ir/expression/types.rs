@@ -148,7 +148,7 @@ impl Expression {
     /// At the moment we recalculate only references, because they can change their
     /// type during binding.
     /// E.g. in case of query like
-    /// `SELECT "COL_1" FROM (
+    /// `SELECT "col_1" FROM (
     ///     SELECT * FROM (
     ///         VALUES ((?))
     ///     ))`,

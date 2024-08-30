@@ -55,7 +55,7 @@ fn aggretage() {
 
     let expected_explain = String::from(
         r#"limit 1
-    projection (min(("min_13"::unsigned))::scalar -> "COL_1", min(distinct ("column_15"::unsigned))::scalar -> "COL_2")
+    projection (min(("min_13"::unsigned))::scalar -> "col_1", min(distinct ("column_15"::unsigned))::scalar -> "col_2")
         motion [policy: full]
             scan
                 projection ("t"."b"::unsigned -> "column_15", min(("t"."b"::unsigned))::scalar -> "min_13")
@@ -80,7 +80,7 @@ fn group_by() {
         r#"limit 555
     motion [policy: full]
         limit 555
-            projection (sum(("count_26"::integer))::decimal -> "COL_1", "column_12"::unsigned -> "b")
+            projection (sum(("count_26"::integer))::decimal -> "col_1", "column_12"::unsigned -> "b")
                 group by ("column_12"::unsigned) output: ("column_12"::unsigned -> "column_12", "count_26"::integer -> "count_26")
                     motion [policy: segment([ref("column_12")])]
                         scan

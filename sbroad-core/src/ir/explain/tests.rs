@@ -488,7 +488,7 @@ fn select_cast_plan_nested() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("func"(("test_space"."id"::unsigned))::integer::string -> "COL_1")
+        r#"projection ("func"(("test_space"."id"::unsigned))::integer::string -> "col_1")
     scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000

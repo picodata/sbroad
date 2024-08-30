@@ -5,7 +5,7 @@ use crate::ir::value::Value;
 fn concat1_test() {
     broadcast_check(
         r#"SELECT CAST('1' as string) || 'hello' FROM "t1""#,
-        r#"SELECT (CAST (? as string)) || (?) as "COL_1" FROM "t1""#,
+        r#"SELECT (CAST (? as string)) || (?) as "col_1" FROM "t1""#,
         vec![Value::from("1"), Value::from("hello")],
     );
 }
@@ -14,7 +14,7 @@ fn concat1_test() {
 fn concat2_test() {
     broadcast_check(
         r#"SELECT func('hello') || CAST(42 as string) FROM "t1""#,
-        r#"SELECT ("func" (?)) || (CAST (? as string)) as "COL_1" FROM "t1""#,
+        r#"SELECT ("func" (?)) || (CAST (? as string)) as "col_1" FROM "t1""#,
         vec![Value::from("hello"), Value::from(42_u64)],
     );
 }
@@ -23,7 +23,7 @@ fn concat2_test() {
 fn concat3_test() {
     broadcast_check(
         r#"SELECT 'a' || 'b' FROM "t1""#,
-        r#"SELECT (?) || (?) as "COL_1" FROM "t1""#,
+        r#"SELECT (?) || (?) as "col_1" FROM "t1""#,
         vec![Value::from("a"), Value::from("b")],
     );
 }

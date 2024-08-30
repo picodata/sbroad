@@ -566,7 +566,7 @@ g.test_to_char = function ()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "string"},
+            {name = "col_1", type = "string"},
         },
         rows = {
             {"to_char: 2021-08-21-00-00-00-+0300"},
@@ -584,7 +584,7 @@ g.test_to_char = function ()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "string"},
+            {name = "col_1", type = "string"},
         },
         rows = {
             {box.NULL},
@@ -600,7 +600,7 @@ g.test_to_char = function ()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "string"},
+            {name = "col_1", type = "string"},
         },
         rows = {
             {"2020-01-20-00-00-00-+0000"},
@@ -616,7 +616,7 @@ g.test_to_char = function ()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "string"},
+            {name = "col_1", type = "string"},
         },
         rows = {
             {"i-01-20"},
@@ -646,7 +646,7 @@ g.test_current_date = function ()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "datetime"},
+            {name = "col_1", type = "datetime"},
         },
         rows = {
             {current_date},
@@ -655,15 +655,15 @@ g.test_current_date = function ()
     })
 
     r, err = api:call("sbroad.execute", { [[
-        select to_char("COL_1", '%Y') from (select to_date("COLUMN_2", '%Y.%m.%d') from (
+        select to_char("col_1", '%Y') from (select to_date("COLUMN_2", '%Y.%m.%d') from (
           values ('2077.1.1'), ('2000.10.10')
         ))
-        where "COL_1" > CURRENT_DATE
+        where "col_1" > CURRENT_DATE
     ]]})
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COL_1", type = "string"},
+            {name = "col_1", type = "string"},
         },
         rows = {
             {'2077'},
@@ -695,4 +695,3 @@ g.test_union_operator_works = function ()
         rows = { {1}, {2} },
     })
 end
-

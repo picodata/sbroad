@@ -159,7 +159,7 @@ nodes:
     # 25
     - Expression:
         Alias:
-          name: COL_1
+          name: col_1
           child: 24
     # 26
     - Expression:
