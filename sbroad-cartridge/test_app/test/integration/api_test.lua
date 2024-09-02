@@ -698,6 +698,34 @@ g.test_union_operator_works = function ()
     })
 end
 
+g.test_lower_upper = function ()
+    local api = cluster:server("api-1").net_box
+
+    local meta = {
+        {name = "a", type = "string"},
+        {name = "b", type = "string"},
+    }
+    local r, err = api:call("sbroad.execute", { [[
+        select lower("COLUMN_1") as a, upper("COLUMN_1") as b from (values ('Aba'))
+    ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, meta)
+    t.assert_equals(r.rows, {
+        {'aba', 'ABA'}
+    })
+
+    r, err = api:call("sbroad.execute", { [[
+        select upper(lower("COLUMN_1")) as a, lower(upper("COLUMN_1")) as b from (values ('Aba'))
+    ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, meta)
+    t.assert_equals(r.rows, {
+        {'ABA', 'aba'}
+    })
+end
+
 g.test_like_works = function ()
     local api = cluster:server("api-1").net_box
 

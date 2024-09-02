@@ -80,6 +80,8 @@ pub fn get_builtin_functions() -> &'static [Function] {
                 Function::new_stable("to_date".into(), Type::Datetime, false),
                 Function::new_stable("to_char".into(), Type::String, false),
                 Function::new_stable("substr".into(), Type::String, true),
+                Function::new_stable("lower".into(), Type::String, true),
+                Function::new_stable("upper".into(), Type::String, true),
             ]
         })
     }
