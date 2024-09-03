@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
+use std::collections::HashSet;
 use std::mem::take;
 
 use crate::errors::{Entity, SbroadError};
@@ -26,6 +27,8 @@ use sbroad_proc::otm_child_span;
 pub enum SyntaxData {
     /// "as \"alias_name\""
     Alias(SmolStr),
+    /// "*"
+    Asterisk(Option<SmolStr>),
     /// "as alias_name"
     UnquotedAlias(SmolStr),
     /// "cast"
@@ -116,6 +119,14 @@ pub struct SyntaxNode {
 }
 
 impl SyntaxNode {
+    fn new_asterisk(relation_name: Option<SmolStr>) -> Self {
+        SyntaxNode {
+            data: SyntaxData::Asterisk(relation_name),
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
     fn new_alias(name: SmolStr) -> Self {
         SyntaxNode {
             data: SyntaxData::Alias(name),
@@ -1456,19 +1467,145 @@ impl<'p> SyntaxPlan<'p> {
             }
         }
 
-        let mut children = Vec::with_capacity(list.len() * 2 + 3);
-        // The nodes on the stack are in the reverse order.
-        children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_close()));
-        if let Some((first, others)) = list.split_first() {
-            for child_id in others.iter().rev() {
-                children.push(self.pop_from_stack(*child_id, id));
-                children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_comma()));
-            }
-            children.push(self.pop_from_stack(*first, id));
+        // Vec of row's sn children nodes.
+        let mut list_sn_ids = Vec::with_capacity(list.len());
+        for list_id in list.iter().rev() {
+            list_sn_ids.push(self.pop_from_stack(*list_id, id));
         }
-        children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_open()));
         // Need to reverse the order of the children back.
-        children.reverse();
+        list_sn_ids.reverse();
+
+        // Set of relation names for which we've already generated asterisk (*).
+        // In case we see in output several references that we initially generated from
+        // an asterisk we want to generate that asterisk only once.
+        let mut already_handled_asterisk_sources = HashSet::new();
+        let mut last_handled_asterisk_id: Option<usize> = None;
+
+        // Children number + the same number of commas + parentheses.
+        let mut children = Vec::with_capacity(list.len() * 2 + 2);
+        children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_open()));
+
+        enum NodeToAdd {
+            SnId(usize),
+            Asterisk(SyntaxNode),
+            Comma,
+        }
+
+        let mut handle_reference =
+            |sn_id: usize, need_comma: bool, expr_node: &Expression| -> Vec<NodeToAdd> {
+                let mut non_reference_nodes = || -> Vec<NodeToAdd> {
+                    let mut nodes_to_add = Vec::new();
+                    if last_handled_asterisk_id.is_some() {
+                        nodes_to_add.push(NodeToAdd::Comma);
+                    }
+                    nodes_to_add.push(NodeToAdd::SnId(sn_id));
+                    if need_comma {
+                        nodes_to_add.push(NodeToAdd::Comma);
+                    }
+                    last_handled_asterisk_id = None;
+                    nodes_to_add
+                };
+
+                let mut nodes_to_add = Vec::new();
+                if let Expression::Reference {
+                    asterisk_source:
+                        Some(ReferenceAsteriskSource {
+                            relation_name,
+                            asterisk_id,
+                        }),
+                    ..
+                } = expr_node
+                {
+                    let mut need_comma = false;
+                    let asterisk_id = *asterisk_id;
+                    if let Some(last_handled_asterisk_id) = last_handled_asterisk_id {
+                        if asterisk_id != last_handled_asterisk_id {
+                            need_comma = true;
+                            already_handled_asterisk_sources.clear();
+                        }
+                    }
+
+                    let pair_to_check = if let Some(relation_name) = relation_name {
+                        (Some(relation_name.clone()), asterisk_id)
+                    } else {
+                        (None, asterisk_id)
+                    };
+
+                    let asterisk_node_to_add =
+                        if !already_handled_asterisk_sources.contains(&pair_to_check) {
+                            already_handled_asterisk_sources.insert(pair_to_check);
+                            let res = if relation_name.is_some() {
+                                SyntaxNode::new_asterisk(relation_name.clone())
+                            } else {
+                                SyntaxNode::new_asterisk(None)
+                            };
+                            Some(res)
+                        } else {
+                            None
+                        };
+
+                    last_handled_asterisk_id = Some(asterisk_id);
+                    if need_comma {
+                        nodes_to_add.push(NodeToAdd::Comma);
+                    }
+                    if let Some(asterisk_node_to_add) = asterisk_node_to_add {
+                        nodes_to_add.push(NodeToAdd::Asterisk(asterisk_node_to_add));
+                    }
+                } else {
+                    return non_reference_nodes();
+                }
+                nodes_to_add
+            };
+
+        let mut handle_single_list_sn_id = |sn_id: usize,
+                                            need_comma: bool|
+         -> Result<(), SbroadError> {
+            let sn_node = self.nodes.get_sn(sn_id);
+            let sn_plan_node = self.get_plan_node(&sn_node.data)?;
+
+            let nodes_to_add = if let Some(Node::Expression(node_expr)) = sn_plan_node {
+                match node_expr {
+                    Expression::Alias { child, .. } => {
+                        let alias_child = self.plan.get_ir_plan().get_expression_node(*child)?;
+                        handle_reference(sn_id, need_comma, alias_child)
+                    }
+                    _ => handle_reference(sn_id, need_comma, node_expr),
+                }
+            } else {
+                // As it's not ad Alias under Projection output, we don't have to
+                // dead with its machinery flags.
+                let mut nodes_to_add = Vec::new();
+                nodes_to_add.push(NodeToAdd::SnId(sn_id));
+                if need_comma {
+                    nodes_to_add.push(NodeToAdd::Comma)
+                }
+                nodes_to_add
+            };
+
+            for node in nodes_to_add {
+                match node {
+                    NodeToAdd::SnId(sn_id) => {
+                        children.push(sn_id);
+                    }
+                    NodeToAdd::Asterisk(asterisk) => {
+                        children.push(self.nodes.push_sn_non_plan(asterisk))
+                    }
+                    NodeToAdd::Comma => {
+                        children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_comma()))
+                    }
+                }
+            }
+
+            Ok(())
+        };
+
+        if let Some((list_sn_id_last, list_sn_ids_other)) = list_sn_ids.split_last() {
+            for list_sn_id in list_sn_ids_other {
+                handle_single_list_sn_id(*list_sn_id, true).expect("Row child should be valid.")
+            }
+            handle_single_list_sn_id(*list_sn_id_last, false).expect("Row child should be valid.")
+        }
+        children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_close()));
         let sn = SyntaxNode::new_pointer(id, None, children);
         self.nodes.push_sn_plan(sn);
     }

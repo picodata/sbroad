@@ -64,7 +64,7 @@ fn empty_motion1_test() {
         LuaValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {} {} {} {} {} {} {} {} {} {} {} {}",
-                r#"SELECT "Q"."a", "Q"."b" FROM"#,
+                r#"SELECT * FROM"#,
                 r#"(SELECT "t"."a", "t"."b" FROM"#,
                 r#"(SELECT "t"."a", "t"."b", "t"."c", "t"."d" FROM "t") as "t""#,
                 r#"INNER JOIN"#,

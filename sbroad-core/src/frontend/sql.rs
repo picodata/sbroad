@@ -33,7 +33,7 @@ use crate::ir::expression::{
     ColumnPositionMap, ColumnWithScan, ColumnsRetrievalSpec, ExpressionId, FunctionFeature,
     Position, TrimKind,
 };
-use crate::ir::node::expression::{Expression, MutExpression};
+use crate::ir::node::expression::{Expression, MutExpression, ReferenceAsteriskSource};
 use crate::ir::node::relational::Relational;
 use crate::ir::node::{
     AlterSystem, AlterUser, BoolExpr, Constant, CountAsterisk, CreateIndex, CreateProc, CreateRole,
@@ -2268,7 +2268,7 @@ where
                         let col_type = plan
                             .get_expression_node(*child_alias_id)?
                             .calculate_type(plan)?;
-                        let ref_id = plan.nodes.add_ref(None, Some(vec![0]), col_position, col_type);
+                        let ref_id = plan.nodes.add_ref(None, Some(vec![0]), col_position, col_type, None);
                         (ref_id, false)
                     };
                     worker.reference_to_name_map.insert(ref_id, (col_name, is_row));
@@ -3099,6 +3099,10 @@ impl AbstractSyntaxTree {
                     let mut proj_columns: Vec<NodeId> = Vec::with_capacity(ast_columns_ids.len());
 
                     let mut unnamed_col_pos = 0;
+                    // Unique identifier for each "*" met under projection. Uniqueness is local
+                    // for each projection. Used to distinguish the source of asterisk projections
+                    // like `select *, * from t`, where there are several of them.
+                    let mut asterisk_id = 0;
                     for ast_column_id in ast_columns_ids {
                         let ast_column = self.nodes.get_node(*ast_column_id)?;
                         match ast_column.rule {
@@ -3152,15 +3156,25 @@ impl AbstractSyntaxTree {
                                         plan_rel_child_id,
                                         filtered_col_ids,
                                         false,
+                                        Some(ReferenceAsteriskSource::new(
+                                            Some(table_name),
+                                            asterisk_id,
+                                        )),
                                     )?
                                 } else {
-                                    plan.add_row_for_output(plan_rel_child_id, &[], false)?
+                                    plan.add_row_for_output(
+                                        plan_rel_child_id,
+                                        &[],
+                                        false,
+                                        Some(ReferenceAsteriskSource::new(None, asterisk_id)),
+                                    )?
                                 };
 
                                 let row_list = plan.get_row_list(plan_asterisk_id)?;
                                 for row_id in row_list {
                                     proj_columns.push(*row_id);
                                 }
+                                asterisk_id += 1;
                             }
                             _ => {
                                 return Err(SbroadError::Invalid(
@@ -3404,6 +3418,7 @@ impl AbstractSyntaxTree {
                         &NewColumnsSource::Other {
                             child: proj_child_id,
                             columns_spec: Some(ColumnsRetrievalSpec::Names(pk_columns)),
+                            asterisk_source: None,
                         },
                         false,
                         false,

@@ -142,8 +142,9 @@ impl Plan {
                     position,
                     parent,
                     col_type,
+                    ..
                 }) => {
-                    let alias_name = self.get_alias_from_reference_node(&expr).unwrap();
+                    let alias_name = self.get_alias_from_reference_node(expr).unwrap();
 
                     writeln!(buf, "Reference")?;
                     writeln_with_tabulation(

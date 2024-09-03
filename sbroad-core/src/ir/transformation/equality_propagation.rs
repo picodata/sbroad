@@ -91,7 +91,7 @@
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::helpers::RepeatableState;
-use crate::ir::node::expression::Expression;
+use crate::ir::node::expression::{Expression, ReferenceAsteriskSource};
 use crate::ir::node::{Constant, NodeId, Reference, Row};
 use crate::ir::operator::Bool;
 use crate::ir::relation::Type;
@@ -112,6 +112,7 @@ struct EqClassRef {
     position: usize,
     parent: Option<NodeId>,
     col_type: Type,
+    asterisk_source: Option<ReferenceAsteriskSource>,
 }
 
 impl EqClassRef {
@@ -121,6 +122,7 @@ impl EqClassRef {
             position: expr_pos,
             parent: expr_prt,
             col_type: expr_type,
+            asterisk_source: expr_asterisk_source,
         }) = expr
         {
             return Ok(EqClassRef {
@@ -128,6 +130,7 @@ impl EqClassRef {
                 position: *expr_pos,
                 parent: *expr_prt,
                 col_type: expr_type.clone(),
+                asterisk_source: expr_asterisk_source.clone(),
             });
         }
         Err(SbroadError::Invalid(Entity::Expression, None))
@@ -139,6 +142,7 @@ impl EqClassRef {
             self.targets.clone(),
             self.position,
             self.col_type.clone(),
+            self.asterisk_source.clone(),
         );
         plan.nodes.add_row(vec![id], None)
     }

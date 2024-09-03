@@ -32,6 +32,25 @@ pub mod types;
 
 pub(crate) type ExpressionId = NodeId;
 
+/// Helper structure for cases of references generated from asterisk.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, Hash)]
+pub struct ReferenceAsteriskSource {
+    /// None                -> generated from simple asterisk: `select * from t`
+    /// Some(relation_name) -> generated from table asterisk: `select t.* from t`
+    pub relation_name: Option<SmolStr>,
+    /// Unique asterisk id local for single Projection
+    pub asterisk_id: usize,
+}
+
+impl ReferenceAsteriskSource {
+    pub fn new(relation_name: Option<SmolStr>, asterisk_id: usize) -> Self {
+        Self {
+            relation_name,
+            asterisk_id,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Hash, Deserialize, PartialEq, Eq, Serialize)]
 pub enum FunctionFeature {
     /// Current function is an aggregate function and is marked as DISTINCT.
@@ -139,12 +158,14 @@ impl Nodes {
         targets: Option<Vec<usize>>,
         position: usize,
         col_type: Type,
+        asterisk_source: Option<ReferenceAsteriskSource>,
     ) -> NodeId {
         let r = Reference {
             parent,
             targets,
             position,
             col_type,
+            asterisk_source,
         };
         self.push(r.into())
     }
@@ -549,6 +570,7 @@ impl<'plan> Comparator<'plan> {
                 position,
                 targets,
                 col_type,
+                asterisk_source: is_asterisk,
             }) => match self.policy {
                 ReferencePolicy::ByAliases => {
                     self.plan
@@ -561,6 +583,7 @@ impl<'plan> Comparator<'plan> {
                     position.hash(state);
                     targets.hash(state);
                     col_type.hash(state);
+                    is_asterisk.hash(state);
                 }
             },
             Expression::Row(Row { list, .. }) => {
@@ -574,7 +597,7 @@ impl<'plan> Comparator<'plan> {
                 func_type,
                 feature,
                 is_system: is_aggr,
-            }) => {
+            } => {
                 feature.hash(state);
                 func_type.hash(state);
                 name.hash(state);
@@ -815,6 +838,8 @@ pub enum NewColumnsSource<'targets> {
     Other {
         child: NodeId,
         columns_spec: Option<ColumnsRetrievalSpec<'targets>>,
+        /// Indicates whether requested output is coming from asterisk.
+        asterisk_source: Option<ReferenceAsteriskSource>,
     },
 }
 
@@ -896,6 +921,15 @@ impl<'source> NewColumnsSource<'source> {
             },
             NewColumnsSource::ExceptUnion { .. } => None,
             NewColumnsSource::Other { columns_spec, .. } => columns_spec.clone(),
+        }
+    }
+
+    fn get_asterisk_source(&self) -> Option<ReferenceAsteriskSource> {
+        match self {
+            NewColumnsSource::Other {
+                asterisk_source, ..
+            } => asterisk_source.clone(),
+            _ => None,
         }
     }
 
@@ -1027,9 +1061,13 @@ impl Plan {
         let mut result_row_list: Vec<NodeId> = Vec::with_capacity(filtered_children_row_list.len());
         for (pos, alias_node_id, new_targets) in filtered_children_row_list {
             let alias_expr = self.get_expression_node(alias_node_id)?;
+            let asterisk_source = source.get_asterisk_source();
             let alias_name = SmolStr::from(alias_expr.get_alias_name()?);
             let col_type = alias_expr.calculate_type(self)?;
-            let r_id = self.nodes.add_ref(None, Some(new_targets), pos, col_type);
+
+            let r_id = self
+                .nodes
+                .add_ref(None, Some(new_targets), pos, col_type, asterisk_source);
             if need_aliases {
                 let a_id = self.nodes.add_alias(&alias_name, r_id)?;
                 result_row_list.push(a_id);
@@ -1052,11 +1090,13 @@ impl Plan {
         rel_node: NodeId,
         indices: Vec<usize>,
         need_sharding_column: bool,
+        asterisk_source: Option<ReferenceAsteriskSource>,
     ) -> Result<NodeId, SbroadError> {
         let list = self.new_columns(
             &NewColumnsSource::Other {
                 child: rel_node,
                 columns_spec: Some(ColumnsRetrievalSpec::Indices(indices)),
+                asterisk_source,
             },
             true,
             need_sharding_column,
@@ -1076,6 +1116,7 @@ impl Plan {
         rel_node: NodeId,
         col_names: &[&str],
         need_sharding_column: bool,
+        asterisk_source: Option<ReferenceAsteriskSource>,
     ) -> Result<NodeId, SbroadError> {
         let specific_columns = if col_names.is_empty() {
             None
@@ -1091,6 +1132,7 @@ impl Plan {
             &NewColumnsSource::Other {
                 child: rel_node,
                 columns_spec: specific_columns,
+                asterisk_source,
             },
             true,
             need_sharding_column,
@@ -1166,6 +1208,7 @@ impl Plan {
             &NewColumnsSource::Other {
                 child,
                 columns_spec: specific_columns,
+                asterisk_source: None,
             },
             false,
             true,
@@ -1202,7 +1245,7 @@ impl Plan {
             let alias_type = self.get_expression_node(alias_id)?.calculate_type(self)?;
             let ref_id = self
                 .nodes
-                .add_ref(parent, Some(vec![target]), pos, alias_type);
+                .add_ref(parent, Some(vec![target]), pos, alias_type, None);
             new_refs.push(ref_id);
         }
         let row_id = self.nodes.add_row(new_refs, None);

@@ -387,7 +387,7 @@ fn exec_plan_subquery_under_motion_without_alias() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "tid", "COL_1" as "sid" FROM (SELECT "test_space"."id" as "tid" FROM "test_space") INNER JOIN (SELECT "COL_1" FROM "TMP_test_0136") ON ?"#.to_string(),
+            r#"SELECT * FROM (SELECT "test_space"."id" as "tid" FROM "test_space") INNER JOIN (SELECT "COL_1" FROM "TMP_test_0136") ON ?"#.to_string(),
             vec![Value::Boolean(true)]
         ));
 }
@@ -428,7 +428,7 @@ fn exec_plan_subquery_under_motion_with_alias() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "tid", "hti"."COL_1" as "sid" FROM (SELECT "test_space"."id" as "tid" FROM "test_space") INNER JOIN (SELECT "COL_1" FROM "TMP_test_0136") as "hti" ON ?"#.to_string(),
+            r#"SELECT * FROM (SELECT "test_space"."id" as "tid" FROM "test_space") INNER JOIN (SELECT "COL_1" FROM "TMP_test_0136") as "hti" ON ?"#.to_string(),
             vec![Value::Boolean(true)]
         ));
 }
@@ -749,13 +749,7 @@ fn global_table_scan() {
 
     assert_eq!(
         sql,
-        PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT "global_t"."a", "global_t"."b" FROM "global_t""#,
-            ),
-            vec![]
-        )
+        PatternWithParams::new(format!("{}", r#"SELECT * FROM "global_t""#,), vec![])
     );
 }
 
@@ -1035,13 +1029,13 @@ fn global_union_all4() {
     let expected = vec![
         ReplicasetDispatchInfo {
             rs_id: 0,
-            pattern: r#" select cast(null as integer) where false UNION ALL SELECT "a" FROM (select cast(null as integer) where false UNION ALL SELECT "t2"."f" FROM "t2")"#.to_string(),
+            pattern: r#" select cast(null as integer) where false UNION ALL SELECT * FROM (select cast(null as integer) where false UNION ALL SELECT "t2"."f" FROM "t2")"#.to_string(),
             params: vec![],
             vtables_map: HashMap::new(),
         },
         ReplicasetDispatchInfo {
             rs_id: 1,
-            pattern: r#"SELECT "global_t"."b" FROM "global_t" UNION ALL SELECT "a" FROM (SELECT "global_t"."a" FROM "global_t" UNION ALL SELECT "t2"."f" FROM "t2")"#.to_string(),
+            pattern: r#"SELECT "global_t"."b" FROM "global_t" UNION ALL SELECT * FROM (SELECT "global_t"."a" FROM "global_t" UNION ALL SELECT "t2"."f" FROM "t2")"#.to_string(),
             params: vec![],
             vtables_map: HashMap::new(),
         },
@@ -1290,7 +1284,7 @@ fn exec_plan_order_by_with_join() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "f"."a", "s"."COL_1" as "a" FROM (SELECT "t"."a" FROM "t") as "f" INNER JOIN (SELECT "COL_1" FROM "TMP_test_28") as "s" ON ?"#.to_string(),
+            r#"SELECT * FROM (SELECT "t"."a" FROM "t") as "f" INNER JOIN (SELECT "COL_1" FROM "TMP_test_28") as "s" ON ?"#.to_string(),
             vec![Value::Boolean(true)]
         )
     );

@@ -308,6 +308,13 @@ impl ExecutionPlan {
                 match data {
                     // TODO: should we care about plans without projections?
                     // Or they should be treated as invalid?
+                    SyntaxData::Asterisk(relation_name) => {
+                        if let Some(relation_name) = relation_name {
+                            push_identifier(&mut sql, relation_name.as_str());
+                            sql.push('.')
+                        }
+                        sql.push('*')
+                    }
                     SyntaxData::Alias(s) => {
                         sql.push_str("as ");
                         push_identifier(&mut sql, s);

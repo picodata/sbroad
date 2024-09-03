@@ -316,6 +316,7 @@ impl SimpleAggregate {
                 targets: Some(vec![0]),
                 position,
                 col_type: fun_type.clone(),
+                asterisk_source: None,
             };
             let ref_id = plan.nodes.push(ref_node.into());
             let children = match self.kind {

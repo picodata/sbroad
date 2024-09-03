@@ -696,7 +696,7 @@ impl Plan {
         is_final: bool,
         expr_parent: Option<NodeId>,
     ) -> Result<NodeId, SbroadError> {
-        let final_output = self.add_row_for_output(child_id, &[], true)?;
+        let final_output = self.add_row_for_output(child_id, &[], true, None)?;
         let groupby = GroupBy {
             children: [child_id].to_vec(),
             gr_cols: grouping_exprs.to_vec(),
@@ -1410,6 +1410,7 @@ impl Plan {
                 parent: None,
                 targets: Some(vec![0]),
                 col_type,
+                asterisk_source: None,
             };
             nodes.push(new_col);
         }
@@ -1417,7 +1418,7 @@ impl Plan {
             let new_col_id = self.nodes.push(node.into());
             gr_cols.push(new_col_id);
         }
-        let output = self.add_row_for_output(child_id, &[], true)?;
+        let output = self.add_row_for_output(child_id, &[], true, None)?;
         let final_id = self.nodes.next_id(ArenaType::Arena64);
         for col in &gr_cols {
             self.replace_parent_in_subtree(*col, None, Some(final_id))?;
@@ -1503,6 +1504,7 @@ impl Plan {
                     targets: Some(vec![0]),
                     position,
                     col_type,
+                    asterisk_source: None,
                 };
                 nodes.push((parent, expr_id, gr_expr_id, new_ref));
             }
@@ -1593,7 +1595,7 @@ impl Plan {
                             Some(format_smolstr!("Having ({node_id:?}) has no children!")),
                         )
                     })?;
-                    let output = self.add_row_for_output(child_id, &[], true)?;
+                    let output = self.add_row_for_output(child_id, &[], true, None)?;
                     *self.get_mut_relation_node(*node_id)?.mut_output() = output;
                     self.replace_parent_in_subtree(output, None, Some(*node_id))?;
                 }

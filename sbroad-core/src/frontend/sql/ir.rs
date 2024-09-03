@@ -467,6 +467,7 @@ impl SubtreeCloner {
                 targets: _,
                 position: _,
                 col_type: _,
+                asterisk_source: _,
             })
             | ExprOwned::CountAsterisk { .. } => {}
             ExprOwned::Alias(Alias {

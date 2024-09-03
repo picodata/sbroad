@@ -337,7 +337,7 @@ impl Plan {
     /// # Errors
     /// - child id pointes to non-existing or non-relational node.
     pub fn add_delete(&mut self, table: SmolStr, child_id: NodeId) -> Result<NodeId, SbroadError> {
-        let output = self.add_row_for_output(child_id, &[], true)?;
+        let output = self.add_row_for_output(child_id, &[], true, None)?;
         let delete = Delete {
             relation: table,
             children: vec![child_id],
@@ -479,6 +479,7 @@ impl Plan {
                 targets: Some(vec![0]),
                 position: output_pos,
                 col_type,
+                asterisk_source: None,
             };
             let id = plan.nodes.push(node.into());
             Ok(id)
@@ -634,7 +635,7 @@ impl Plan {
         };
         let proj_id = self.add_relational(proj_node.into())?;
         self.replace_parent_in_subtree(proj_output, None, Some(proj_id))?;
-        let upd_output = self.add_row_for_output(proj_id, &[], false)?;
+        let upd_output = self.add_row_for_output(proj_id, &[], false, None)?;
         let update_node = Update {
             relation: relation.to_smolstr(),
             pk_positions: primary_key_positions,
@@ -718,7 +719,9 @@ impl Plan {
 
         let mut refs: Vec<NodeId> = Vec::with_capacity(rel.columns.len());
         for (pos, col) in rel.columns.iter().enumerate() {
-            let r_id = self.nodes.add_ref(None, None, pos, col.r#type.clone());
+            let r_id = self
+                .nodes
+                .add_ref(None, None, pos, col.r#type.clone(), None);
             let col_alias_id = self.nodes.add_alias(&col.name, r_id)?;
             refs.push(col_alias_id);
         }
@@ -754,7 +757,7 @@ impl Plan {
         if let Some(rel) = self.relations.get(table) {
             let mut refs: Vec<NodeId> = Vec::with_capacity(rel.columns.len());
             for (pos, col) in rel.columns.iter().enumerate() {
-                let r_id = nodes.add_ref(None, None, pos, col.r#type.clone());
+                let r_id = nodes.add_ref(None, None, pos, col.r#type.clone(), None);
                 let col_alias_id = nodes.add_alias(&col.name, r_id)?;
                 refs.push(col_alias_id);
             }
@@ -920,7 +923,7 @@ impl Plan {
             _ => None,
         };
 
-        let output = self.add_row_for_output(child_id, &[], true)?;
+        let output = self.add_row_for_output(child_id, &[], true, None)?;
         match policy {
             MotionPolicy::None => {
                 return Err(SbroadError::Invalid(
@@ -977,7 +980,7 @@ impl Plan {
         is_distinct: bool,
         needs_shard_col: bool,
     ) -> Result<NodeId, SbroadError> {
-        let output = self.add_row_for_output(child, col_names, needs_shard_col)?;
+        let output = self.add_row_for_output(child, col_names, needs_shard_col, None)?;
         let proj = Projection {
             children: vec![child],
             output,
@@ -1039,7 +1042,7 @@ impl Plan {
             ));
         }
 
-        let output = self.add_row_for_output(first_child, &[], true)?;
+        let output = self.add_row_for_output(first_child, &[], true, None)?;
         let select = Selection {
             children: children.into(),
             filter,
@@ -1087,7 +1090,7 @@ impl Plan {
             }
         }
 
-        let output = self.add_row_for_output(first_child, &[], true)?;
+        let output = self.add_row_for_output(first_child, &[], true, None)?;
         let having = Having {
             children: children.into(),
             filter,
@@ -1113,7 +1116,7 @@ impl Plan {
         child: NodeId,
         order_by_elements: Vec<OrderByElement>,
     ) -> Result<NodeId, SbroadError> {
-        let output = self.add_row_for_output(child, &[], true)?;
+        let output = self.add_row_for_output(child, &[], true, None)?;
         let order_by = OrderBy {
             child,
             output,
@@ -1147,7 +1150,7 @@ impl Plan {
     ) -> Result<NodeId, SbroadError> {
         let name: Option<SmolStr> = alias.map(SmolStr::from);
 
-        let output = self.add_row_for_output(child, &[], true)?;
+        let output = self.add_row_for_output(child, &[], true, None)?;
         let sq = ScanSubQuery {
             alias: name,
             children: vec![child],
@@ -1219,7 +1222,7 @@ impl Plan {
         }
 
         let output = self
-            .add_row_for_output(child_id, &[], true)
+            .add_row_for_output(child_id, &[], true, None)
             .expect("output row for CTE");
         let cte = ScanCte {
             alias,
@@ -1285,7 +1288,7 @@ impl Plan {
     /// # Errors
     /// - Row node is not of a row type
     pub fn add_limit(&mut self, select: NodeId, limit: u64) -> Result<NodeId, SbroadError> {
-        let output = self.add_row_for_output(select, &[], true)?;
+        let output = self.add_row_for_output(select, &[], true, None)?;
         let limit = Limit {
             output,
             limit,
@@ -1395,6 +1398,7 @@ impl Plan {
                 Some((0..value_rows.len()).collect::<Vec<usize>>()),
                 pos,
                 col_type,
+                None,
             );
             let alias_id = self.nodes.add_alias(name, ref_id)?;
             aliases.push(alias_id);

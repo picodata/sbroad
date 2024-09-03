@@ -74,7 +74,7 @@ fn shard_union_query() {
         LuaValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {}{} {} {}{} {}",
-                r#"SELECT "t3"."id""#,
+                r#"SELECT *"#,
                 r#"FROM ("#,
                 r#"SELECT "test_space"."id" FROM "test_space" WHERE ("test_space"."sys_op") = (?)"#,
                 r#"UNION ALL"#,
@@ -252,7 +252,7 @@ fn union_linker_test() {
             LuaValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {}{} {} {} {} {} {} {}{} {}",
-                    r#"SELECT "t1"."id", "t1"."FIRST_NAME""#,
+                    r#"SELECT *"#,
                     r#"FROM ("#,
                     r#"SELECT "test_space"."id", "test_space"."FIRST_NAME""#,
                     r#"FROM "test_space""#,
@@ -272,7 +272,7 @@ fn union_linker_test() {
             LuaValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {}{} {} {} {} {} {} {}{} {}",
-                    r#"SELECT "t1"."id", "t1"."FIRST_NAME""#,
+                    r#"SELECT *"#,
                     r#"FROM ("#,
                     r#"SELECT "test_space"."id", "test_space"."FIRST_NAME""#,
                     r#"FROM "test_space""#,
@@ -350,10 +350,8 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
         LuaValue::String(format!("Execute query on a bucket [{bucket2}]")),
         LuaValue::String(String::from(PatternWithParams::new(
             format!(
-                "{}, {}, {} {}{} {} {} {} {} {} {}{} {} {}{} {} {}",
-                r#"SELECT "t3"."id""#,
-                r#""t3"."FIRST_NAME""#,
-                r#""t8"."identification_number""#,
+                "{} {}{} {} {} {} {} {} {}{} {} {}{} {} {}",
+                r#"SELECT *"#,
                 r#"FROM ("#,
                 r#"SELECT "test_space"."id", "test_space"."FIRST_NAME""#,
                 r#"FROM "test_space""#,
@@ -678,7 +676,7 @@ on q."f" = "t1"."a""#;
         LuaValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {} {}",
-                r#"SELECT "t1"."a", "t1"."b", "q"."f", "q"."b" FROM"#,
+                r#"SELECT * FROM"#,
                 r#"(SELECT "t1"."a", "t1"."b" FROM "t1") as "t1""#,
                 r#"INNER JOIN (SELECT "COL_1","COL_2" FROM "TMP_test_1136")"#,
                 r#"as "q" ON ("q"."f") = ("t1"."a")"#,
@@ -788,12 +786,8 @@ fn anonymous_col_index_test() {
             LuaValue::String(format!("Execute query on a bucket [{bucket3}]")),
             LuaValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {} {} {} {} {} {} {} {}",
-                    "SELECT",
-                    r#""test_space"."id","#,
-                    r#""test_space"."sysFrom","#,
-                    r#""test_space"."FIRST_NAME","#,
-                    r#""test_space"."sys_op""#,
+                    "{} {} {} {} {} {}",
+                    "SELECT *",
                     r#"FROM "test_space""#,
                     r#"WHERE ("test_space"."id") in"#,
                     r#"(SELECT "COL_1" FROM "TMP_test_1136")"#,
@@ -807,13 +801,9 @@ fn anonymous_col_index_test() {
             LuaValue::String(format!("Execute query on a bucket [{bucket2}]")),
             LuaValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {} {} {} {} {} {} {} {}",
+                    "{} {} {} {} {} {}",
                     "SELECT",
-                    r#""test_space"."id","#,
-                    r#""test_space"."sysFrom","#,
-                    r#""test_space"."FIRST_NAME","#,
-                    r#""test_space"."sys_op""#,
-                    r#"FROM "test_space""#,
+                    r#"* FROM "test_space""#,
                     r#"WHERE ("test_space"."id") in"#,
                     r#"(SELECT "COL_1" FROM "TMP_test_1136")"#,
                     r#"or ("test_space"."id") in"#,
@@ -846,10 +836,8 @@ fn sharding_column1_test() {
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
         LuaValue::String(String::from(PatternWithParams::new(
             format!(
-                "{} {} {}",
-                r#"SELECT "test_space"."id", "test_space"."sysFrom","#,
-                r#""test_space"."FIRST_NAME", "test_space"."sys_op""#,
-                r#"FROM "test_space" WHERE ("test_space"."id") = (?)"#,
+                "{} {}",
+                r#"SELECT *"#, r#"FROM "test_space" WHERE ("test_space"."id") = (?)"#,
             ),
             vec![Value::from(1_u64)],
         ))),
@@ -877,9 +865,8 @@ fn sharding_column2_test() {
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
         LuaValue::String(String::from(PatternWithParams::new(
             format!(
-                "{} {} {}",
-                r#"SELECT "test_space"."id", "test_space"."sysFrom","#,
-                r#""test_space"."FIRST_NAME", "test_space"."sys_op","#,
+                "{} {}",
+                r#"SELECT *,"#,
                 r#""test_space"."bucket_id" FROM "test_space" WHERE ("test_space"."id") = (?)"#,
             ),
             vec![Value::from(1_u64)],

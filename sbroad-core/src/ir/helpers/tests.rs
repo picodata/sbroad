@@ -20,11 +20,11 @@ fn simple_select() {
 	Output_id: 564
 		[id: 564] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0, 1] }}) })]
 			List:
-				[id: 032] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 0, col_type: Integer })]
-				[id: 132] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 1, col_type: String })]
-				[id: 232] expression: Alias [name = product_units, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 2, col_type: Boolean })]
-				[id: 332] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 3, col_type: Unsigned })]
-				[id: 432] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 4, col_type: Unsigned })]
+				[id: 032] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 0, col_type: Integer, asterisk_source: None })]
+				[id: 132] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 1, col_type: String, asterisk_source: None })]
+				[id: 232] expression: Alias [name = product_units, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 2, col_type: Boolean, asterisk_source: None })]
+				[id: 332] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 3, col_type: Unsigned, asterisk_source: None })]
+				[id: 432] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 4, col_type: Unsigned, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 964] relation: Projection
@@ -33,7 +33,7 @@ fn simple_select() {
 	Output_id: 864
 		[id: 864] expression: Row [distribution = Some(Any)]
 			List:
-				[id: 532] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 9, arena_type: Arena64 }), targets: Some([0]), position: 1, col_type: String })]
+				[id: 532] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 9, arena_type: Arena64 }), targets: Some([0]), position: 1, col_type: String, asterisk_source: None })]
 ---------------------------------------------
 "#);
 
@@ -59,11 +59,11 @@ fn simple_join() {
 	Output_id: 564
 		[id: 564] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 032] expression: Alias [name = id, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 0, col_type: Unsigned })]
-				[id: 132] expression: Alias [name = sysFrom, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 1, col_type: Unsigned })]
-				[id: 232] expression: Alias [name = FIRST_NAME, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 2, col_type: String })]
-				[id: 332] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 3, col_type: Unsigned })]
-				[id: 432] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 4, col_type: Unsigned })]
+				[id: 032] expression: Alias [name = id, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 0, col_type: Unsigned, asterisk_source: None })]
+				[id: 132] expression: Alias [name = sysFrom, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 1, col_type: Unsigned, asterisk_source: None })]
+				[id: 232] expression: Alias [name = FIRST_NAME, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 2, col_type: String, asterisk_source: None })]
+				[id: 332] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 3, col_type: Unsigned, asterisk_source: None })]
+				[id: 432] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 4, col_type: Unsigned, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 964] relation: Projection
@@ -72,7 +72,7 @@ fn simple_join() {
 	Output_id: 864
 		[id: 864] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 532] expression: Alias [name = id, child = Reference(Reference { parent: Some(NodeId { offset: 9, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Unsigned })]
+				[id: 532] expression: Alias [name = id, child = Reference(Reference { parent: Some(NodeId { offset: 9, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Unsigned, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 1264] relation: ScanSubQuery
@@ -82,7 +82,7 @@ fn simple_join() {
 	Output_id: 1164
 		[id: 1164] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 632] expression: Alias [name = id, child = Reference(Reference { parent: Some(NodeId { offset: 12, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Unsigned })]
+				[id: 632] expression: Alias [name = id, child = Reference(Reference { parent: Some(NodeId { offset: 12, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Unsigned, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 1964] relation: ScanRelation
@@ -91,11 +91,11 @@ fn simple_join() {
 	Output_id: 1864
 		[id: 1864] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0, 1] }}) })]
 			List:
-				[id: 732] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 0, col_type: Integer })]
-				[id: 832] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 1, col_type: String })]
-				[id: 932] expression: Alias [name = product_units, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 2, col_type: Boolean })]
-				[id: 1032] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 3, col_type: Unsigned })]
-				[id: 1132] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 4, col_type: Unsigned })]
+				[id: 732] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 0, col_type: Integer, asterisk_source: None })]
+				[id: 832] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 1, col_type: String, asterisk_source: None })]
+				[id: 932] expression: Alias [name = product_units, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 2, col_type: Boolean, asterisk_source: None })]
+				[id: 1032] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 3, col_type: Unsigned, asterisk_source: None })]
+				[id: 1132] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 4, col_type: Unsigned, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 2264] relation: Projection
@@ -104,7 +104,7 @@ fn simple_join() {
 	Output_id: 2164
 		[id: 2164] expression: Row [distribution = Some(Any)]
 			List:
-				[id: 1232] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 22, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer })]
+				[id: 1232] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 22, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 2564] relation: ScanSubQuery
@@ -114,7 +114,7 @@ fn simple_join() {
 	Output_id: 2464
 		[id: 2464] expression: Row [distribution = Some(Any)]
 			List:
-				[id: 1332] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 25, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer })]
+				[id: 1332] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 25, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 0136] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] }), alias = t2]
@@ -123,7 +123,7 @@ fn simple_join() {
 	Output_id: 4064
 		[id: 4064] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 1932] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 0, arena_type: Arena136 }), targets: Some([0]), position: 0, col_type: Integer })]
+				[id: 1932] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 0, arena_type: Arena136 }), targets: Some([0]), position: 0, col_type: Integer, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 3364] relation: InnerJoin
@@ -153,8 +153,8 @@ fn simple_join() {
 	Output_id: 3264
 		[id: 3264] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [1] }, Key { positions: [0] }}) })]
 			List:
-				[id: 1532] expression: Alias [name = id, child = Reference(Reference { parent: Some(NodeId { offset: 33, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Unsigned })]
-				[id: 1632] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 33, arena_type: Arena64 }), targets: Some([1]), position: 0, col_type: Integer })]
+				[id: 1532] expression: Alias [name = id, child = Reference(Reference { parent: Some(NodeId { offset: 33, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Unsigned, asterisk_source: None })]
+				[id: 1632] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 33, arena_type: Arena64 }), targets: Some([1]), position: 0, col_type: Integer, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 3664] relation: Projection
@@ -163,7 +163,7 @@ fn simple_join() {
 	Output_id: 3564
 		[id: 3564] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 1732] expression: Alias [name = id, child = Reference(Reference { parent: Some(NodeId { offset: 36, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Unsigned })]
+				[id: 1732] expression: Alias [name = id, child = Reference(Reference { parent: Some(NodeId { offset: 36, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Unsigned, asterisk_source: None })]
 ---------------------------------------------
 "#);
 
@@ -197,11 +197,11 @@ fn simple_join_subtree() {
 	Output_id: 1864
 		[id: 1864] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0, 1] }}) })]
 			List:
-				[id: 732] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 0, col_type: Integer })]
-				[id: 832] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 1, col_type: String })]
-				[id: 932] expression: Alias [name = product_units, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 2, col_type: Boolean })]
-				[id: 1032] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 3, col_type: Unsigned })]
-				[id: 1132] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 4, col_type: Unsigned })]
+				[id: 732] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 0, col_type: Integer, asterisk_source: None })]
+				[id: 832] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 1, col_type: String, asterisk_source: None })]
+				[id: 932] expression: Alias [name = product_units, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 2, col_type: Boolean, asterisk_source: None })]
+				[id: 1032] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 3, col_type: Unsigned, asterisk_source: None })]
+				[id: 1132] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 19, arena_type: Arena64 }), targets: None, position: 4, col_type: Unsigned, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 2264] relation: Projection
@@ -210,7 +210,7 @@ fn simple_join_subtree() {
 	Output_id: 2164
 		[id: 2164] expression: Row [distribution = Some(Any)]
 			List:
-				[id: 1232] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 22, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer })]
+				[id: 1232] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 22, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 2564] relation: ScanSubQuery
@@ -220,7 +220,7 @@ fn simple_join_subtree() {
 	Output_id: 2464
 		[id: 2464] expression: Row [distribution = Some(Any)]
 			List:
-				[id: 1332] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 25, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer })]
+				[id: 1332] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 25, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 0136] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] }), alias = t2]
@@ -229,7 +229,7 @@ fn simple_join_subtree() {
 	Output_id: 4064
 		[id: 4064] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 1932] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 0, arena_type: Arena136 }), targets: Some([0]), position: 0, col_type: Integer })]
+				[id: 1932] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 0, arena_type: Arena136 }), targets: Some([0]), position: 0, col_type: Integer, asterisk_source: None })]
 ---------------------------------------------
 "#
     );
@@ -252,26 +252,26 @@ fn simple_aggregation_with_group_by() {
 	Output_id: 564
 		[id: 564] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0, 1] }}) })]
 			List:
-				[id: 032] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 0, col_type: Integer })]
-				[id: 132] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 1, col_type: String })]
-				[id: 232] expression: Alias [name = product_units, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 2, col_type: Boolean })]
-				[id: 332] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 3, col_type: Unsigned })]
-				[id: 432] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 4, col_type: Unsigned })]
+				[id: 032] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 0, col_type: Integer, asterisk_source: None })]
+				[id: 132] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 1, col_type: String, asterisk_source: None })]
+				[id: 232] expression: Alias [name = product_units, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 2, col_type: Boolean, asterisk_source: None })]
+				[id: 332] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 3, col_type: Unsigned, asterisk_source: None })]
+				[id: 432] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 6, arena_type: Arena64 }), targets: None, position: 4, col_type: Unsigned, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 1464] relation: GroupBy [is_final = false]
 	Gr_cols:
-		Gr_col: Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 1, col_type: String })
+		Gr_col: Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 1, col_type: String, asterisk_source: None })
 	Children:
 		Child_id = 664
 	Output_id: 1364
 		[id: 1364] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0, 1] }}) })]
 			List:
-				[id: 532] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer })]
-				[id: 632] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 1, col_type: String })]
-				[id: 732] expression: Alias [name = product_units, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 2, col_type: Boolean })]
-				[id: 832] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 3, col_type: Unsigned })]
-				[id: 932] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 4, col_type: Unsigned })]
+				[id: 532] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer, asterisk_source: None })]
+				[id: 632] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 1, col_type: String, asterisk_source: None })]
+				[id: 732] expression: Alias [name = product_units, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 2, col_type: Boolean, asterisk_source: None })]
+				[id: 832] expression: Alias [name = sys_op, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 3, col_type: Unsigned, asterisk_source: None })]
+				[id: 932] expression: Alias [name = bucket_id, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 4, col_type: Unsigned, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 1964] relation: Projection
@@ -280,7 +280,7 @@ fn simple_aggregation_with_group_by() {
 	Output_id: 1864
 		[id: 1864] expression: Row [distribution = Some(Any)]
 			List:
-				[id: 1132] expression: Alias [name = column_764, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 1, col_type: String })]
+				[id: 1132] expression: Alias [name = column_764, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 1, col_type: String, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 41] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] }), alias = None]
@@ -289,18 +289,18 @@ fn simple_aggregation_with_group_by() {
 	Output_id: 40
 		[id: 40] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 39] expression: Alias [name = column_12, child = Reference { parent: Some(41), targets: Some([0]), position: 0, col_type: String }]
+				[id: 39] expression: Alias [name = column_12, child = Reference { parent: Some(41), targets: Some([0]), position: 0, col_type: String, asterisk_source: None }]
 ---------------------------------------------
 ---------------------------------------------
 [id: 2664] relation: GroupBy [is_final = true]
 	Gr_cols:
-		Gr_col: Reference(Reference { parent: Some(NodeId { offset: 26, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: String })
+		Gr_col: Reference(Reference { parent: Some(NodeId { offset: 26, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: String, asterisk_source: None })
 	Children:
 		Child_id = 0136
 	Output_id: 2564
 		[id: 2564] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 1332] expression: Alias [name = column_764, child = Reference(Reference { parent: Some(NodeId { offset: 26, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: String })]
+				[id: 1332] expression: Alias [name = column_764, child = Reference(Reference { parent: Some(NodeId { offset: 26, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: String, asterisk_source: None })]
 ---------------------------------------------
 ---------------------------------------------
 [id: 1764] relation: Projection
@@ -309,7 +309,7 @@ fn simple_aggregation_with_group_by() {
 	Output_id: 1664
 		[id: 1664] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 1032] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 17, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: String })]
+				[id: 1032] expression: Alias [name = product_code, child = Reference(Reference { parent: Some(NodeId { offset: 17, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: String, asterisk_source: None })]
 ---------------------------------------------
 "#);
 
