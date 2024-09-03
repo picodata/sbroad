@@ -78,10 +78,15 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
 
 DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
          | CreateProc | DropProc | RenameProc | SetParam | SetTransaction | AlterSystem }
+
+    WaitApplied = _{ WaitAppliedGlobally | WaitAppliedLocally }
+      WaitAppliedGlobally = { ^"wait" ~ ^"applied" ~ ^"globally" }
+      WaitAppliedLocally = { ^"wait" ~ ^"applied" ~ ^"locally" }
+
     CreateTable = {
         ^"create" ~ ^"table" ~ IfNotExists? ~ NewTable ~
         "(" ~ Columns ~ ("," ~ PrimaryKey)? ~ ")" ~
-        Engine? ~ Distribution? ~ TimeoutOption?
+        Engine? ~ Distribution? ~ WaitApplied? ~ TimeoutOption?
     }
         NewTable = @{Table}
         Columns = { ColumnDef ~ ("," ~ ColumnDef)* }
@@ -96,29 +101,28 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
         Global = { ^"globally" }
         Sharding = { ^"by" ~ "(" ~ Identifier ~ ("," ~ Identifier)* ~ ")" ~ Tier? }
         Tier = { ^"in" ~ ^"tier" ~ Identifier }
-    DropTable = { ^"drop" ~ ^"table" ~ IfExists? ~ Table ~ TimeoutOption? }
-
+    DropTable = { ^"drop" ~ ^"table" ~ IfExists? ~ Table ~ WaitApplied? ~ TimeoutOption? }
     CreateProc = {
         ^"create" ~ ^"procedure" ~ IfNotExists? ~ Identifier
         ~ ProcParams ~ (^"language" ~ ProcLanguage)?
         ~ ((^"as" ~ "$$" ~ ProcBody ~ "$$") | (^"begin" ~ "atomic" ~ ProcBody ~ "end"))
-        ~ TimeoutOption?
+        ~ WaitApplied? ~ TimeoutOption?
     }
         ProcParams = { "(" ~ (ColumnDefType ~ ("," ~ ColumnDefType)*)? ~ ")" }
         ProcLanguage = { SQL }
             SQL = { ^"sql" }
         ProcBody = { (Insert | Update | Delete) }
 
-    DropProc = { ^"drop" ~ ^"procedure" ~ IfExists? ~ ProcWithOptionalParams ~ TimeoutOption? }
+    DropProc = { ^"drop" ~ ^"procedure" ~ IfExists? ~ ProcWithOptionalParams ~ WaitApplied? ~ TimeoutOption? }
         ProcWithOptionalParams = { Identifier ~ ProcParams? }
 
-    RenameProc = { ^"alter" ~ ^"procedure" ~ OldProc ~ ProcParams? ~ ^"rename" ~ ^"to" ~ NewProc ~ TimeoutOption? }
+    RenameProc = { ^"alter" ~ ^"procedure" ~ OldProc ~ ProcParams? ~ ^"rename" ~ ^"to" ~ NewProc ~ WaitApplied? ~ TimeoutOption? }
         OldProc = @{ Identifier }
         NewProc = @{ Identifier }
 
     CreateIndex = {
         ^"create" ~ Unique? ~ ^"index" ~ IfNotExists? ~ Identifier ~ ^"on" ~ Table
-        ~ IndexType? ~ "(" ~ Parts ~ ")" ~ IndexOptions? ~ TimeoutOption?
+        ~ IndexType? ~ "(" ~ Parts ~ ")" ~ IndexOptions? ~ WaitApplied? ~ TimeoutOption?
     }
     Unique = { ^"unique" }
     IndexType = { ^"using" ~ (Tree | Hash | RTree | BitSet) }
@@ -140,8 +144,7 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
             Euclid = { ^"euclid" }
             Manhattan = { ^"manhattan" }
         Hint = { ^"hint" ~ "=" ~ (True | False) }
-
-    DropIndex = { ^"drop" ~ ^"index" ~ IfExists? ~ Identifier ~ TimeoutOption? }
+    DropIndex = { ^"drop" ~ ^"index" ~ IfExists? ~ Identifier ~ WaitApplied? ~ TimeoutOption? }
 
     SetParam = { ^"set" ~ SetScope? ~ ConfParam  }
         SetScope = { ScopeSession | ScopeLocal }

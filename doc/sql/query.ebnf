@@ -128,7 +128,9 @@ alter_system ::= 'ALTER' 'SYSTEM'
                     ('FOR' ('ALL' 'TIERS' | 'TIER' tier))?
                   ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 alter_procedure ::= 'ALTER' 'PROCEDURE' procedure ('(' type (',' type)* ')')?
-                     'RENAME' 'TO' procedure ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+                     'RENAME' 'TO' procedure
+                     ('WAIT' 'APPLIED' ('GLOBALLY' | 'LOCALLY'))?
+                     ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' ('IF' 'NOT' 'EXISTS')? index 'ON' table
                  ('USING' ('TREE' | 'HASH' | 'RTREE' | 'BITSET'))?
                  '(' column (',' column)* ')' ('WITH' '('
@@ -155,12 +157,16 @@ create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' ('IF' 'NOT' 'EXISTS')? index 'ON' ta
                              | ('HINT' '=' ('TRUE' | 'FALSE'))
                          )
                      )*
-                 ')')? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+                 ')')? 
+                 ('WAIT' 'APPLIED' ('GLOBALLY' | 'LOCALLY'))?
+                 ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 create_procedure ::= 'CREATE' 'PROCEDURE' ('IF' 'NOT' 'EXISTS')? procedure '(' type (',' type)* ')'
                      ('LANGUAGE' 'SQL')? (
                          ('AS' '$$' (insert | update | delete) '$$')
                          | ('BEGIN' 'ATOMIC' (insert | update | delete) 'END')
-                     ) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+                     )
+                     ('WAIT' 'APPLIED' ('GLOBALLY' | 'LOCALLY'))?
+                     ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 create_role    ::= 'CREATE' 'ROLE' ('IF' 'NOT' 'EXISTS')? role
 create_table   ::= 'CREATE' 'TABLE' ('IF' 'NOT' 'EXISTS')? table
                    '('
@@ -169,6 +175,7 @@ create_table   ::= 'CREATE' 'TABLE' ('IF' 'NOT' 'EXISTS')? table
                    ')'
                    ('USING' ('MEMTX' | 'VINYL'))?
                    (('DISTRIBUTED' (('BY' '(' column (',' column)* ')' ('IN' 'TIER' tier)?) | 'GLOBALLY'))?)?
+                   ('WAIT' 'APPLIED' ('GLOBALLY' | 'LOCALLY'))?
                    ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 create_user    ::= 'CREATE' 'USER' ('IF' 'NOT' 'EXISTS')? user 'WITH'? 'PASSWORD' "'" password "'"
                    ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))?
@@ -179,9 +186,15 @@ alter_user     ::= 'ALTER' 'USER' user
                        | 'PASSWORD' "'" password "'" ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))?
                        | 'RENAME' 'TO' user
                    )
-drop_index     ::= 'DROP' 'INDEX' ('IF' 'EXISTS')? index ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-drop_procedure ::= 'DROP' 'PROCEDURE' ('IF' 'EXISTS')? procedure ('(' type (',' type)* ')')? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-drop_table     ::= 'DROP' 'TABLE' ('IF' 'EXISTS')? table ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_index     ::= 'DROP' 'INDEX' ('IF' 'EXISTS')? index
+                   ('WAIT' 'APPLIED' ('GLOBALLY' | 'LOCALLY'))?
+                   ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_procedure ::= 'DROP' 'PROCEDURE' ('IF' 'EXISTS')? procedure ('(' type (',' type)* ')')?
+                   ('WAIT' 'APPLIED' ('GLOBALLY' | 'LOCALLY'))?
+                   ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_table     ::= 'DROP' 'TABLE' ('IF' 'EXISTS')? table
+                   ('WAIT' 'APPLIED' ('GLOBALLY' | 'LOCALLY'))?
+                   ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 drop_role      ::= 'DROP' 'ROLE' ('IF' 'EXISTS')? role
 drop_user      ::= 'DROP' 'USER' ('IF' 'EXISTS')? user
 create_plugin  ::= 'CREATE' 'PLUGIN' ('IF' 'NOT' 'EXISTS')? plugin version

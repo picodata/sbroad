@@ -843,6 +843,7 @@ pub struct CreateTable {
     /// Vinyl is supported only for sharded tables.
     pub engine_type: SpaceEngineType,
     pub if_not_exists: bool,
+    pub wait_applied_globally: bool,
     pub timeout: Decimal,
     /// Shows which tier the sharded table belongs to.
     /// Field has value, only if it was specified in [ON TIER] part of CREATE TABLE statement.
@@ -862,6 +863,7 @@ impl From<CreateTable> for NodeAligned {
 pub struct DropTable {
     pub name: SmolStr,
     pub if_exists: bool,
+    pub wait_applied_globally: bool,
     pub timeout: Decimal,
 }
 
@@ -878,6 +880,7 @@ pub struct CreateProc {
     pub body: SmolStr,
     pub if_not_exists: bool,
     pub language: Language,
+    pub wait_applied_globally: bool,
     pub timeout: Decimal,
 }
 
@@ -892,6 +895,7 @@ pub struct DropProc {
     pub name: SmolStr,
     pub params: Option<Vec<ParamDef>>,
     pub if_exists: bool,
+    pub wait_applied_globally: bool,
     pub timeout: Decimal,
 }
 
@@ -906,6 +910,7 @@ pub struct RenameRoutine {
     pub old_name: SmolStr,
     pub new_name: SmolStr,
     pub params: Option<Vec<ParamDef>>,
+    pub wait_applied_globally: bool,
     pub timeout: Decimal,
 }
 
@@ -931,6 +936,7 @@ pub struct CreateIndex {
     pub dimension: Option<u32>,
     pub distance: Option<RtreeIndexDistanceType>,
     pub hint: Option<bool>,
+    pub wait_applied_globally: bool,
     pub timeout: Decimal,
 }
 
@@ -944,6 +950,7 @@ impl From<CreateIndex> for NodeAligned {
 pub struct DropIndex {
     pub name: SmolStr,
     pub if_exists: bool,
+    pub wait_applied_globally: bool,
     pub timeout: Decimal,
 }
 

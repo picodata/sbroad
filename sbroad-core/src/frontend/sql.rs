@@ -75,6 +75,8 @@ const DEFAULT_AUTH_METHOD: &str = "md5";
 const DEFAULT_IF_EXISTS: bool = false;
 const DEFAULT_IF_NOT_EXISTS: bool = false;
 
+const DEFAULT_WAIT_APPLIED_GLOBALLY: bool = true;
+
 fn get_default_timeout() -> Decimal {
     Decimal::from_str(&format!("{DEFAULT_TIMEOUT_F64}")).expect("default timeout casting failed")
 }
@@ -232,6 +234,7 @@ fn parse_rename_proc(
     let mut new_name = SmolStr::default();
     let mut params: Option<Vec<ParamDef>> = None;
     let mut timeout = get_default_timeout();
+    let mut wait_applied_globally = DEFAULT_WAIT_APPLIED_GLOBALLY;
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
@@ -247,6 +250,8 @@ fn parse_rename_proc(
             Rule::Timeout => {
                 timeout = get_timeout(ast, *child_id)?;
             }
+            Rule::WaitAppliedGlobally => wait_applied_globally = true,
+            Rule::WaitAppliedLocally => wait_applied_globally = false,
             _ => panic!("Unexpected node: {child_node:?}"),
         }
     }
@@ -255,6 +260,7 @@ fn parse_rename_proc(
         new_name,
         params,
         timeout,
+        wait_applied_globally,
     })
 }
 
@@ -268,6 +274,7 @@ fn parse_create_proc(
     let mut body = SmolStr::default();
     let mut if_not_exists = DEFAULT_IF_NOT_EXISTS;
     let mut timeout = get_default_timeout();
+    let mut wait_applied_globally = DEFAULT_WAIT_APPLIED_GLOBALLY;
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
@@ -290,6 +297,8 @@ fn parse_create_proc(
             Rule::Timeout => {
                 timeout = get_timeout(ast, *child_id)?;
             }
+            Rule::WaitAppliedGlobally => wait_applied_globally = true,
+            Rule::WaitAppliedLocally => wait_applied_globally = false,
             _ => unreachable!("Unexpected node: {child_node:?}"),
         }
     }
@@ -302,6 +311,7 @@ fn parse_create_proc(
         body,
         if_not_exists,
         timeout,
+        wait_applied_globally,
     };
     Ok(create_proc)
 }
@@ -417,6 +427,7 @@ fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropPro
     let mut params = None;
     let mut timeout = get_default_timeout();
     let mut if_exists = DEFAULT_IF_EXISTS;
+    let mut wait_applied_globally = DEFAULT_WAIT_APPLIED_GLOBALLY;
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
@@ -425,8 +436,10 @@ fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropPro
                 name = Some(proc_name);
                 params = proc_params;
             }
-            Rule::TimeoutOption => timeout = get_timeout(ast, *child_id)?,
+            Rule::Timeout => timeout = get_timeout(ast, *child_id)?,
             Rule::IfExists => if_exists = true,
+            Rule::WaitAppliedGlobally => wait_applied_globally = true,
+            Rule::WaitAppliedLocally => wait_applied_globally = false,
             child_node => panic!("unexpected node {child_node:?}"),
         }
     }
@@ -437,6 +450,7 @@ fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropPro
         params,
         if_exists,
         timeout,
+        wait_applied_globally,
     })
 }
 
@@ -461,6 +475,7 @@ fn parse_create_index(
     let mut hint = None;
     let mut if_not_exists = DEFAULT_IF_NOT_EXISTS;
     let mut timeout = get_default_timeout();
+    let mut wait_applied_globally = DEFAULT_WAIT_APPLIED_GLOBALLY;
 
     let first_child = |node: &ParseNode| -> &ParseNode {
         let child_id = node.children.first().expect("Expected to see first child");
@@ -559,6 +574,8 @@ fn parse_create_index(
                 }
             }
             Rule::Timeout => timeout = get_timeout(ast, *child_id)?,
+            Rule::WaitAppliedGlobally => wait_applied_globally = true,
+            Rule::WaitAppliedLocally => wait_applied_globally = false,
             _ => panic!("Unexpected index rule: {child_node:?}"),
         }
     }
@@ -578,6 +595,7 @@ fn parse_create_index(
         distance,
         hint,
         timeout,
+        wait_applied_globally,
     };
     Ok(index)
 }
@@ -587,12 +605,15 @@ fn parse_drop_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropIn
     let mut name = SmolStr::default();
     let mut timeout = get_default_timeout();
     let mut if_exists = DEFAULT_IF_EXISTS;
+    let mut wait_applied_globally = DEFAULT_WAIT_APPLIED_GLOBALLY;
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
             Rule::Identifier => name = parse_identifier(ast, *child_id)?,
             Rule::Timeout => timeout = get_timeout(ast, *child_id)?,
             Rule::IfExists => if_exists = true,
+            Rule::WaitAppliedGlobally => wait_applied_globally = true,
+            Rule::WaitAppliedLocally => wait_applied_globally = false,
             _ => panic!("Unexpected drop index node: {child_node:?}"),
         }
     }
@@ -600,6 +621,7 @@ fn parse_drop_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropIn
         name,
         if_exists,
         timeout,
+        wait_applied_globally,
     })
 }
 
@@ -625,6 +647,7 @@ fn parse_create_table(
     let mut tier = None;
     let mut is_global = false;
     let mut if_not_exists = DEFAULT_IF_NOT_EXISTS;
+    let mut wait_applied_globally = DEFAULT_WAIT_APPLIED_GLOBALLY;
 
     let nullable_primary_key_column_error = Err(SbroadError::Invalid(
         Entity::Column,
@@ -871,6 +894,12 @@ fn parse_create_table(
             Rule::Timeout => {
                 timeout = get_timeout(ast, *child_id)?;
             }
+            Rule::WaitAppliedGlobally => {
+                wait_applied_globally = true;
+            }
+            Rule::WaitAppliedLocally => {
+                wait_applied_globally = false;
+            }
             _ => panic!("Unexpected rule met under CreateTable."),
         }
     }
@@ -904,6 +933,7 @@ fn parse_create_table(
         sharding_key,
         engine_type,
         if_not_exists,
+        wait_applied_globally,
         timeout,
         tier,
     })
@@ -913,6 +943,7 @@ fn parse_drop_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropTa
     let mut table_name = SmolStr::default();
     let mut timeout = get_default_timeout();
     let mut if_exists = DEFAULT_IF_EXISTS;
+    let mut wait_applied_globally = DEFAULT_WAIT_APPLIED_GLOBALLY;
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
@@ -924,6 +955,12 @@ fn parse_drop_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropTa
             }
             Rule::Timeout => {
                 timeout = get_timeout(ast, *child_id)?;
+            }
+            Rule::WaitAppliedGlobally => {
+                wait_applied_globally = true;
+            }
+            Rule::WaitAppliedLocally => {
+                wait_applied_globally = false;
             }
             _ => {
                 return Err(SbroadError::Invalid(
@@ -939,6 +976,7 @@ fn parse_drop_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropTa
     Ok(DropTable {
         name: table_name,
         if_exists,
+        wait_applied_globally,
         timeout,
     })
 }

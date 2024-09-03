@@ -50,6 +50,40 @@ impl DdlOwned {
             )
         })
     }
+
+    pub fn wait_applied_globally(&self) -> bool {
+        match self {
+            DdlOwned::CreateTable(CreateTable {
+                wait_applied_globally,
+                ..
+            })
+            | DdlOwned::DropTable(DropTable {
+                wait_applied_globally,
+                ..
+            })
+            | DdlOwned::CreateIndex(CreateIndex {
+                wait_applied_globally,
+                ..
+            })
+            | DdlOwned::DropIndex(DropIndex {
+                wait_applied_globally,
+                ..
+            })
+            | DdlOwned::CreateProc(CreateProc {
+                wait_applied_globally,
+                ..
+            })
+            | DdlOwned::DropProc(DropProc {
+                wait_applied_globally,
+                ..
+            })
+            | DdlOwned::RenameRoutine(RenameRoutine {
+                wait_applied_globally,
+                ..
+            }) => *wait_applied_globally,
+            _ => false,
+        }
+    }
 }
 
 impl From<DdlOwned> for NodeAligned {
@@ -125,6 +159,40 @@ impl Ddl<'_> {
                 Some(format_smolstr!("timeout parsing error {e:?}")),
             )
         })
+    }
+
+    pub fn wait_applied_globally(&self) -> bool {
+        match self {
+            Ddl::CreateTable(CreateTable {
+                wait_applied_globally,
+                ..
+            })
+            | Ddl::DropTable(DropTable {
+                wait_applied_globally,
+                ..
+            })
+            | Ddl::CreateIndex(CreateIndex {
+                wait_applied_globally,
+                ..
+            })
+            | Ddl::DropIndex(DropIndex {
+                wait_applied_globally,
+                ..
+            })
+            | Ddl::CreateProc(CreateProc {
+                wait_applied_globally,
+                ..
+            })
+            | Ddl::DropProc(DropProc {
+                wait_applied_globally,
+                ..
+            })
+            | Ddl::RenameRoutine(RenameRoutine {
+                wait_applied_globally,
+                ..
+            }) => *wait_applied_globally,
+            _ => false,
+        }
     }
 
     #[must_use]
