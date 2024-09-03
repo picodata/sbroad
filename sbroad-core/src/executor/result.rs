@@ -139,20 +139,12 @@ impl ProducerResult {
     ///
     /// # Errors
     /// - convert to virtual table error
-    pub fn as_virtual_table(
-        &mut self,
-        possibly_incorrect_types: bool,
-    ) -> Result<VirtualTable, SbroadError> {
+    pub fn as_virtual_table(&mut self) -> Result<VirtualTable, SbroadError> {
         let mut vtable = VirtualTable::new();
 
         // Decode metadata
         for col in &self.metadata {
-            let column: Column = if possibly_incorrect_types {
-                let column_type = Type::new_from_possibly_incorrect(&col.r#type)?;
-                Column::new(&col.name, column_type, ColumnRole::User, true)
-            } else {
-                col.try_into()?
-            };
+            let column: Column = col.try_into()?;
             vtable.add_column(VTableColumn {
                 r#type: column.r#type,
                 role: column.role,

@@ -3,7 +3,7 @@
 //! Parses an SQL statement to the abstract syntax tree (AST)
 //! and builds the intermediate representation (IR).
 
-use crate::ir::node::ReferenceAsteriskSource;
+use crate::ir::node::{Reference, ReferenceAsteriskSource};
 use ahash::{AHashMap, AHashSet};
 use core::panic;
 use itertools::Itertools;
@@ -1507,13 +1507,13 @@ const PARSING_PAIRS_MAP_CAPACITY: usize = 100;
 /// `left >= center AND left <= right`.
 struct Between {
     /// Left node id.
-    left_id: usize,
+    left_id: NodeId,
     /// LEQ node id (`left <= right`)
-    leq_id: usize,
+    leq_id: NodeId,
 }
 
 impl Between {
-    fn new(left_id: usize, less_eq_id: usize) -> Self {
+    fn new(left_id: NodeId, less_eq_id: NodeId) -> Self {
         Self {
             left_id,
             leq_id: less_eq_id,
@@ -1543,14 +1543,14 @@ where
     /// We can't fix between child (clone expression subtree) in the place of their creation,
     /// because we'll copy references without adequate `parent` and `target` that we couldn't fix
     /// later.
-    subquery_replaces: AHashMap<usize, usize>,
+    subquery_replaces: AHashMap<NodeId, NodeId>,
     /// Vec of { (sq_id, ref_ids_to_fix_parent_and_target) }
     /// After calling `parse_expr` and creating relational node that can contain SubQuery as
     /// additional child (Selection, Join, Having, OrderBy, GroupBy, Projection) we should pop the
     /// queue till it's not empty and:
     /// * Add subqueries to the list of relational children
     /// * Fix References
-    sub_queries_to_fix_queue: VecDeque<(usize, Vec<usize>)>,
+    sub_queries_to_fix_queue: VecDeque<(NodeId, Vec<NodeId>)>,
     metadata: &'worker M,
     /// Map of { reference plan_id -> (it's column name, whether it's covered with row)}
     /// We have to save column name in order to use it later for alias creation.
@@ -1634,13 +1634,13 @@ where
     /// nothing is left for the `left <= right` sutree.
     pub(super) fn fix_betweens(&self, plan: &mut Plan) -> Result<(), SbroadError> {
         for between in &self.betweens {
-            let left_id: usize = if let Some(id) = self.subquery_replaces.get(&between.left_id) {
+            let left_id = if let Some(id) = self.subquery_replaces.get(&between.left_id) {
                 plan.clone_expr_subtree(*id)?
             } else {
                 plan.clone_expr_subtree(between.left_id)?
             };
             let less_eq_expr = plan.get_mut_expression_node(between.leq_id)?;
-            if let Expression::Bool { ref mut left, .. } = less_eq_expr {
+            if let MutExpression::Bool(BoolExpr { ref mut left, .. }) = less_eq_expr {
                 *left = left_id;
             } else {
                 panic!("Expected to see LEQ expression.")
@@ -1663,7 +1663,7 @@ enum ParseExpression {
         plan_id: NodeId,
     },
     SubQueryPlanId {
-        plan_id: usize,
+        plan_id: NodeId,
     },
     Parentheses {
         child: Box<ParseExpression>,
@@ -1783,10 +1783,10 @@ impl Plan {
     /// Helper function to populate plan with `SubQuery` represented as a Row of its output.
     fn add_replaced_subquery<M: Metadata>(
         &mut self,
-        sq_id: usize,
+        sq_id: NodeId,
         expected_output_size: Option<usize>,
         worker: &mut ExpressionsWorker<M>,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let (sq_row_id, new_refs) = self.add_row_from_subquery(sq_id, expected_output_size)?;
         worker.subquery_replaces.insert(sq_id, sq_row_id);
         worker.sub_queries_to_fix_queue.push_back((sq_id, new_refs));
@@ -1798,25 +1798,21 @@ impl Plan {
     fn fix_subquery_rows<M: Metadata>(
         &mut self,
         worker: &mut ExpressionsWorker<M>,
-        rel_id: usize,
+        rel_id: NodeId,
     ) -> Result<(), SbroadError> {
-        let rel_node = self.get_mut_relation_node(rel_id)?;
+        let mut rel_node = self.get_mut_relation_node(rel_id)?;
 
-        let mut rel_node_children_len = rel_node.children().len();
+        let mut rel_node_children_len = rel_node.mut_children().len();
         for (sq_id, _) in &worker.sub_queries_to_fix_queue {
             rel_node.add_sq_child(*sq_id);
         }
 
-        while !worker.sub_queries_to_fix_queue.is_empty() {
-            let (_, new_refs) = worker
-                .sub_queries_to_fix_queue
-                .pop_front()
-                .expect("Expected to get res on non-empty `sub_queries_to_fix_queue`.");
+        while let Some((_, new_refs)) = worker.sub_queries_to_fix_queue.pop_front() {
             for new_ref_id in new_refs {
                 let new_ref = self.get_mut_expression_node(new_ref_id)?;
-                if let Expression::Reference {
+                if let MutExpression::Reference(Reference {
                     parent, targets, ..
-                } = new_ref
+                }) = new_ref
                 {
                     *parent = Some(rel_id);
                     *targets = Some(vec![rel_node_children_len]);
@@ -2128,7 +2124,7 @@ impl ParseExpression {
                     let uncovered_plan_child_id = if let Some((_, is_row)) = reference {
                         if *is_row {
                             let plan_inner_expr = plan.get_expression_node(plan_child_id)?;
-                            *plan_inner_expr.get_row_list().first().ok_or_else(|| {
+                            *plan_inner_expr.get_row_list()?.first().ok_or_else(|| {
                                 SbroadError::UnexpectedNumberOfValues(
                                     "There must be a Reference under Row.".into(),
                                 )
@@ -2375,9 +2371,10 @@ where
 
                     let plan_left_id = referred_relation_ids
                         .first()
-                        .unwrap_or_else(||
-                            panic!("Reference must point to some relational node")
-                        );
+                        .ok_or(SbroadError::Invalid(
+                            Entity::Query,
+                            Some("Reference must point to some relational node".into())
+                        ))?;
 
                     worker.build_columns_map(plan, *plan_left_id)?;
 
@@ -3228,7 +3225,7 @@ impl AbstractSyntaxTree {
                             PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
                         let mut reference_met = false;
                         for LevelNode(_, node_id) in expr_tree.iter(expr_plan_node_id) {
-                            if let Expression::Reference { targets, .. } = plan.get_expression_node(node_id)? {
+                            if let Expression::Reference(Reference { targets, .. }) = plan.get_expression_node(node_id)? {
                                 if targets.is_some() {
                                     // Subquery reference met.
                                     reference_met = true;
@@ -3274,7 +3271,8 @@ impl AbstractSyntaxTree {
 
             order_by_elements.push(OrderByElement { entity, order_type });
         }
-        let (order_by_id, plan_node_id) = plan.add_order_by(projection_plan_id, order_by_elements)?;
+        let (order_by_id, plan_node_id) =
+            plan.add_order_by(projection_plan_id, order_by_elements)?;
         plan.fix_subquery_rows(worker, order_by_id)?;
         map.add(node_id, plan_node_id);
         Ok(())

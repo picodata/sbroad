@@ -115,6 +115,10 @@ impl RelOwned {
                 children: ref mut old,
                 ..
             })
+            | RelOwned::OrderBy(OrderBy {
+                children: ref mut old,
+                ..
+            })
             | RelOwned::ValuesRow(ValuesRow {
                 children: ref mut old,
                 ..
@@ -130,13 +134,6 @@ impl RelOwned {
                 }
                 *left = children[0];
                 *right = children[1];
-            }
-            RelOwned::OrderBy(OrderBy { ref mut child, .. }) => {
-                if children.len() != 1 {
-                    unreachable!("ORDER BY may have only a single relational child");
-                }
-                // It is safe to unwrap here, because the length is already checked above.
-                *child = children[0];
             }
             RelOwned::ScanCte(ScanCte { ref mut child, .. }) => {
                 if children.len() != 1 {
@@ -162,9 +159,9 @@ impl RelOwned {
     #[must_use]
     pub fn children(&self) -> Children<'_> {
         match self {
-            RelOwned::Limit(Limit { child, .. })
-            | RelOwned::OrderBy(OrderBy { child, .. })
-            | RelOwned::ScanCte(ScanCte { child, .. }) => Children::Single(child),
+            RelOwned::Limit(Limit { child, .. }) | RelOwned::ScanCte(ScanCte { child, .. }) => {
+                Children::Single(child)
+            }
             RelOwned::Except(Except { left, right, .. })
             | RelOwned::Intersect(Intersect { left, right, .. })
             | RelOwned::UnionAll(UnionAll { left, right, .. })
@@ -173,6 +170,7 @@ impl RelOwned {
             | RelOwned::Update(Update { children, .. })
             | RelOwned::Join(Join { children, .. })
             | RelOwned::Having(Having { children, .. })
+            | RelOwned::OrderBy(OrderBy { children, .. })
             | RelOwned::Delete(Delete { children, .. })
             | RelOwned::Insert(Insert { children, .. })
             | RelOwned::Motion(Motion { children, .. })
@@ -189,7 +187,6 @@ impl RelOwned {
     pub fn mut_children(&mut self) -> MutChildren<'_> {
         match self {
             RelOwned::Limit(Limit { ref mut child, .. })
-            | RelOwned::OrderBy(OrderBy { ref mut child, .. })
             | RelOwned::ScanCte(ScanCte { ref mut child, .. }) => MutChildren::Single(child),
             RelOwned::Except(Except {
                 ref mut left,
@@ -218,6 +215,9 @@ impl RelOwned {
                 ref mut children, ..
             })
             | RelOwned::Join(Join {
+                ref mut children, ..
+            })
+            | RelOwned::OrderBy(OrderBy {
                 ref mut children, ..
             })
             | RelOwned::Having(Having {
@@ -367,7 +367,6 @@ impl MutRelational<'_> {
         // return MutChildren { node: self };
         match self {
             MutRelational::Limit(Limit { child, .. })
-            | MutRelational::OrderBy(OrderBy { child, .. })
             | MutRelational::ScanCte(ScanCte { child, .. }) => MutChildren::Single(child),
             MutRelational::Except(Except { left, right, .. })
             | MutRelational::Intersect(Intersect { left, right, .. })
@@ -377,6 +376,9 @@ impl MutRelational<'_> {
                 ref mut children, ..
             })
             | MutRelational::Update(Update {
+                ref mut children, ..
+            })
+            | MutRelational::OrderBy(OrderBy {
                 ref mut children, ..
             })
             | MutRelational::Having(Having {
@@ -463,6 +465,10 @@ impl MutRelational<'_> {
                 children: ref mut old,
                 ..
             })
+            | MutRelational::OrderBy(OrderBy {
+                children: ref mut old,
+                ..
+            })
             | MutRelational::ValuesRow(ValuesRow {
                 children: ref mut old,
                 ..
@@ -478,13 +484,6 @@ impl MutRelational<'_> {
                 }
                 *left = children[0];
                 *right = children[1];
-            }
-            MutRelational::OrderBy(OrderBy { ref mut child, .. }) => {
-                if children.len() != 1 {
-                    unreachable!("ORDER BY may have only a single relational child");
-                }
-                // It is safe to unwrap here, because the length is already checked above.
-                *child = children[0];
             }
             MutRelational::ScanCte(ScanCte { ref mut child, .. }) => {
                 if children.len() != 1 {
@@ -503,6 +502,24 @@ impl MutRelational<'_> {
             MutRelational::ScanRelation(ScanRelation { .. }) => {
                 assert!(children.is_empty(), "scan must have no children!");
             }
+        }
+    }
+
+    /// Add `SubQuery` to the list of relational children.
+    ///
+    /// # Panics
+    /// - Trying to add subquery to inapplicable relational node.
+    pub fn add_sq_child(&mut self, sq_id: NodeId) {
+        match self {
+            MutRelational::Join(Join { children, .. })
+            | MutRelational::Projection(Projection { children, .. })
+            | MutRelational::Selection(Selection { children, .. })
+            | MutRelational::GroupBy(GroupBy { children, .. })
+            | MutRelational::Having(Having { children, .. })
+            | MutRelational::OrderBy(OrderBy { children, .. })
+            | MutRelational::Update(Update { children, .. })
+            | MutRelational::ValuesRow(ValuesRow { children, .. }) => children.push(sq_id),
+            _ => panic!("Unable to add SubQuery child to {self:?}."),
         }
     }
 
@@ -566,9 +583,9 @@ impl Relational<'_> {
     #[must_use]
     pub fn children(&self) -> Children<'_> {
         match self {
-            Relational::Limit(Limit { child, .. })
-            | Relational::OrderBy(OrderBy { child, .. })
-            | Relational::ScanCte(ScanCte { child, .. }) => Children::Single(child),
+            Relational::Limit(Limit { child, .. }) | Relational::ScanCte(ScanCte { child, .. }) => {
+                Children::Single(child)
+            }
             Relational::Except(Except { left, right, .. })
             | Relational::Intersect(Intersect { left, right, .. })
             | Relational::UnionAll(UnionAll { left, right, .. })
@@ -576,6 +593,7 @@ impl Relational<'_> {
             Relational::GroupBy(GroupBy { children, .. })
             | Relational::Update(Update { children, .. })
             | Relational::Join(Join { children, .. })
+            | Relational::OrderBy(OrderBy { children, .. })
             | Relational::Having(Having { children, .. })
             | Relational::Delete(Delete { children, .. })
             | Relational::Insert(Insert { children, .. })

@@ -11,17 +11,16 @@ use crate::executor::engine::helpers::to_user;
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::TrimKind;
 use crate::ir::node::{
-    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Constant, Delete, GroupBy as GroupByRel, Having,
-    Insert, Join, Motion as MotionRel, NodeId, OrderBy as OrderByRel, Projection as ProjectionRel,
-    Reference, Row as RowExpr, ScanCte, ScanRelation, ScanSubQuery, Selection, StableFunction,
-    Trim, UnaryExpr, Update as UpdateRel, Values, ValuesRow,
+    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Constant, Delete, Having, Insert, Join,
+    Motion as MotionRel, NodeId, Reference, Row as RowExpr, ScanCte, ScanRelation, ScanSubQuery,
+    Selection, StableFunction, Trim, UnaryExpr, Update as UpdateRel, Values, ValuesRow,
 };
 use crate::ir::operator::{ConflictStrategy, JoinKind, OrderByElement, OrderByEntity, OrderByType};
 use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
     MotionKey as IrMotionKey, MotionPolicy as IrMotionPolicy, Target as IrTarget,
 };
-use crate::ir::{OptionKind, Plan};
+use crate::ir::{node, OptionKind, Plan};
 
 use super::expression::FunctionFeature;
 use super::node::expression::Expression;
@@ -386,7 +385,7 @@ impl Projection {
 
         let alias_list = plan.get_expression_node(output_id)?;
 
-        for col_node_id in alias_list.get_row_list() {
+        for col_node_id in alias_list.get_row_list()? {
             let col = ColExpr::new(plan, *col_node_id, sq_ref_map)?;
 
             result.cols.push(col);
@@ -436,7 +435,7 @@ impl GroupBy {
             result.gr_cols.push(col);
         }
         let alias_list = plan.get_expression_node(output_id)?;
-        for col_node_id in alias_list.get_row_list() {
+        for col_node_id in alias_list.get_row_list()? {
             let col = ColExpr::new(plan, *col_node_id, sq_ref_map)?;
             result.output_cols.push(col);
         }
@@ -1045,7 +1044,7 @@ impl FullExplain {
             let mut current_node = ExplainTreePart::with_level(level);
             let node = ir.get_relation_node(id)?;
 
-            let mut get_sq_ref_map = |children: &Vec<usize>, req_children_number| {
+            let mut get_sq_ref_map = |children: &Vec<NodeId>, req_children_number| {
                 let mut sq_ref_map: SubQueryRefMap = HashMap::with_capacity(children.len());
 
                 // Note that subqueries are added to the stack in the `children` reveresed order
@@ -1096,7 +1095,7 @@ impl FullExplain {
                     }
                     Some(ExplainNode::Except)
                 }
-                Relational::GroupBy(GroupBy {
+                Relational::GroupBy(node::GroupBy {
                     gr_cols,
                     output,
                     children,
@@ -1106,7 +1105,7 @@ impl FullExplain {
                     let p = GroupBy::new(ir, gr_cols, *output, &sq_ref_map)?;
                     Some(ExplainNode::GroupBy(p))
                 }
-                Relational::OrderBy(OrderBy {
+                Relational::OrderBy(node::OrderBy {
                     order_by_elements,
                     children,
                     ..
@@ -1115,7 +1114,7 @@ impl FullExplain {
                     let o_b = OrderBy::new(ir, order_by_elements, &sq_ref_map)?;
                     Some(ExplainNode::OrderBy(o_b))
                 }
-                Relational::Projection(Projection {
+                Relational::Projection(node::Projection {
                     output, children, ..
                 }) => {
                     let sq_ref_map = get_sq_ref_map(children, 1);
@@ -1145,7 +1144,7 @@ impl FullExplain {
                 })
                 | Relational::Having(Having {
                     children, filter, ..
-                } => {
+                }) => {
                     let sq_ref_map = get_sq_ref_map(children, 1);
                     let filter_id = ir.undo.get_oldest(filter).map_or_else(|| *filter, |id| *id);
                     let selection = ColExpr::new(ir, filter_id, &sq_ref_map)?;
@@ -1199,7 +1198,7 @@ impl FullExplain {
                         })?;
 
                         let child_output_id = ir.get_relation_node(*child_id)?.output();
-                        let col_list = ir.get_expression_node(child_output_id)?.get_row_list();
+                        let col_list = ir.get_row_list(child_output_id)?;
 
                         let targets = (s.targets)
                             .iter()
@@ -1254,7 +1253,7 @@ impl FullExplain {
                         kind: kind.clone(),
                     }))
                 }
-                Relational::ValuesRow { data, children, .. } => {
+                Relational::ValuesRow(ValuesRow { data, children, .. }) => {
                     let sq_ref_map = get_sq_ref_map(children, 0);
                     let row = ColExpr::new(ir, *data, &sq_ref_map)?;
 

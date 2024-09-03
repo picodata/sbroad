@@ -1320,23 +1320,25 @@ impl Router for RouterRuntimeMock {
         motion_node_id: &NodeId,
         _buckets: &Buckets,
     ) -> Result<VirtualTable, SbroadError> {
-        if let Some(virtual_table) = self.virtual_tables.borrow().get(motion_node_id) {
-            Ok(virtual_table.clone())
-        } else {
-            panic!("Virtual table for motion with id {motion_node_id} not found.")
-        }
+        Ok(self
+            .virtual_tables
+            .borrow()
+            .get(motion_node_id)
+            .expect("Virtual table for motion with id {motion_node_id} not found.")
+            .clone())
     }
 
     fn materialize_values(
         &self,
         _exec_plan: &mut ExecutionPlan,
-        values_id: usize,
+        values_id: NodeId,
     ) -> Result<VirtualTable, SbroadError> {
-        if let Some(virtual_table) = self.virtual_tables.borrow().get(&values_id) {
-            Ok(virtual_table.clone())
-        } else {
-            panic!("Virtual table for values with id {values_id} not found.")
-        }
+        Ok(self
+            .virtual_tables
+            .borrow()
+            .get(&values_id)
+            .expect("Virtual table for values with id {values_id} not found.")
+            .clone())
     }
 
     fn dispatch(

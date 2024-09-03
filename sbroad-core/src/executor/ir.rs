@@ -130,7 +130,7 @@ impl ExecutionPlan {
         self.vtables = Some(VirtualTableMap::new(vtables));
     }
 
-    pub fn contains_vtable_for_motion(&self, motion_id: usize) -> bool {
+    pub fn contains_vtable_for_motion(&self, motion_id: NodeId) -> bool {
         self.get_vtables()
             .map_or(false, |map| map.contains_key(&motion_id))
     }

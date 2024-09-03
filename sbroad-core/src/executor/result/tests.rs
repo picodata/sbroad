@@ -110,5 +110,5 @@ fn convert_to_vtable() {
         Value::from(decimal!(2.0)),
     ]);
 
-    assert_eq!(excepted, r.as_virtual_table(false).unwrap());
+    assert_eq!(excepted, r.as_virtual_table().unwrap());
 }

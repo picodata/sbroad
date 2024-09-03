@@ -7,14 +7,13 @@ use tarantool::decimal::Decimal;
 
 use crate::errors::{Entity, SbroadError};
 use crate::frontend::sql::ast::Rule;
-use crate::ir::helpers::RepeatableState;
-use crate::ir::node::expression::{ExprOwned, Expression, MutExpression};
+use crate::ir::node::expression::{ExprOwned, Expression};
 use crate::ir::node::relational::{MutRelational, RelOwned, Relational};
 use crate::ir::node::{
-    Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, Delete, Except,
-    ExprInParentheses, GroupBy, Having, Insert, Intersect, Join, Limit, Motion, MutNode, Node,
-    NodeAligned, NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation, ScanSubQuery,
-    Selection, StableFunction, Trim, UnaryExpr, Union, UnionAll, Update, Values, ValuesRow,
+    Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, Delete, Except,
+    ExprInParentheses, GroupBy, Having, Insert, Intersect, Join, Limit, Motion, Node, NodeAligned,
+    NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation, ScanSubQuery, Selection,
+    StableFunction, Trim, UnaryExpr, Union, UnionAll, Update, Values, ValuesRow,
 };
 use crate::ir::operator::{OrderByElement, OrderByEntity};
 use crate::ir::transformation::redistribution::MotionOpcode;
@@ -141,7 +140,7 @@ impl CloneExprSubtreeMap {
 }
 
 impl Plan {
-    pub(crate) fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, SbroadError> {
+    pub(crate) fn clone_expr_subtree(&mut self, top_id: NodeId) -> Result<NodeId, SbroadError> {
         let mut subtree =
             PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
         subtree.populate_nodes(top_id);

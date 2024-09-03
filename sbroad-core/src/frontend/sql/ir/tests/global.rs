@@ -118,18 +118,18 @@ fn front_sql_global_tbl_multiple_sqs1() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
-    selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($0, $0) and ROW("global_t"."a"::integer) in ROW($1)
+    selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($1, $1) and ROW("global_t"."a"::integer) in ROW($0)
         scan "global_t"
 subquery $0:
-scan
-            projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
-                scan "t"
-subquery $1:
 scan
             projection (sum(("sum_1796"::decimal))::decimal -> "col_1")
                 motion [policy: full]
                     projection (sum(("t"."a"::unsigned))::decimal -> "sum_1796")
                         scan "t"
+subquery $1:
+scan
+            projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
+                scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -155,19 +155,19 @@ fn front_sql_global_tbl_multiple_sqs2() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
-    selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($0, $0) or ROW("global_t"."a"::integer) in ROW($1)
+    selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($1, $1) or ROW("global_t"."a"::integer) in ROW($0)
         scan "global_t"
 subquery $0:
-motion [policy: full]
-            scan
-                projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
-                    scan "t"
-subquery $1:
 scan
             projection (sum(("sum_1796"::decimal))::decimal -> "col_1")
                 motion [policy: full]
                     projection (sum(("t"."a"::unsigned))::decimal -> "sum_1796")
                         scan "t"
+subquery $1:
+motion [policy: full]
+            scan
+                projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
+                    scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -809,11 +809,11 @@ fn front_sql_global_aggregate5() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("column_1432"::integer -> "col_1", sum(("sum_2696"::decimal))::decimal -> "col_2")
-    having ROW(sum(("sum_2096"::decimal::double))::decimal / sum(("count_2096"::decimal::double))::decimal) > ROW(3::unsigned)
-        group by ("column_1432"::integer) output: ("column_1432"::integer -> "column_1432", "sum_2696"::decimal -> "sum_2696", "sum_2096"::decimal -> "sum_2096", "count_2096"::integer -> "count_2096")
+        r#"projection ("column_1432"::integer -> "col_1", sum(("sum_2896"::decimal))::decimal -> "col_2")
+    having ROW(sum(("sum_2296"::decimal::double))::decimal / sum(("count_2296"::decimal::double))::decimal) > ROW(3::unsigned)
+        group by ("column_1432"::integer) output: ("column_1432"::integer -> "column_1432", "sum_2896"::decimal -> "sum_2896", "sum_2296"::decimal -> "sum_2296", "count_2296"::integer -> "count_2296")
             motion [policy: segment([ref("column_1432")])]
-                projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "column_1432", sum(("global_t"."a"::integer))::decimal -> "sum_2696", sum(("global_t"."b"::integer))::decimal -> "sum_2096", count(("global_t"."b"::integer))::integer -> "count_2096")
+                projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "column_1432", sum(("global_t"."a"::integer))::decimal -> "sum_2896", sum(("global_t"."b"::integer))::decimal -> "sum_2296", count(("global_t"."b"::integer))::integer -> "count_2296")
                     group by (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer)) output: ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                         selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($0, $0)
                             scan "global_t"

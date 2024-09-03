@@ -13,7 +13,7 @@ use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::ColumnPositionMap;
 use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::{RelOwned, Relational};
-use crate::ir::operator::{Bool, JoinKind, Unary, UpdateStrategy};
+use crate::ir::operator::{Bool, JoinKind, OrderByEntity, Unary, UpdateStrategy};
 
 use crate::ir::node::{
     BoolExpr, Except, GroupBy, Having, Intersect, Join, Limit, NodeId, OrderBy, Projection,
@@ -231,7 +231,7 @@ impl Strategy {
         self.children_policy.insert(child_id, (policy, program));
     }
 
-    fn get_rel_ids(&self) -> AHashSet<usize> {
+    fn get_rel_ids(&self) -> AHashSet<NodeId> {
         let mut vec_ids = Vec::new();
         for id in self.children_policy.keys() {
             vec_ids.push(*id);
@@ -876,7 +876,7 @@ impl Plan {
     ///
     /// # Errors
     /// - If the node is not a row node.
-    fn build_row_map(&self, row_id: NodeId) -> Result<HashMap<usize, usize>, SbroadError> {
+    fn build_row_map(&self, row_id: NodeId) -> Result<HashMap<usize, NodeId>, SbroadError> {
         let columns = self.get_row_list(row_id)?;
         let mut map: HashMap<usize, NodeId> = HashMap::new();
         for (pos, col) in columns.iter().enumerate() {
@@ -1222,7 +1222,7 @@ impl Plan {
                 }
             }
 
-            let Expression::Bool { left, right, .. } = expr else {
+            let Expression::Bool(BoolExpr { left, right, .. }) = expr else {
                 continue;
             };
             let bool_op = BoolOp::from_expr(self, node_id)?;
@@ -1253,7 +1253,7 @@ impl Plan {
             // Lets try to improve the motion policy for the inner join child.
             let left_expr = self.get_expression_node(bool_op.left)?;
             let right_expr = self.get_expression_node(bool_op.right)?;
-            new_inner_policy = match (left_expr, right_expr) {
+            new_inner_policy = match (&left_expr, &right_expr) {
                 (Expression::Arithmetic(_), _) | (_, Expression::Arithmetic(_)) => {
                     MotionPolicy::Full
                 }
@@ -1300,10 +1300,7 @@ impl Plan {
                         }
                     }
                 }
-                (
-                    Expression::Constant(_),
-                    Expression::Bool(_) | Expression::Unary(_),
-                ) => inner_map
+                (Expression::Constant(_), Expression::Bool(_) | Expression::Unary(_)) => inner_map
                     .get(&bool_op.right)
                     .cloned()
                     .unwrap_or(MotionPolicy::Full),
@@ -1555,8 +1552,6 @@ impl Plan {
             strategy.add_child(*sq, MotionPolicy::Full, Program::default());
         }
 
-        // TODO: this code won't be executed because of (Single, Single) check above.
-        //
         // If one child has Distribution::Global and the other child
         // Distribution::Single, then motion is not needed.
         // The fastest way is to execute the subtree on single node,
@@ -1803,8 +1798,6 @@ impl Plan {
         &mut self,
         rel_id: NodeId,
     ) -> Result<Strategy, SbroadError> {
-        // TODO: This logic seems strange to me as soon as we add Motion::Full over child
-        //       that is already a Motion.
         let mut map = Strategy::new(rel_id);
         let child_id = self.dml_child_id(rel_id)?;
         let child_node = self.get_relation_node(child_id)?;
@@ -1889,7 +1882,11 @@ impl Plan {
     /// select `bucket_id` as a from t1
     /// except
     /// select `bucket_id` as b from t1
-    fn is_except_on_bucket_id(&self, left_id: NodeId, right_id: NodeId) -> Result<bool, SbroadError> {
+    fn is_except_on_bucket_id(
+        &self,
+        left_id: NodeId,
+        right_id: NodeId,
+    ) -> Result<bool, SbroadError> {
         let mut context = self.context_mut();
         let Some(left_shard_positions) =
             context.get_shard_columns_positions(left_id, self)?.copied()
@@ -2155,7 +2152,7 @@ impl Plan {
     }
 
     /// Set dist from subqueries or clone it from output.
-    fn try_dist_from_subqueries(&mut self, id: usize, output: usize) -> Result<(), SbroadError> {
+    fn try_dist_from_subqueries(&mut self, id: NodeId, output: NodeId) -> Result<(), SbroadError> {
         if let Some(dist) = self.dist_from_subqueries(id)? {
             self.set_dist(output, dist)?;
         } else {
@@ -2173,8 +2170,8 @@ impl Plan {
     /// the `already_fixed`, but we identify them checking whether the node is covered with Motion.
     fn fix_additional_subqueries(
         &mut self,
-        rel_id: usize,
-        already_fixed: &AHashSet<usize>,
+        rel_id: NodeId,
+        already_fixed: &AHashSet<NodeId>,
     ) -> Result<(), SbroadError> {
         let mut strategy = Strategy::new(rel_id);
         let rel_required_children_len = self

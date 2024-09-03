@@ -149,15 +149,6 @@ impl Expression<'_> {
         }
     }
 
-    /// Checks for distribution determination
-    ///
-    /// # Errors
-    /// - distribution isn't set
-    pub fn has_unknown_distribution(&self) -> Result<bool, SbroadError> {
-        let d = self.distribution()?;
-        Ok(d.is_unknown())
-    }
-
     /// Gets relational node id containing the reference.
     ///
     /// # Errors

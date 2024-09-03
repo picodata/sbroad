@@ -329,7 +329,7 @@ pub trait Router: QueryCache {
     fn materialize_values(
         &self,
         exec_plan: &mut ExecutionPlan,
-        values_id: usize,
+        values_id: NodeId,
     ) -> Result<VirtualTable, SbroadError>;
 }
 

@@ -273,7 +273,7 @@ impl Router for RouterRuntime {
     fn materialize_values(
         &self,
         exec_plan: &mut ExecutionPlan,
-        values_id: usize,
+        values_id: NodeId,
     ) -> Result<VirtualTable, SbroadError> {
         materialize_values(self, exec_plan, values_id)
     }

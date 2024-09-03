@@ -129,7 +129,7 @@ impl EqClassRef {
                 targets: expr_tgt.clone(),
                 position: *expr_pos,
                 parent: *expr_prt,
-                col_type: expr_type.clone(),
+                col_type: *expr_type,
                 asterisk_source: expr_asterisk_source.clone(),
             });
         }

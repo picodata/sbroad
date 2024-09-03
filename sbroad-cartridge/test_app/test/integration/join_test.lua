@@ -72,7 +72,7 @@ g.test_join_vtable_with_same_column_names = function()
         {name = "f", type = "integer"},
         {name = "s", type = "integer"},
     })
-    t.assert_equals(res.rows, {
+    t.assert_items_equals(res.rows, {
         {1, "a", 1, 1, 1},
         {2, "a", 1, 2, 2},
         {3, "a", 2, 3, 3},

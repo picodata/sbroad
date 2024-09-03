@@ -7,9 +7,9 @@ use crate::frontend::sql::get_unnamed_column_alias;
 use crate::ir::api::children::Children;
 use crate::ir::expression::PlanExpr;
 use crate::ir::node::{
-    Alias, Delete, Except, GroupBy, Having, Insert, Intersect, Join, Motion, MutNode, Node64,
-    NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation, ScanSubQuery, Selection,
-    Union, UnionAll, Update, Values, ValuesRow,
+    Alias, Delete, Except, GroupBy, Having, Insert, Intersect, Join, Motion, MutNode, NodeId,
+    OrderBy, Projection, Reference, Row, ScanCte, ScanRelation, ScanSubQuery, Selection, Union,
+    UnionAll, Update, Values, ValuesRow,
 };
 use crate::ir::Plan;
 use ahash::RandomState;
@@ -357,7 +357,10 @@ impl Plan {
     pub fn add_except(&mut self, left: NodeId, right: NodeId) -> Result<NodeId, SbroadError> {
         let child_row_len = |child: NodeId, plan: &Plan| -> Result<usize, SbroadError> {
             let child_output = plan.get_relation_node(child)?.output();
-            Ok(plan.get_expression_node(child_output)?.get_row_list().len())
+            Ok(plan
+                .get_expression_node(child_output)?
+                .get_row_list()?
+                .len())
         };
 
         let left_row_len = child_row_len(left, self)?;
@@ -718,9 +721,7 @@ impl Plan {
 
         let mut refs: Vec<NodeId> = Vec::with_capacity(rel.columns.len());
         for (pos, col) in rel.columns.iter().enumerate() {
-            let r_id = self
-                .nodes
-                .add_ref(None, None, pos, col.r#type, None);
+            let r_id = self.nodes.add_ref(None, None, pos, col.r#type, None);
             let col_alias_id = self.nodes.add_alias(&col.name, r_id)?;
             refs.push(col_alias_id);
         }
@@ -1203,7 +1204,7 @@ impl Plan {
             let child_columns = self
                 .get_expression_node(child_output_id)
                 .expect("output row")
-                .clone_row_list();
+                .clone_row_list()?;
             if child_columns.len() != columns.len() {
                 return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                     "expected {} columns in CTE, got {}",
@@ -1249,7 +1250,10 @@ impl Plan {
     ) -> Result<NodeId, SbroadError> {
         let child_row_len = |child: NodeId, plan: &Plan| -> Result<usize, SbroadError> {
             let child_output = plan.get_relation_node(child)?.output();
-            Ok(plan.get_expression_node(child_output)?.get_row_list().len())
+            Ok(plan
+                .get_expression_node(child_output)?
+                .get_row_list()?
+                .len())
         };
 
         let left_row_len = child_row_len(left, self)?;
@@ -1305,7 +1309,7 @@ impl Plan {
     /// - Row node is not of a row type
     pub fn add_values_row(
         &mut self,
-        expr_row_id: usize,
+        expr_row_id: NodeId,
         col_idx: &mut usize,
     ) -> Result<NodeId, SbroadError> {
         let row = self.get_expression_node(expr_row_id)?;
@@ -1383,7 +1387,7 @@ impl Plan {
 
         // Generate a row of aliases referencing all the children.
         let mut aliases: Vec<NodeId> = Vec::with_capacity(names.len());
-        let columns = last_output.clone_row_list();
+        let columns = last_output.clone_row_list()?;
         for (pos, name) in names.iter().enumerate() {
             let col_id = *columns.get(pos).ok_or_else(|| {
                 SbroadError::UnexpectedNumberOfValues(format_smolstr!(
@@ -1417,7 +1421,7 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not relational
-    pub fn get_relational_output(&self, rel_id: usize) -> Result<usize, SbroadError> {
+    pub fn get_relational_output(&self, rel_id: NodeId) -> Result<NodeId, SbroadError> {
         let rel_node = self.get_relation_node(rel_id)?;
         Ok(rel_node.output())
     }
@@ -1652,7 +1656,9 @@ impl Plan {
 
     /// Sets children for relational node
     pub fn set_relational_children(&mut self, rel_id: NodeId, children: Vec<NodeId>) {
-        if let MutNode::Relational(ref mut rel) = self.get_mut_node(rel_id) {
+        if let MutNode::Relational(ref mut rel) =
+            self.get_mut_node(rel_id).expect("Rel node must be valid.")
+        {
             rel.set_children(children);
         } else {
             panic!("Expected relational node for {rel_id}.");
@@ -1742,12 +1748,11 @@ impl Plan {
     /// # Errors
     /// - Failed to get plan top
     /// - Node returned by the relational iterator is not relational (bug)
-    pub fn is_additional_child(&self, sq_id: usize) -> Result<bool, SbroadError> {
-        for (id, node) in self.nodes.iter().enumerate() {
-            if let Node::Relational(_) = node {
-                if self.is_additional_child_of_rel(id, sq_id)? {
-                    return Ok(true);
-                }
+    pub fn is_additional_child(&self, sq_id: NodeId) -> Result<bool, SbroadError> {
+        let parent_rel_id = self.find_parent_rel(sq_id)?;
+        if let Some(parent_rel_id) = parent_rel_id {
+            if self.is_additional_child_of_rel(parent_rel_id, sq_id)? {
+                return Ok(true);
             }
         }
         Ok(false)
@@ -1794,9 +1799,9 @@ impl Plan {
     pub fn children(&self, rel_id: NodeId) -> Children<'_> {
         let node = self.get_relation_node(rel_id).unwrap();
         match node {
-            Relational::Limit(Limit { child, .. })
-            | Relational::OrderBy(OrderBy { child, .. })
-            | Relational::ScanCte(ScanCte { child, .. }) => Children::Single(child),
+            Relational::Limit(Limit { child, .. }) | Relational::ScanCte(ScanCte { child, .. }) => {
+                Children::Single(child)
+            }
             Relational::Except(Except { left, right, .. })
             | Relational::Intersect(Intersect { left, right, .. })
             | Relational::UnionAll(UnionAll { left, right, .. })
@@ -1805,6 +1810,7 @@ impl Plan {
             | Relational::Update(Update { children, .. })
             | Relational::Join(Join { children, .. })
             | Relational::Having(Having { children, .. })
+            | Relational::OrderBy(OrderBy { children, .. })
             | Relational::Delete(Delete { children, .. })
             | Relational::Insert(Insert { children, .. })
             | Relational::Motion(Motion { children, .. })

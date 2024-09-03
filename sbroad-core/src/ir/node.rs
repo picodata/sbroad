@@ -646,7 +646,7 @@ impl From<Having> for NodeAligned {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct OrderBy {
-    pub child: NodeId,
+    pub children: Vec<NodeId>,
     pub output: NodeId,
     pub order_by_elements: Vec<OrderByElement>,
 }

@@ -251,7 +251,7 @@ fn subtree_next<'plan>(
                                 {
                                     let is_additional_child = iter
                                         .get_plan()
-                                        .is_additional_child_of_rel(parent_id, *rel_id)
+                                        .is_additional_child_of_rel(parent_id, rel_id)
                                         .expect(
                                             "Relational node failed to check additional child.",
                                         );
@@ -364,7 +364,7 @@ fn subtree_next<'plan>(
                     let step = *iter.get_child().borrow();
                     if step == 0 {
                         *iter.get_child().borrow_mut() += 1;
-                        return children.get(step);
+                        return children.get(step).copied();
                     }
                     let mut col_idx = step - 1;
                     while col_idx < order_by_elements.len() {

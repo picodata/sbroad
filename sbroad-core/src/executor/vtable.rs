@@ -194,8 +194,8 @@ impl VirtualTable {
         for tuple in self.get_mut_tuples() {
             for (i, v) in tuple.iter_mut().enumerate() {
                 let (_, ty) = fixed_types.get(i).expect("Type expected.");
-                let casted_value = v.cast(ty)?;
-                match casted_value {
+                let cast_value = v.cast(ty)?;
+                match cast_value {
                     EncodedValue::Ref(_) => {
                         // Value type is already ok.
                     }
@@ -762,26 +762,28 @@ pub fn calculate_vtable_unified_types(
     vtable: &VirtualTable,
 ) -> Result<Vec<(bool, Type)>, SbroadError> {
     // Map of { type -> types_which_can_be_upcasted_to_given_one }.
-    let get_types_less = |ty: &Type| match ty {
-        Type::Scalar
-        | Type::Any
-        | Type::Map
-        | Type::Array
-        | Type::Boolean
-        | Type::String
-        | Type::Datetime => vec![],
-        Type::Uuid => vec![Type::String],
-        Type::Unsigned => vec![Type::Scalar],
-        Type::Integer => vec![Type::Scalar, Type::Unsigned],
-        Type::Double => vec![Type::Scalar, Type::Unsigned, Type::Integer],
-        Type::Decimal => vec![Type::Scalar, Type::Unsigned, Type::Integer, Type::Double],
-        Type::Number => vec![
-            Type::Scalar,
-            Type::Unsigned,
-            Type::Integer,
-            Type::Double,
-            Type::Decimal,
-        ],
+    let get_types_less = |ty: &Type| -> &[Type] {
+        match ty {
+            Type::Scalar
+            | Type::Any
+            | Type::Map
+            | Type::Array
+            | Type::Boolean
+            | Type::String
+            | Type::Datetime => &[],
+            Type::Uuid => &[Type::String],
+            Type::Unsigned => &[Type::Scalar],
+            Type::Integer => &[Type::Scalar, Type::Unsigned],
+            Type::Double => &[Type::Scalar, Type::Unsigned, Type::Integer],
+            Type::Decimal => &[Type::Scalar, Type::Unsigned, Type::Integer, Type::Double],
+            Type::Number => &[
+                Type::Scalar,
+                Type::Unsigned,
+                Type::Integer,
+                Type::Double,
+                Type::Decimal,
+            ],
+        }
     };
 
     let columns_len = vtable.columns.len();

@@ -148,7 +148,7 @@ impl Type {
             "decimal" => Ok(Type::Decimal),
             "double" => Ok(Type::Double),
             "integer" => Ok(Type::Integer),
-            "number" | "numeric" => Ok(Type::Number),
+            "number" => Ok(Type::Number),
             "scalar" => Ok(Type::Scalar),
             "string" | "text" => Ok(Type::String),
             "uuid" => Ok(Type::Uuid),

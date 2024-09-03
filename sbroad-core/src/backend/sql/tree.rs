@@ -1191,11 +1191,6 @@ impl<'p> SyntaxPlan<'p> {
         let _ = self.pop_from_stack(output_plan_id, id);
 
         let mut nodes = Vec::with_capacity(syntax_children.len() * 2 - 1);
-        // Reverse the order of the children back.
-        let first = sn_children.pop().expect("at least one child in VALUES");
-
-        // Consume the output from the stack.
-        self.pop_from_stack(output_plan_id, id);
 
         let arena = &mut self.nodes;
         for child_id in syntax_children.iter().skip(1).rev() {
@@ -1390,7 +1385,7 @@ impl<'p> SyntaxPlan<'p> {
             .get_expression_node(first_child_id)
             .expect("expression node expected");
         if matches!(first_list_child, Expression::Reference { .. }) {
-            let referred_rel_id = *plan
+            let referred_rel_id = plan
                 .get_relational_from_reference_node(first_child_id)
                 .expect("rel id expected");
             let referred_rel_node = plan
@@ -1432,7 +1427,7 @@ impl<'p> SyntaxPlan<'p> {
                             .get_expression_node(*child_id)
                             .expect("row child is expression");
                         if matches!(expr, Expression::Reference { .. }) {
-                            let referred_id = *plan
+                            let referred_id = plan
                                 .get_relational_from_reference_node(*child_id)
                                 .expect("referred id");
                             self.pop_from_stack(referred_id, id);
@@ -1474,7 +1469,7 @@ impl<'p> SyntaxPlan<'p> {
                             .get_expression_node(*child_id)
                             .expect("row child is expression");
                         if matches!(expr, Expression::Reference { .. }) {
-                            let referred_id = *plan
+                            let referred_id = plan
                                 .get_relational_from_reference_node(*child_id)
                                 .expect("referred id");
                             sq_sn_id = Some(self.pop_from_stack(referred_id, id));
@@ -1602,23 +1597,24 @@ impl<'p> SyntaxPlan<'p> {
             let sn_node = self.nodes.get_sn(sn_id);
             let sn_plan_node_pair = self.get_plan_node(&sn_node.data)?;
 
-            let nodes_to_add = if let Some((Node::Expression(node_expr), sn_plan_node_id)) =
-                sn_plan_node_pair
-            {
-                match node_expr {
-                    Expression::Alias(Alias { child, .. }) => handle_reference(sn_id, need_comma, *child),
-                    _ => handle_reference(sn_id, need_comma, sn_plan_node_id),
-                }
-            } else {
-                // As it's not ad Alias under Projection output, we don't have to
-                // dead with its machinery flags.
-                let mut nodes_to_add = Vec::new();
-                nodes_to_add.push(NodeToAdd::SnId(sn_id));
-                if need_comma {
-                    nodes_to_add.push(NodeToAdd::Comma)
-                }
-                nodes_to_add
-            };
+            let nodes_to_add =
+                if let Some((Node::Expression(node_expr), sn_plan_node_id)) = sn_plan_node_pair {
+                    match node_expr {
+                        Expression::Alias(Alias { child, .. }) => {
+                            handle_reference(sn_id, need_comma, *child)
+                        }
+                        _ => handle_reference(sn_id, need_comma, sn_plan_node_id),
+                    }
+                } else {
+                    // As it's not ad Alias under Projection output, we don't have to
+                    // dead with its machinery flags.
+                    let mut nodes_to_add = Vec::new();
+                    nodes_to_add.push(NodeToAdd::SnId(sn_id));
+                    if need_comma {
+                        nodes_to_add.push(NodeToAdd::Comma)
+                    }
+                    nodes_to_add
+                };
 
             for node in nodes_to_add {
                 match node {

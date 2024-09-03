@@ -216,7 +216,7 @@ union_queries.test_union_diff_types = function()
         union
         select "name" from "testing_space"
 ]], {} })
-    t.assert_str_contains(tostring(err), "failed to serialize value")
+    t.assert_str_contains(tostring(err), "Failed to cast '1' to integer.")
 end
 
 union_queries.test_union_empty_children = function()

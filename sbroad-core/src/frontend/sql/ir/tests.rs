@@ -1618,7 +1618,6 @@ fn front_sql_avg_aggregate() {
     let input = r#"SELECT avg("b"), avg(distinct "b"), avg("b") * avg("b") FROM "t""#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
-    println!("{}", plan.as_explain().unwrap());
 
     let expected_explain = String::from(
         r#"projection (sum(("sum_696"::decimal::double))::decimal / sum(("count_696"::decimal::double))::decimal -> "col_1", avg(distinct ("column_796"::decimal::double))::decimal -> "col_2", ROW(sum(("sum_696"::decimal::double))::decimal / sum(("count_696"::decimal::double))::decimal) * ROW(sum(("sum_696"::decimal::double))::decimal / sum(("count_696"::decimal::double))::decimal) -> "col_3")
@@ -1810,7 +1809,6 @@ fn front_sql_aggregates_with_subexpressions() {
         group by "b""#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
-    println!("{}", plan.as_explain().unwrap());
 
     let expected_explain = String::from(
         r#"projection ("column_596"::unsigned -> "b", sum(("count_1496"::integer))::decimal -> "col_1", sum(("count_1796"::integer))::decimal -> "col_2")
@@ -2133,7 +2131,6 @@ fn front_sql_aggregate_on_aggregate() {
     let input = r#"SELECT max(c) FROM (SELECT count("id") as c FROM "test_space") as "t1""#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
-    println!("{}", plan.as_explain().unwrap());
 
     let expected_explain = String::from(
         r#"projection (max(("t1"."c"::integer))::scalar -> "col_1")
@@ -2351,7 +2348,6 @@ fn front_sql_except_single_both() {
     "#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
-    println!("{}", plan.as_explain().unwrap());
     let expected_explain = String::from(
         r#"except
     motion [policy: segment([ref("col_1")])]
@@ -2762,11 +2758,11 @@ fn front_sql_having_with_sq() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("column_596"::unsigned -> "sysFrom", sum(distinct ("column_3296"::decimal))::decimal -> "sum", count(distinct ("column_3296"::integer))::integer -> "count")
-    having ROW($0) > ROW(count(distinct ("column_3296"::integer))::integer)
-        group by ("column_596"::unsigned) output: ("column_596"::unsigned -> "column_596", "column_3296"::unsigned -> "column_3296")
+        r#"projection ("column_596"::unsigned -> "sysFrom", sum(distinct ("column_3396"::decimal))::decimal -> "sum", count(distinct ("column_3396"::integer))::integer -> "count")
+    having ROW($0) > ROW(count(distinct ("column_3396"::integer))::integer)
+        group by ("column_596"::unsigned) output: ("column_596"::unsigned -> "column_596", "column_3396"::unsigned -> "column_3396")
             motion [policy: segment([ref("column_596")])]
-                projection ("test_space"."sysFrom"::unsigned -> "column_596", "test_space"."id"::unsigned -> "column_3296")
+                projection ("test_space"."sysFrom"::unsigned -> "column_596", "test_space"."id"::unsigned -> "column_3396")
                     group by ("test_space"."sysFrom"::unsigned, "test_space"."id"::unsigned) output: ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op", "test_space"."bucket_id"::unsigned -> "bucket_id")
                         scan "test_space"
 subquery $0:
@@ -2813,11 +2809,11 @@ fn front_sql_having_with_sq_segment_motion() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("column_596"::unsigned -> "sysFrom", "column_696"::unsigned -> "sys_op", sum(distinct ("column_3096"::decimal))::decimal -> "sum", count(distinct ("column_3096"::integer))::integer -> "count")
+        r#"projection ("column_596"::unsigned -> "sysFrom", "column_696"::unsigned -> "sys_op", sum(distinct ("column_3296"::decimal))::decimal -> "sum", count(distinct ("column_3296"::integer))::integer -> "count")
     having ROW("column_596"::unsigned, "column_696"::unsigned) in ROW($0, $0)
-        group by ("column_596"::unsigned, "column_696"::unsigned) output: ("column_596"::unsigned -> "column_596", "column_696"::unsigned -> "column_696", "column_3096"::unsigned -> "column_3096")
+        group by ("column_596"::unsigned, "column_696"::unsigned) output: ("column_596"::unsigned -> "column_596", "column_696"::unsigned -> "column_696", "column_3296"::unsigned -> "column_3296")
             motion [policy: segment([ref("column_596"), ref("column_696")])]
-                projection ("test_space"."sysFrom"::unsigned -> "column_596", "test_space"."sys_op"::unsigned -> "column_696", "test_space"."id"::unsigned -> "column_3096")
+                projection ("test_space"."sysFrom"::unsigned -> "column_596", "test_space"."sys_op"::unsigned -> "column_696", "test_space"."id"::unsigned -> "column_3296")
                     group by ("test_space"."sysFrom"::unsigned, "test_space"."sys_op"::unsigned, "test_space"."id"::unsigned) output: ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op", "test_space"."bucket_id"::unsigned -> "bucket_id")
                         scan "test_space"
 subquery $0:
@@ -2848,11 +2844,11 @@ fn front_sql_having_with_sq_segment_local_motion() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("column_596"::unsigned -> "sysFrom", "column_696"::unsigned -> "sys_op", sum(distinct ("column_3096"::decimal))::decimal -> "sum", count(distinct ("column_3096"::integer))::integer -> "count")
+        r#"projection ("column_596"::unsigned -> "sysFrom", "column_696"::unsigned -> "sys_op", sum(distinct ("column_3296"::decimal))::decimal -> "sum", count(distinct ("column_3296"::integer))::integer -> "count")
     having ROW("column_596"::unsigned, "column_696"::unsigned) in ROW($0, $0)
-        group by ("column_596"::unsigned, "column_696"::unsigned) output: ("column_596"::unsigned -> "column_596", "column_696"::unsigned -> "column_696", "column_3096"::unsigned -> "column_3096")
+        group by ("column_596"::unsigned, "column_696"::unsigned) output: ("column_596"::unsigned -> "column_596", "column_696"::unsigned -> "column_696", "column_3296"::unsigned -> "column_3296")
             motion [policy: segment([ref("column_596"), ref("column_696")])]
-                projection ("test_space"."sysFrom"::unsigned -> "column_596", "test_space"."sys_op"::unsigned -> "column_696", "test_space"."id"::unsigned -> "column_3096")
+                projection ("test_space"."sysFrom"::unsigned -> "column_596", "test_space"."sys_op"::unsigned -> "column_696", "test_space"."id"::unsigned -> "column_3296")
                     group by ("test_space"."sysFrom"::unsigned, "test_space"."sys_op"::unsigned, "test_space"."id"::unsigned) output: ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op", "test_space"."bucket_id"::unsigned -> "bucket_id")
                         scan "test_space"
 subquery $0:
@@ -3831,7 +3827,7 @@ fn front_subqueries_interpreted_as_expression() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection (ROW($0) -> "COL_1")
+        r#"projection (ROW($0) -> "col_1")
     scan "test_space"
 subquery $0:
 scan
@@ -3851,9 +3847,9 @@ fn front_subqueries_interpreted_as_expression_as_required_child() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("COL_1"::unsigned -> "COL_1")
+        r#"projection ("col_1"::unsigned -> "col_1")
     scan
-        projection (ROW($0) -> "COL_1")
+        projection (ROW($0) -> "col_1")
             scan "test_space"
 subquery $0:
 scan
@@ -3873,7 +3869,7 @@ fn front_subqueries_interpreted_as_expression_nested() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection (ROW($1) -> "COL_1")
+        r#"projection (ROW($1) -> "col_1")
     scan "test_space"
 subquery $0:
 scan
@@ -3897,21 +3893,20 @@ fn front_subqueries_interpreted_as_expression_under_group_by() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection (sum(("count_43"::integer))::decimal -> "COL_1")
-    group by ("column_29"::unsigned) output: ("column_29"::unsigned -> "column_29", "count_43"::integer -> "count_43")
-        motion [policy: segment([ref("column_29")])]
-            scan
-                projection (ROW("test_space"."id"::unsigned) + ROW($1) -> "column_29", count((*::integer))::integer -> "count_43")
-                    group by (ROW("test_space"."id"::unsigned) + ROW($0)) output: ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op", "test_space"."bucket_id"::unsigned -> "bucket_id")
-                        scan "test_space"
+        r#"projection (sum(("count_1496"::integer))::decimal -> "col_1")
+    group by ("column_932"::unsigned) output: ("column_932"::unsigned -> "column_932", "count_1496"::integer -> "count_1496")
+        motion [policy: segment([ref("column_932")])]
+            projection (ROW("test_space"."id"::unsigned) + ROW($1) -> "column_932", count((*::integer))::integer -> "count_1496")
+                group by (ROW("test_space"."id"::unsigned) + ROW($0)) output: ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op", "test_space"."bucket_id"::unsigned -> "bucket_id")
+                    scan "test_space"
 subquery $0:
-scan
-                            values
-                                value row (data=ROW(1::unsigned))
-subquery $1:
 scan
                         values
                             value row (data=ROW(1::unsigned))
+subquery $1:
+scan
+                    values
+                        value row (data=ROW(1::unsigned))
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

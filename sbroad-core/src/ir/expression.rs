@@ -648,7 +648,7 @@ impl ColumnPositionMap {
     pub(crate) fn new(plan: &Plan, rel_id: NodeId) -> Result<Self, SbroadError> {
         let rel_node = plan.get_relation_node(rel_id)?;
         let output = plan.get_expression_node(rel_node.output())?;
-        let alias_ids = output.get_row_list();
+        let alias_ids = output.get_row_list()?;
 
         let mut map = BTreeMap::new();
         let mut max_name = None;
@@ -1442,7 +1442,7 @@ impl Plan {
     }
 
     /// The node is a trivalent (boolean or NULL).
-    pub fn is_trivalent(&self, expr_id: usize) -> Result<bool, SbroadError> {
+    pub fn is_trivalent(&self, expr_id: NodeId) -> Result<bool, SbroadError> {
         let expr_node = self.get_node(expr_id)?;
         let expr = match expr_node {
             Node::Parameter(_) => return Ok(true),
@@ -1465,7 +1465,9 @@ impl Plan {
                     return self.is_trivalent(*inner_id);
                 }
             }
-            Expression::Reference { col_type, .. } => return Ok(matches!(col_type, Type::Boolean)),
+            Expression::Reference(Reference { col_type, .. }) => {
+                return Ok(matches!(col_type, Type::Boolean))
+            }
             _ => {}
         }
         Ok(false)

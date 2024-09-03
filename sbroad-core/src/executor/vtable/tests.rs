@@ -335,17 +335,13 @@ fn vtable_remove_duplicates3() {
 fn vtable_values_types_casting_single_tuple() {
     let mut actual_vtable = VirtualTable::new();
 
-    let first_column_name = "a";
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        first_column_name,
-    )));
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
     actual_vtable.add_tuple(vec![Value::Unsigned(1)]);
     let unified_types = calculate_vtable_unified_types(&actual_vtable).unwrap();
     actual_vtable.cast_values(&unified_types).unwrap();
 
     let mut expected_vtable = VirtualTable::new();
-    expected_vtable.add_column(Column {
-        name: first_column_name.into(),
+    expected_vtable.add_column(VTableColumn {
         r#type: Type::Unsigned,
         role: ColumnRole::User,
         is_nullable: false,
@@ -359,18 +355,14 @@ fn vtable_values_types_casting_single_tuple() {
 fn vtable_values_types_casting_two_tuples() {
     let mut actual_vtable = VirtualTable::new();
 
-    let first_column_name = "a";
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        first_column_name,
-    )));
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
     actual_vtable.add_tuple(vec![Value::Unsigned(1)]);
     actual_vtable.add_tuple(vec![Value::Integer(1)]);
     let unified_types = calculate_vtable_unified_types(&actual_vtable).unwrap();
     actual_vtable.cast_values(&unified_types).unwrap();
 
     let mut expected_vtable = VirtualTable::new();
-    expected_vtable.add_column(Column {
-        name: first_column_name.into(),
+    expected_vtable.add_column(VTableColumn {
         r#type: Type::Integer,
         role: ColumnRole::User,
         is_nullable: false,
@@ -385,10 +377,7 @@ fn vtable_values_types_casting_two_tuples() {
 fn vtable_values_types_casting_two_tuples_err() {
     let mut actual_vtable = VirtualTable::new();
 
-    let first_column_name = "a";
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        first_column_name,
-    )));
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
     actual_vtable.add_tuple(vec![Value::Unsigned(1)]);
     actual_vtable.add_tuple(vec![Value::String("name".into())]);
     let err = calculate_vtable_unified_types(&actual_vtable).unwrap_err();
@@ -404,27 +393,19 @@ fn vtable_values_types_casting_two_tuples_err() {
 fn vtable_values_types_casting_two_columns() {
     let mut actual_vtable = VirtualTable::new();
 
-    let first_column_name = "a";
-    let second_column_name = "b";
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        first_column_name,
-    )));
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        second_column_name,
-    )));
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
     actual_vtable.add_tuple(vec![Value::Unsigned(1), Value::Integer(1)]);
     let unified_types = calculate_vtable_unified_types(&actual_vtable).unwrap();
     actual_vtable.cast_values(&unified_types).unwrap();
 
     let mut expected_vtable = VirtualTable::new();
-    expected_vtable.add_column(Column {
-        name: first_column_name.into(),
+    expected_vtable.add_column(VTableColumn {
         r#type: Type::Unsigned,
         role: ColumnRole::User,
         is_nullable: false,
     });
-    expected_vtable.add_column(Column {
-        name: second_column_name.into(),
+    expected_vtable.add_column(VTableColumn {
         r#type: Type::Integer,
         role: ColumnRole::User,
         is_nullable: false,
@@ -438,28 +419,20 @@ fn vtable_values_types_casting_two_columns() {
 fn vtable_values_types_casting_two_columns_two_tuples() {
     let mut actual_vtable = VirtualTable::new();
 
-    let first_column_name = "a";
-    let second_column_name = "b";
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        first_column_name,
-    )));
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        second_column_name,
-    )));
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
     actual_vtable.add_tuple(vec![Value::Unsigned(1), Value::Integer(1)]);
     actual_vtable.add_tuple(vec![Value::Decimal(Decimal::from(2)), Value::Integer(1)]);
     let unified_types = calculate_vtable_unified_types(&actual_vtable).unwrap();
     actual_vtable.cast_values(&unified_types).unwrap();
 
     let mut expected_vtable = VirtualTable::new();
-    expected_vtable.add_column(Column {
-        name: first_column_name.into(),
+    expected_vtable.add_column(VTableColumn {
         r#type: Type::Decimal,
         role: ColumnRole::User,
         is_nullable: false,
     });
-    expected_vtable.add_column(Column {
-        name: second_column_name.into(),
+    expected_vtable.add_column(VTableColumn {
         r#type: Type::Integer,
         role: ColumnRole::User,
         is_nullable: false,
@@ -474,14 +447,8 @@ fn vtable_values_types_casting_two_columns_two_tuples() {
 fn vtable_values_types_casting_two_columns_with_nulls() {
     let mut actual_vtable = VirtualTable::new();
 
-    let first_column_name = "a";
-    let second_column_name = "b";
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        first_column_name,
-    )));
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        second_column_name,
-    )));
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
     actual_vtable.add_tuple(vec![Value::Unsigned(1), Value::Null]);
     actual_vtable.add_tuple(vec![Value::Null, Value::Null]);
     actual_vtable.add_tuple(vec![Value::Decimal(Decimal::from(2)), Value::Null]);
@@ -489,14 +456,12 @@ fn vtable_values_types_casting_two_columns_with_nulls() {
     actual_vtable.cast_values(&unified_types).unwrap();
 
     let mut expected_vtable = VirtualTable::new();
-    expected_vtable.add_column(Column {
-        name: first_column_name.into(),
+    expected_vtable.add_column(VTableColumn {
         r#type: Type::Decimal,
         role: ColumnRole::User,
         is_nullable: true,
     });
-    expected_vtable.add_column(Column {
-        name: second_column_name.into(),
+    expected_vtable.add_column(VTableColumn {
         r#type: Type::Integer,
         role: ColumnRole::User,
         is_nullable: true,
@@ -512,14 +477,8 @@ fn vtable_values_types_casting_two_columns_with_nulls() {
 fn vtable_values_types_casting_two_columns_numerical() {
     let mut actual_vtable = VirtualTable::new();
 
-    let first_column_name = "a";
-    let second_column_name = "b";
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        first_column_name,
-    )));
-    actual_vtable.add_column(column_integer_user_non_null(SmolStr::from(
-        second_column_name,
-    )));
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
+    actual_vtable.add_column(vcolumn_integer_user_non_null());
     actual_vtable.add_tuple(vec![Value::Unsigned(1), Value::Integer(1)]);
     actual_vtable.add_tuple(vec![Value::Null, Value::Unsigned(5)]);
     actual_vtable.add_tuple(vec![Value::Integer(1), Value::Null]);
@@ -535,14 +494,12 @@ fn vtable_values_types_casting_two_columns_numerical() {
     actual_vtable.cast_values(&unified_types).unwrap();
 
     let mut expected_vtable = VirtualTable::new();
-    expected_vtable.add_column(Column {
-        name: first_column_name.into(),
+    expected_vtable.add_column(VTableColumn {
         r#type: Type::Decimal,
         role: ColumnRole::User,
         is_nullable: true,
     });
-    expected_vtable.add_column(Column {
-        name: second_column_name.into(),
+    expected_vtable.add_column(VTableColumn {
         r#type: Type::Decimal,
         role: ColumnRole::User,
         is_nullable: true,

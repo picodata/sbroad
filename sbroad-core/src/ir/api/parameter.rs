@@ -635,9 +635,9 @@ impl Plan {
                 panic!("Expected a values row: {values_row:?}")
             };
         let data = self.get_expression_node(data_id)?;
-        let data_list = data.clone_row_list();
+        let data_list = data.clone_row_list()?;
         let output = self.get_expression_node(output_id)?;
-        let output_list = output.clone_row_list();
+        let output_list = output.clone_row_list()?;
         for (pos, alias_id) in output_list.iter().enumerate() {
             let new_child_id = *data_list
                 .get(pos)

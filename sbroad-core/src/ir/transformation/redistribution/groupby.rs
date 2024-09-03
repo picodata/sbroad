@@ -1830,7 +1830,9 @@ impl Plan {
         }
 
         if let Some(having_id) = having_id {
-            if let Relational::Having(Having { filter, output, .. }) = self.get_relation_node(having_id)? {
+            if let Relational::Having(Having { filter, output, .. }) =
+                self.get_relation_node(having_id)?
+            {
                 let (filter, output) = (*filter, *output);
                 let strategy = self.resolve_sub_query_conflicts(having_id, filter)?;
                 let fixed_subquery_ids = strategy.get_rel_ids();

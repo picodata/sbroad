@@ -413,7 +413,7 @@ impl From<(NodeId, usize)> for ChildColumnReference {
 impl Plan {
     /// Sets distribution for output tuple of projection.
     /// Applied in case two stage aggregation is not present.
-    pub fn set_projection_distribution(&mut self, proj_id: usize) -> Result<(), SbroadError> {
+    pub fn set_projection_distribution(&mut self, proj_id: NodeId) -> Result<(), SbroadError> {
         if !matches!(
             self.get_relation_node(proj_id)?,
             Relational::Projection { .. }
@@ -619,10 +619,10 @@ impl Plan {
     ) -> Result<Distribution, SbroadError> {
         let rel_node = self.get_relation_node(child_rel_node)?;
         let output_expr = self.get_expression_node(rel_node.output())?;
-        if let Expression::Row {
+        if let Expression::Row(Row {
             distribution: child_dist,
             ..
-        } = output_expr
+        }) = output_expr
         {
             match child_dist {
                 None => panic!("Unable to calculate distribution from child: it's uninitialized."),
@@ -675,7 +675,7 @@ impl Plan {
     ///
     /// # Panics
     /// - Supplied node is `Row`.
-    pub fn set_dist(&mut self, row_id: usize, dist: Distribution) -> Result<(), SbroadError> {
+    pub fn set_dist(&mut self, row_id: NodeId, dist: Distribution) -> Result<(), SbroadError> {
         if let MutExpression::Row(Row {
             ref mut distribution,
             ..
@@ -736,9 +736,8 @@ impl Plan {
     ///
     /// # Errors
     /// - Node is not of a row type.
-    pub fn get_distribution(&self, row_id: usize) -> Result<&Distribution, SbroadError> {
-        let expr = self.get_expression_node(row_id)?;
-        Ok(expr.distribution())
+    pub fn get_distribution(&self, row_id: NodeId) -> Result<&Distribution, SbroadError> {
+        self.distribution(row_id)
     }
 
     /// Gets distribution of the relational node.

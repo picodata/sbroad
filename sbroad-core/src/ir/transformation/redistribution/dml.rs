@@ -12,7 +12,7 @@ use super::{MotionKey, Target};
 
 impl Plan {
     /// Return first child of `Insert` node
-    pub fn dml_child_id(&self, dml_node_id: usize) -> Result<usize, SbroadError> {
+    pub fn dml_child_id(&self, dml_node_id: NodeId) -> Result<NodeId, SbroadError> {
         let dml_node = self.get_relation_node(dml_node_id)?;
         if let Relational::Insert(Insert { children, .. })
         | Relational::Update(Update { children, .. })
@@ -63,7 +63,7 @@ impl Plan {
         // output columns.
         let child_id = self.dml_child_id(insert_id)?;
         let child_output_id = self.get_relation_node(child_id)?.output();
-        let child_row = self.get_expression_node(child_output_id)?.get_row_list();
+        let child_row = self.get_row_list(child_output_id)?;
         if columns.len() != child_row.len() {
             return Err(SbroadError::Invalid(
                 Entity::Node,
@@ -118,7 +118,7 @@ impl Plan {
     }
 
     /// Return the table for given `Insert` node
-    pub fn dml_node_table(&self, node_id: usize) -> Result<&Table, SbroadError> {
+    pub fn dml_node_table(&self, node_id: NodeId) -> Result<&Table, SbroadError> {
         let node = self.get_relation_node(node_id)?;
         if let Relational::Insert(Insert { relation, .. })
         | Relational::Update(Update { relation, .. })

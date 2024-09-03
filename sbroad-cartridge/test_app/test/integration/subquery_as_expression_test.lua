@@ -79,7 +79,7 @@ g.test_under_projection = function()
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "unsigned" },
+        { name = "col_1", type = "unsigned" },
     })
     t.assert_items_equals(r.rows, {
         { 1 }
@@ -91,8 +91,8 @@ g.test_under_projection = function()
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "unsigned" },
-        { name = "COL_2", type = "unsigned" },
+        { name = "col_1", type = "unsigned" },
+        { name = "col_2", type = "unsigned" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 2 },
@@ -104,7 +104,7 @@ g.test_under_projection = function()
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "unsigned" },
+        { name = "col_1", type = "unsigned" },
     })
     t.assert_items_equals(r.rows, {
         { 3 },
@@ -116,7 +116,7 @@ g.test_under_projection = function()
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "integer" },
+        { name = "col_1", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 2 },
@@ -162,7 +162,7 @@ g.test_under_group_by = function()
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "decimal" },
+        { name = "col_1", type = "decimal" },
     })
     t.assert_items_equals(r.rows, {
         { 1 },
@@ -172,12 +172,15 @@ g.test_under_group_by = function()
 
     -- Single value in group by and having.
     r, err = api:call("sbroad.execute", { [[
-        SELECT sum("id") + 1, count(*) FROM "testing_space" GROUP BY "product_units" + (VALUES (1)) HAVING sum("id") + (VALUES (1)) > 7
+        SELECT sum("id") + 1, count(*)
+        FROM "testing_space"
+        GROUP BY "product_units" + (VALUES (1))
+        HAVING sum("id") + (VALUES (1)) > 7
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "decimal" },
-        { name = "COL_2", type = "decimal" },
+        { name = "col_1", type = "decimal" },
+        { name = "col_2", type = "decimal" },
     })
     t.assert_items_equals(r.rows, {
         { 10, 2 },
@@ -189,7 +192,7 @@ g.test_under_group_by = function()
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "decimal" },
+        { name = "col_1", type = "decimal" },
     })
     t.assert_items_equals(r.rows, {
         { 27 }

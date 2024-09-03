@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use super::TreeIterator;
 use crate::ir::node::relational::Relational;
-use crate::ir::node::{ArenaType, GroupBy, Limit, NodeId, OrderBy, ScanCte};
+use crate::ir::node::{ArenaType, Limit, NodeId, ScanCte};
 use crate::ir::{Node, Nodes};
 
 trait RelationalTreeIterator<'nodes>: TreeIterator<'nodes> {}
@@ -61,9 +61,7 @@ impl<'n> Iterator for RelationalIterator<'n> {
     }
 }
 
-fn relational_next<'nodes>(
-    iter: &mut impl RelationalTreeIterator<'nodes>,
-) -> Option<&'nodes usize> {
+fn relational_next<'nodes>(iter: &mut impl RelationalTreeIterator<'nodes>) -> Option<NodeId> {
     let next = iter.get_nodes().get(iter.get_current());
     match next {
         Some(node) => match node {
@@ -89,15 +87,16 @@ fn relational_next<'nodes>(
                     let children = node.children();
                     if step < children.len() {
                         *iter.get_child().borrow_mut() += 1;
-                        return children.get(step);
+                        return children.get(step).copied();
                     }
                     None
                 }
-                Relational::ScanCte { child, .. } | Relational::Limit { child, .. } => {
+                Relational::ScanCte(ScanCte { child, .. })
+                | Relational::Limit(Limit { child, .. }) => {
                     let step = *iter.get_child().borrow();
                     if step == 0 {
                         *iter.get_child().borrow_mut() += 1;
-                        return Some(child);
+                        return Some(child).copied();
                     }
                     None
                 }
@@ -109,8 +108,8 @@ fn relational_next<'nodes>(
             | Node::Ddl(_)
             | Node::Acl(_)
             | Node::Block(_)
-            | Node::Plugin(_),
-        )
-        | None => None,
+            | Node::Plugin(_) => None,
+        },
+        None => None,
     }
 }
