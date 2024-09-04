@@ -70,7 +70,7 @@ nodes:
             - 0
           position: 0
           parent: 15
-          col_type: Integer 
+          col_type: Integer
     - Expression:
         Alias:
           name: b
@@ -92,7 +92,7 @@ nodes:
             - 1
           position: 0
           parent: 24
-          col_type: Integer 
+          col_type: Integer
     - Expression:
         Row:
           list:
@@ -104,7 +104,7 @@ nodes:
             - 0
           position: 0
           parent: 24
-          col_type: Integer 
+          col_type: Integer
     - Expression:
         Row:
           list:
@@ -121,7 +121,7 @@ nodes:
             - 0
           position: 0
           parent: 24
-          col_type: Integer 
+          col_type: Integer
     - Expression:
         Alias:
           name: a
@@ -180,6 +180,6 @@ pg_params_map: {}
 options:
   vtable_max_rows: 5000
   execute_options:
-    SqlVdbeMaxSteps:
+    VdbeMaxSteps:
       Unsigned: 45000
 version_map: {}

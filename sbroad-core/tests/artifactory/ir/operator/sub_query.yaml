@@ -4,7 +4,7 @@ nodes:
     - Expression:
         Reference:
           targets: ~
-          parent: 5 
+          parent: 5
           position: 0
           col_type: Number
     - Expression:
@@ -14,7 +14,7 @@ nodes:
     - Expression:
         Reference:
           targets: ~
-          parent: 5 
+          parent: 5
           position: 1
           col_type: Number
     - Expression:
@@ -105,6 +105,6 @@ pg_params_map: {}
 options:
   vtable_max_rows: 5000
   execute_options:
-    SqlVdbeMaxSteps:
+    VdbeMaxSteps:
       Unsigned: 45000
 version_map: {}

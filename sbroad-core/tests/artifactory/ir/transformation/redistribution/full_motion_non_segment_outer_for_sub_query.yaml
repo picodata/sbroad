@@ -237,7 +237,7 @@ relations:
             positions:
               - 0
           engine: Vinyl
-slices: 
+slices:
   slices:
     - slice:
       - 32
@@ -251,6 +251,6 @@ pg_params_map: {}
 options:
   vtable_max_rows: 5000
   execute_options:
-    SqlVdbeMaxSteps:
+    VdbeMaxSteps:
       Unsigned: 45000
 version_map: {}

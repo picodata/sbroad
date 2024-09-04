@@ -9,7 +9,7 @@ fn concat1_test() {
             r#"projection (ROW('1'::string::string) || ROW('hello'::string) -> "col_1")"#,
             r#"    scan "t1""#,
             r#"execution options:"#,
-            r#"sql_vdbe_max_steps = 45000"#,
+            r#"vdbe_max_steps = 45000"#,
             r#"vtable_max_rows = 5000"#,
         ),
     );
@@ -25,7 +25,7 @@ fn concat2_test() {
             r#"    selection ROW(ROW(ROW('1'::string::string) || ROW("func"(('hello'::string))::integer)) || ROW('2'::string)) = ROW(42::unsigned)"#,
             r#"        scan "t1""#,
             r#"execution options:"#,
-            r#"sql_vdbe_max_steps = 45000"#,
+            r#"vdbe_max_steps = 45000"#,
             r#"vtable_max_rows = 5000"#,
         ),
     );

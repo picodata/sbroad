@@ -24,7 +24,7 @@ fn front_select_chaning_1() {
     projection ("t3"."a"::string -> "a")
         scan "t3"
 execution options:
-sql_vdbe_max_steps = 45000
+vdbe_max_steps = 45000
 vtable_max_rows = 5000
 "#,
     );
@@ -71,7 +71,7 @@ fn front_select_chaining_2() {
                     projection ("t3"."a"::string -> "a")
                         scan "t3"
 execution options:
-sql_vdbe_max_steps = 45000
+vdbe_max_steps = 45000
 vtable_max_rows = 5000
 "#,
     );
@@ -106,7 +106,7 @@ fn front_select_chaining_3() {
                     projection ("t2"."e"::unsigned -> "e")
                         scan "t2"
 execution options:
-sql_vdbe_max_steps = 45000
+vdbe_max_steps = 45000
 vtable_max_rows = 5000
 "#,
     );

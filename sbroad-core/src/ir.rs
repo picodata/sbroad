@@ -589,14 +589,14 @@ pub struct OptionSpec {
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, Deserialize, Serialize)]
 pub enum OptionKind {
-    SqlVdbeMaxSteps,
+    VdbeMaxSteps,
     VTableMaxRows,
 }
 
 impl Display for OptionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            OptionKind::SqlVdbeMaxSteps => "sql_vdbe_max_steps",
+            OptionKind::VdbeMaxSteps => "vdbe_max_steps",
             OptionKind::VTableMaxRows => "vtable_max_rows",
         };
         write!(f, "{s}")
@@ -625,7 +625,7 @@ impl ExecuteOptions {
     #[must_use]
     pub fn vdbe_max_steps(&self) -> u64 {
         self.0
-            .get(&OptionKind::SqlVdbeMaxSteps)
+            .get(&OptionKind::VdbeMaxSteps)
             .map_or(DEFAULT_VDBE_MAX_STEPS, |v| {
                 if let Value::Unsigned(steps) = v {
                     *steps
@@ -682,7 +682,7 @@ where
 impl Default for ExecuteOptions {
     fn default() -> Self {
         let exec_opts: HashMap<OptionKind, Value, RepeatableState> = collection!((
-            OptionKind::SqlVdbeMaxSteps,
+            OptionKind::VdbeMaxSteps,
             Value::Unsigned(DEFAULT_VDBE_MAX_STEPS)
         ));
         ExecuteOptions(exec_opts)
@@ -704,7 +704,7 @@ pub struct Options {
     /// if one of the storages returns `a` or more rows, the OOM will occur.
     pub vtable_max_rows: u64,
     /// Options passed to `box.execute` function on storages. Currently there is only one option
-    /// `sql_vdbe_max_steps`.
+    /// `vdbe_max_steps`.
     pub execute_options: ExecuteOptions,
 }
 
@@ -964,7 +964,7 @@ impl Plan {
                 return Err(SbroadError::Invalid(Entity::OptionSpec, None));
             };
             match opt.kind {
-                OptionKind::SqlVdbeMaxSteps => {
+                OptionKind::VdbeMaxSteps => {
                     if values_count.is_some() {
                         warn!(
                             Option::from("apply_options"),
