@@ -1513,9 +1513,31 @@ impl<'p> SyntaxPlan<'p> {
                             relation_name,
                             asterisk_id,
                         }),
+                    parent,
+                    targets,
                     ..
                 } = expr_node
                 {
+                    // If we reference ScanNode, we don't want to transform asterisks
+                    // in order not to select "bucket_id". That's why we save them as a
+                    // sequence of references.
+                    if let Some(parent) = parent {
+                        let ir_plan = self.plan.get_ir_plan();
+                        let targets = targets
+                            .clone()
+                            .expect("Reference with parent must have targets.");
+                        let first_target = targets.first().expect("Targets must not be empry");
+                        let child_id = ir_plan
+                            .get_relational_child(*parent, *first_target)
+                            .expect("Rel child must exist");
+                        let target_rel_node = ir_plan
+                            .get_relation_node(child_id)
+                            .expect("target node must exist");
+                        if let Relational::ScanRelation { .. } = target_rel_node {
+                            return non_reference_nodes();
+                        }
+                    }
+
                     let mut need_comma = false;
                     let asterisk_id = *asterisk_id;
                     if let Some(last_handled_asterisk_id) = last_handled_asterisk_id {

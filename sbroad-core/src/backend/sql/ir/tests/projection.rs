@@ -47,8 +47,10 @@ fn projection2_latest() {
         WHERE "identification_number" = 1"#;
     let expected = PatternWithParams::new(
         format!(
-            "{} {} {}",
-            r#"SELECT *"#,
+            "{} {} {} {} {}",
+            r#"SELECT "hash_testing"."identification_number","#,
+            r#""hash_testing"."product_code","#,
+            r#""hash_testing"."product_units", "hash_testing"."sys_op""#,
             r#"FROM "hash_testing""#,
             r#"WHERE ("hash_testing"."identification_number") = (?)"#
         ),
@@ -64,8 +66,10 @@ fn projection2_oldest() {
         WHERE "identification_number" = 1"#;
     let expected = PatternWithParams::new(
         format!(
-            "{} {} {}",
-            r#"SELECT *"#,
+            "{} {} {} {} {}",
+            r#"SELECT "hash_testing"."identification_number","#,
+            r#""hash_testing"."product_code","#,
+            r#""hash_testing"."product_units", "hash_testing"."sys_op""#,
             r#"FROM "hash_testing""#,
             r#"WHERE ("hash_testing"."identification_number") = (?)"#
         ),

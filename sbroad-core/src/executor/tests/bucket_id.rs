@@ -24,7 +24,7 @@ fn bucket1_test() {
     expected.rows.push(vec![
         LuaValue::String("Execute query on all buckets".to_string()),
         LuaValue::String(String::from(PatternWithParams::new(
-            r#"SELECT *, "t1"."bucket_id" FROM "t1""#.to_string(),
+            r#"SELECT "t1"."a", "t1"."b", "t1"."bucket_id" FROM "t1""#.to_string(),
             vec![],
         ))),
     ]);
@@ -83,7 +83,7 @@ fn bucket3_test() {
     expected.rows.push(vec![
         LuaValue::String("Execute query on all buckets".to_string()),
         LuaValue::String(String::from(PatternWithParams::new(
-            r#"SELECT *, "func" (?) as "col_1" FROM "t1""#.to_string(),
+            r#"SELECT "t1"."a", "t1"."b", "func" (?) as "col_1" FROM "t1""#.to_string(),
             vec![Value::from("111".to_string())],
         ))),
     ]);

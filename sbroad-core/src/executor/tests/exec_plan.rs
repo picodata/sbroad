@@ -749,7 +749,13 @@ fn global_table_scan() {
 
     assert_eq!(
         sql,
-        PatternWithParams::new(format!("{}", r#"SELECT * FROM "global_t""#,), vec![])
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "global_t"."a", "global_t"."b" FROM "global_t""#,
+            ),
+            vec![]
+        )
     );
 }
 
