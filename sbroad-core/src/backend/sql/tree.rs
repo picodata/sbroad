@@ -498,7 +498,9 @@ impl Select {
         id: usize,
     ) -> Result<Option<Select>, SbroadError> {
         let sn = sp.nodes.get_sn(id);
-        if let Some(Node::Relational(Relational::Projection(_))) = sp.get_plan_node(&sn.data)? {
+        if let Some((Node::Relational(Relational::Projection { .. }), _)) =
+            sp.get_plan_node(&sn.data)?
+        {
             let mut select = Select {
                 parent,
                 branch,
@@ -512,7 +514,7 @@ impl Select {
             loop {
                 let left_id = node.left_id_or_err()?;
                 let sn_left = sp.nodes.get_sn(left_id);
-                let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
+                let (plan_node_left, _) = sp.plan_node_or_err(&sn_left.data)?;
                 if let Node::Relational(
                     Relational::ScanRelation(_)
                     | Relational::ScanCte(_)
@@ -1485,6 +1487,7 @@ impl<'p> SyntaxPlan<'p> {
         let mut children = Vec::with_capacity(list.len() * 2 + 2);
         children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_open()));
 
+        // Helper enum used for solving asterisk to local SQL transformation.
         enum NodeToAdd {
             SnId(usize),
             Asterisk(SyntaxNode),
@@ -1492,8 +1495,12 @@ impl<'p> SyntaxPlan<'p> {
         }
 
         let mut handle_reference =
-            |sn_id: usize, need_comma: bool, expr_node: &Expression| -> Vec<NodeToAdd> {
-                let mut non_reference_nodes = || -> Vec<NodeToAdd> {
+            |sn_id: usize, need_comma: bool, expr_id: NodeId| -> Vec<NodeToAdd> {
+                let ir_plan = self.plan.get_ir_plan();
+                let expr_node = ir_plan
+                    .get_expression_node(expr_id)
+                    .expect("Expression node must exist");
+                let mut non_asterisk_nodes = || -> Vec<NodeToAdd> {
                     let mut nodes_to_add = Vec::new();
                     if last_handled_asterisk_id.is_some() {
                         nodes_to_add.push(NodeToAdd::Comma);
@@ -1513,29 +1520,20 @@ impl<'p> SyntaxPlan<'p> {
                             relation_name,
                             asterisk_id,
                         }),
-                    parent,
-                    targets,
                     ..
                 } = expr_node
                 {
                     // If we reference ScanNode, we don't want to transform asterisks
                     // in order not to select "bucket_id". That's why we save them as a
                     // sequence of references.
-                    if let Some(parent) = parent {
-                        let ir_plan = self.plan.get_ir_plan();
-                        let targets = targets
-                            .clone()
-                            .expect("Reference with parent must have targets.");
-                        let first_target = targets.first().expect("Targets must not be empry");
-                        let child_id = ir_plan
-                            .get_relational_child(*parent, *first_target)
-                            .expect("Rel child must exist");
-                        let target_rel_node = ir_plan
-                            .get_relation_node(child_id)
-                            .expect("target node must exist");
-                        if let Relational::ScanRelation { .. } = target_rel_node {
-                            return non_reference_nodes();
-                        }
+                    let ref_source_node_id = ir_plan
+                        .get_reference_source_relation(expr_id)
+                        .expect("Reference must have a source relation");
+                    let ref_source_node = ir_plan
+                        .get_relation_node(ref_source_node_id)
+                        .expect("Node must be a relational");
+                    if let Relational::ScanRelation { .. } = ref_source_node {
+                        return non_asterisk_nodes();
                     }
 
                     let mut need_comma = false;
@@ -1574,7 +1572,7 @@ impl<'p> SyntaxPlan<'p> {
                         nodes_to_add.push(NodeToAdd::Asterisk(asterisk_node_to_add));
                     }
                 } else {
-                    return non_reference_nodes();
+                    return non_asterisk_nodes();
                 }
                 nodes_to_add
             };
@@ -1583,15 +1581,14 @@ impl<'p> SyntaxPlan<'p> {
                                             need_comma: bool|
          -> Result<(), SbroadError> {
             let sn_node = self.nodes.get_sn(sn_id);
-            let sn_plan_node = self.get_plan_node(&sn_node.data)?;
+            let sn_plan_node_pair = self.get_plan_node(&sn_node.data)?;
 
-            let nodes_to_add = if let Some(Node::Expression(node_expr)) = sn_plan_node {
+            let nodes_to_add = if let Some((Node::Expression(node_expr), sn_plan_node_id)) =
+                sn_plan_node_pair
+            {
                 match node_expr {
-                    Expression::Alias { child, .. } => {
-                        let alias_child = self.plan.get_ir_plan().get_expression_node(*child)?;
-                        handle_reference(sn_id, need_comma, alias_child)
-                    }
-                    _ => handle_reference(sn_id, need_comma, node_expr),
+                    Expression::Alias { child, .. } => handle_reference(sn_id, need_comma, *child),
+                    _ => handle_reference(sn_id, need_comma, sn_plan_node_id),
                 }
             } else {
                 // As it's not ad Alias under Projection output, we don't have to
@@ -1751,9 +1748,9 @@ impl<'p> SyntaxPlan<'p> {
     ///
     /// # Errors
     /// - syntax node wraps an invalid plan node
-    pub fn get_plan_node(&self, data: &SyntaxData) -> Result<Option<Node>, SbroadError> {
+    pub fn get_plan_node(&self, data: &SyntaxData) -> Result<Option<(&Node, NodeId)>, SbroadError> {
         if let SyntaxData::PlanId(id) = data {
-            Ok(Some(self.plan.get_ir_plan().get_node(*id)?))
+            Ok(Some((self.plan.get_ir_plan().get_node(*id)?, *id)))
         } else {
             Ok(None)
         }
@@ -1764,7 +1761,7 @@ impl<'p> SyntaxPlan<'p> {
     /// # Errors
     /// - plan node is invalid
     /// - syntax tree node doesn't have a plan node
-    pub fn plan_node_or_err(&self, data: &SyntaxData) -> Result<Node, SbroadError> {
+    pub fn plan_node_or_err(&self, data: &SyntaxData) -> Result<(&Node, NodeId), SbroadError> {
         self.get_plan_node(data)?.ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::SyntaxPlan,

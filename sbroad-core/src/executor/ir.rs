@@ -640,9 +640,12 @@ impl ExecutionPlan {
                     *rel.mut_output() = subtree_map.get_id(*output);
                     relational_output_id = Some(*rel.mut_output());
 
-                    if !rel_renamed_output_lists.is_empty()
-                        && !matches!(rel, Relational::Projection { .. })
-                    {
+                    // If we deal with Projection we have to fix
+                    // only References that have an Asterisk source.
+                    // References without asterisks would be covered with aliases like
+                    // "COL_1 as <alias>".
+                    let is_projection = matches!(rel, Relational::Projection { .. });
+                    if !rel_renamed_output_lists.is_empty() {
                         let rel_output_list: Vec<usize> =
                             new_plan.get_row_list(rel.output())?.to_vec();
 
@@ -650,11 +653,19 @@ impl ExecutionPlan {
                             let ref_under_alias = new_plan.get_child_under_alias(*output_id)?;
                             let ref_expr = new_plan.get_expression_node(ref_under_alias)?;
                             let Expression::Reference {
-                                position, targets, ..
+                                position,
+                                targets,
+                                asterisk_source,
+                                ..
                             } = ref_expr
                             else {
-                                panic!("Expected reference, got {ref_expr:?}");
+                                continue;
                             };
+
+                            if is_projection && asterisk_source.is_none() {
+                                continue;
+                            }
+
                             let mut ref_rel_node = None;
 
                             let target = if let Some(targets) = targets {

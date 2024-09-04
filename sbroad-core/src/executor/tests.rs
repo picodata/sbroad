@@ -787,7 +787,7 @@ fn anonymous_col_index_test() {
             LuaValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {} {} {} {} {}",
-                    "SELECT *",
+                    r#"SELECT "test_space"."id", "test_space"."sysFrom", "test_space"."FIRST_NAME", "test_space"."sys_op""#,
                     r#"FROM "test_space""#,
                     r#"WHERE ("test_space"."id") in"#,
                     r#"(SELECT "COL_1" FROM "TMP_test_1136")"#,
@@ -803,7 +803,7 @@ fn anonymous_col_index_test() {
                 format!(
                     "{} {} {} {} {} {}",
                     "SELECT",
-                    r#"* FROM "test_space""#,
+                    r#""test_space"."id", "test_space"."sysFrom", "test_space"."FIRST_NAME", "test_space"."sys_op" FROM "test_space""#,
                     r#"WHERE ("test_space"."id") in"#,
                     r#"(SELECT "COL_1" FROM "TMP_test_1136")"#,
                     r#"or ("test_space"."id") in"#,
@@ -837,7 +837,8 @@ fn sharding_column1_test() {
         LuaValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {}",
-                r#"SELECT *"#, r#"FROM "test_space" WHERE ("test_space"."id") = (?)"#,
+                r#"SELECT "test_space"."id", "test_space"."sysFrom", "test_space"."FIRST_NAME", "test_space"."sys_op""#,
+                r#"FROM "test_space" WHERE ("test_space"."id") = (?)"#,
             ),
             vec![Value::from(1_u64)],
         ))),
@@ -866,7 +867,7 @@ fn sharding_column2_test() {
         LuaValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {}",
-                r#"SELECT *,"#,
+                r#"SELECT "test_space"."id", "test_space"."sysFrom", "test_space"."FIRST_NAME", "test_space"."sys_op","#,
                 r#""test_space"."bucket_id" FROM "test_space" WHERE ("test_space"."id") = (?)"#,
             ),
             vec![Value::from(1_u64)],

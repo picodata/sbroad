@@ -1023,6 +1023,57 @@ impl Plan {
         self.slices.clone()
     }
 
+    /// Find source relational node from which given reference came.
+    /// E.g. in case we're working with a reference under Projection with the following
+    /// children struct:
+    /// Projection <- given reference in the output
+    ///     Selection
+    ///         Scan
+    /// the source would be the Scan. It could also be a Join or Union nodes.
+    pub fn get_reference_source_relation(&self, ref_id: usize) -> Result<usize, SbroadError> {
+        let mut ref_id = ref_id;
+        let mut ref_node = self.get_expression_node(ref_id)?;
+        if let Expression::Alias { child, .. } = ref_node {
+            ref_node = self.get_expression_node(*child)?;
+            ref_id = *child;
+        }
+        let Expression::Reference { position, .. } = ref_node else {
+            panic!("Expected reference")
+        };
+        let ref_parent_node_id = *self.get_relational_from_reference_node(ref_id)?;
+        let ref_source_node = self.get_relation_node(ref_parent_node_id)?;
+        match ref_source_node {
+            Relational::Delete { .. } | Relational::Insert { .. } | Relational::Update { .. } => {
+                panic!("Reference source search shouldn't reach DML node.")
+            }
+            Relational::Selection { output, .. }
+            | Relational::Having { output, .. }
+            | Relational::OrderBy { output, .. }
+            | Relational::Limit { output, .. } => {
+                let source_output_list = self.get_row_list(*output)?;
+                let source_ref_id = source_output_list[*position];
+                self.get_reference_source_relation(source_ref_id)
+            }
+            Relational::ScanRelation { .. }
+            | Relational::Projection { .. }
+            | Relational::ScanCte { .. }
+            | Relational::GroupBy { .. }
+            | Relational::Motion { .. }
+            | Relational::ScanSubQuery { .. }
+            | Relational::Join { .. }
+            | Relational::Except { .. }
+            | Relational::Intersect { .. }
+            | Relational::UnionAll { .. }
+            | Relational::Union { .. }
+            | Relational::Values { .. } => Ok(ref_parent_node_id),
+            Relational::ValuesRow { .. } => {
+                panic!(
+                    "Reference source search shouldn't reach unsupported node {ref_source_node:?}."
+                )
+            }
+        }
+    }
+
     /// Get relation in the plan by its name or returns error.
     ///
     /// # Errors
