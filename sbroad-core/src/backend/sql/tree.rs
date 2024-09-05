@@ -27,7 +27,7 @@ use sbroad_proc::otm_child_span;
 pub enum SyntaxData {
     /// "as \"alias_name\""
     Alias(SmolStr),
-    /// "*"
+    /// "*" or "table.*"
     Asterisk(Option<SmolStr>),
     /// "as alias_name"
     UnquotedAlias(SmolStr),

@@ -95,7 +95,7 @@ pub struct VirtualTable {
 }
 
 /// Facade for `Column` class.
-/// Idea is to restrict caller's ability to add a custom name to s column
+/// Idea is to restrict caller's ability to add a custom name to a column
 /// (as soon as it's generated automatically).
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub struct VTableColumn {
@@ -124,6 +124,7 @@ impl Display for VirtualTable {
 }
 
 #[must_use]
+#[inline]
 #[allow(clippy::module_name_repetitions)]
 pub fn vtable_indexed_column_name(index: usize) -> SmolStr {
     format_smolstr!("COL_{index}")
