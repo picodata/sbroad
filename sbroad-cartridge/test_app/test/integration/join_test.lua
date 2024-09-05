@@ -50,7 +50,7 @@ g.test_join_vtable_with_same_column_names = function()
     local api = cluster:server("api-1").net_box
 
     local res, err = api:call("sbroad.execute", {
-        [[select distinct *
+        [[select *
           from
             "testing_space"
           join
@@ -73,12 +73,12 @@ g.test_join_vtable_with_same_column_names = function()
         {name = "s", type = "integer"},
     })
     t.assert_equals(res.rows, {
+        {1, "a", 1, 1, 1},
         {2, "a", 1, 2, 2},
         {3, "a", 2, 3, 3},
         {4, "b", 1, 4, 4},
-        {5, "b", 2, 5, 5},
         {6, "b", 3, 6, 6},
+        {5, "b", 2, 5, 5},
         {7, "c", 4, 7, 7},
-        {1, "a", 1, 1, 1},
     })
 end

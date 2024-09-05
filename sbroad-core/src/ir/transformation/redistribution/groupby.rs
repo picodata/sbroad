@@ -23,7 +23,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ir::function::{Behavior, Function};
 use crate::ir::helpers::RepeatableState;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher, RandomState};
 use std::rc::Rc;
 
 const AGGR_CAPACITY: usize = 10;
@@ -134,7 +134,7 @@ impl<'plan, 'args> PartialEq<Self> for AggregateSignature<'plan, 'args> {
 
 impl<'plan, 'args> Eq for AggregateSignature<'plan, 'args> {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct GroupingExpression<'plan> {
     pub id: NodeId,
     pub plan: &'plan Plan,
@@ -350,6 +350,75 @@ impl<'plan> ExpressionMapper<'plan> {
 
     pub fn get_matches(&mut self) -> GroupbyExpressionsMap {
         std::mem::take(&mut self.map)
+    }
+}
+
+struct OrderedMap<K, V, S = RandomState> {
+    map: HashMap<K, V, S>,
+    order: Vec<(K, V)>,
+}
+
+impl<K: Clone + Hash + Eq, V: Clone, S: BuildHasher> OrderedMap<K, V, S> {
+    fn with_hasher(hasher: S) -> Self {
+        Self {
+            map: HashMap::<K, V, S>::with_hasher(hasher),
+            order: Vec::<(K, V)>::new(),
+        }
+    }
+
+    fn with_capacity_and_hasher(capacity: usize, hasher: S) -> Self {
+        Self {
+            map: HashMap::<K, V, S>::with_capacity_and_hasher(capacity, hasher),
+            order: Vec::<(K, V)>::new(),
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    fn get(&self, key: &K) -> Option<&V> {
+        self.map.get(key)
+    }
+
+    fn remove(&mut self, key: &K) -> Option<V> {
+        self.order.retain(|(k, _)| k != key);
+        self.map.remove(key)
+    }
+
+    fn insert(&mut self, key: K, value: V) {
+        if self.map.insert(key.clone(), value.clone()).is_none() {
+            self.order.push((key, value));
+        }
+    }
+
+    fn get_ordered(&self) -> &Vec<(K, V)> {
+        &self.order
+    }
+}
+
+struct OrderedSet<V, S = RandomState> {
+    set: OrderedMap<V, (), S>,
+}
+
+impl<V: Clone + Hash + Eq, S: BuildHasher> OrderedSet<V, S> {
+    fn with_capacity_and_hasher(capacity: usize, hasher: S) -> Self {
+        Self {
+            set: OrderedMap::<V, (), S>::with_capacity_and_hasher(capacity, hasher),
+        }
+    }
+
+    fn insert(&mut self, value: V) {
+        self.set.insert(value, ())
+    }
+
+    fn get_ordered(&self) -> Vec<V> {
+        self.set
+            .get_ordered()
+            .iter()
+            .map(|(v, _)| v)
+            .cloned()
+            .collect()
     }
 }
 
@@ -894,15 +963,16 @@ impl Plan {
         if has_groupby {
             let old_gr_cols = self.get_grouping_cols(upper)?;
             // remove duplicate expressions
-            let mut unique_grouping_exprs: HashSet<GroupingExpression, _> =
-                HashSet::with_capacity_and_hasher(old_gr_cols.len(), RepeatableState);
+            let mut unique_grouping_exprs: OrderedSet<GroupingExpression, _> =
+                OrderedSet::with_capacity_and_hasher(old_gr_cols.len(), RepeatableState);
             for gr_expr in old_gr_cols {
                 unique_grouping_exprs.insert(GroupingExpression::new(*gr_expr, self));
             }
-            let grouping_exprs = unique_grouping_exprs
-                .into_iter()
-                .map(|x| x.id)
-                .collect::<Vec<NodeId>>();
+            let grouping_exprs: Vec<NodeId> = unique_grouping_exprs
+                .get_ordered()
+                .iter()
+                .map(|e| e.id)
+                .collect();
             grouping_expr.extend(grouping_exprs.iter());
             self.set_grouping_cols(upper, grouping_exprs)?;
 
@@ -1169,13 +1239,13 @@ impl Plan {
         grouping_exprs: &Vec<NodeId>,
         output_cols: &mut Vec<NodeId>,
     ) -> Result<(LocalAliasesMap, NodeId, Vec<usize>), SbroadError> {
-        let mut unique_grouping_exprs_for_local_stage: HashMap<
+        let mut unique_grouping_exprs_for_local_stage_full: OrderedMap<
             GroupingExpression,
             Rc<String>,
             RepeatableState,
-        > = HashMap::with_hasher(RepeatableState);
+        > = OrderedMap::with_hasher(RepeatableState);
         for gr_expr in grouping_exprs {
-            unique_grouping_exprs_for_local_stage.insert(
+            unique_grouping_exprs_for_local_stage_full.insert(
                 GroupingExpression::new(*gr_expr, self),
                 Rc::new(Self::generate_local_alias(*gr_expr)),
             );
@@ -1201,33 +1271,37 @@ impl Plan {
                 })?
             };
             let expr = GroupingExpression::new(argument, self);
-            if let Some(local_alias) = unique_grouping_exprs_for_local_stage.get(&expr) {
+            if let Some(local_alias) = unique_grouping_exprs_for_local_stage_full.get(&expr) {
                 info.aggr
                     .lagg_alias
                     .insert(info.aggr.kind, local_alias.clone());
             } else {
                 grouping_exprs_from_aggregates.push(argument);
                 let local_alias = Rc::new(Self::generate_local_alias(argument));
-                unique_grouping_exprs_for_local_stage.insert(expr, local_alias.clone());
+                unique_grouping_exprs_for_local_stage_full.insert(expr, local_alias.clone());
                 info.aggr.lagg_alias.insert(info.aggr.kind, local_alias);
             }
         }
 
         // Because of borrow checker we need to remove references to Plan from map
-        let mut unique_grouping_exprs_for_local_stage: HashMap<
+        let mut unique_grouping_exprs_for_local_stage: OrderedMap<
             NodeId,
             Rc<String>,
             RepeatableState,
-        > = unique_grouping_exprs_for_local_stage
-            .into_iter()
-            .map(|(e, s)| (e.id, s))
-            .collect();
+        > = OrderedMap::with_capacity_and_hasher(
+            unique_grouping_exprs_for_local_stage_full.len(),
+            RepeatableState,
+        );
+        for (gr_expr, name) in unique_grouping_exprs_for_local_stage_full.get_ordered() {
+            unique_grouping_exprs_for_local_stage.insert(gr_expr.id, name.clone())
+        }
 
         let mut alias_to_pos: HashMap<Rc<String>, usize> = HashMap::new();
         // add grouping expressions to local projection
-
-        for (pos, (gr_expr, local_alias)) in
-            unique_grouping_exprs_for_local_stage.iter().enumerate()
+        for (pos, (gr_expr, local_alias)) in unique_grouping_exprs_for_local_stage
+            .get_ordered()
+            .iter()
+            .enumerate()
         {
             let new_alias = self.nodes.add_alias(local_alias, *gr_expr)?;
             output_cols.push(new_alias);
