@@ -1117,6 +1117,95 @@ fn global_except() {
 }
 
 #[test]
+fn local_translation_asterisk_single() {
+    let sql = r#"SELECT * from "t3""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!("{}", r#"SELECT "t3"."a", "t3"."b" FROM "t3""#,),
+            vec![]
+        )
+    );
+}
+
+#[test]
+fn local_translation_asterisk_several() {
+    let sql = r#"SELECT *, * from "t3""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#,
+            ),
+            vec![]
+        )
+    );
+}
+
+#[test]
+fn local_translation_asterisk_named() {
+    let sql = r#"SELECT *, "t3".*, * from "t3""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "t3"."a", "t3"."b", "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#,
+            ),
+            vec![]
+        )
+    );
+}
+
+#[test]
+fn local_translation_asterisk_with_additional_columns() {
+    let sql = r#"SELECT "a", *, "t3"."b", "t3".*, * from "t3""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "t3"."a", "t3"."a", "t3"."b", "t3"."b", "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#,
+            ),
+            vec![]
+        )
+    );
+}
+
+#[test]
 fn exec_plan_order_by() {
     let sql = r#"SELECT "identification_number" from "hash_testing"
                       ORDER BY "identification_number""#;
