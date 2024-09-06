@@ -20,6 +20,32 @@ pub enum AclOwned {
     RevokePrivilege(RevokePrivilege),
 }
 
+impl AclOwned {
+    /// Return ACL node timeout.
+    ///
+    /// # Errors
+    /// - timeout parsing error
+    pub fn timeout(&self) -> Result<f64, SbroadError> {
+        match self {
+            AclOwned::DropRole(DropRole { ref timeout, .. })
+            | AclOwned::DropUser(DropUser { ref timeout, .. })
+            | AclOwned::CreateRole(CreateRole { ref timeout, .. })
+            | AclOwned::AlterUser(AlterUser { ref timeout, .. })
+            | AclOwned::CreateUser(CreateUser { ref timeout, .. })
+            | AclOwned::RevokePrivilege(RevokePrivilege { ref timeout, .. })
+            | AclOwned::GrantPrivilege(GrantPrivilege { ref timeout, .. }) => timeout,
+        }
+        .to_smolstr()
+        .parse()
+        .map_err(|e| {
+            SbroadError::Invalid(
+                Entity::SpaceMetadata,
+                Some(format_smolstr!("timeout parsing error {e:?}")),
+            )
+        })
+    }
+}
+
 impl From<AclOwned> for SizeNode {
     fn from(value: AclOwned) -> Self {
         match value {

@@ -23,6 +23,35 @@ pub enum DdlOwned {
     SetTransaction(SetTransaction),
 }
 
+impl DdlOwned {
+    /// Return DDL node timeout.
+    ///
+    /// # Errors
+    /// - timeout parsing error
+    pub fn timeout(&self) -> Result<f64, SbroadError> {
+        match self {
+            DdlOwned::CreateTable(CreateTable { ref timeout, .. })
+            | DdlOwned::DropTable(DropTable { ref timeout, .. })
+            | DdlOwned::CreateIndex(CreateIndex { ref timeout, .. })
+            | DdlOwned::DropIndex(DropIndex { ref timeout, .. })
+            | DdlOwned::SetParam(SetParam { ref timeout, .. })
+            | DdlOwned::SetTransaction(SetTransaction { ref timeout, .. })
+            | DdlOwned::AlterSystem(AlterSystem { ref timeout, .. })
+            | DdlOwned::CreateProc(CreateProc { ref timeout, .. })
+            | DdlOwned::DropProc(DropProc { ref timeout, .. })
+            | DdlOwned::RenameRoutine(RenameRoutine { ref timeout, .. }) => timeout,
+        }
+        .to_smolstr()
+        .parse()
+        .map_err(|e| {
+            SbroadError::Invalid(
+                Entity::SpaceMetadata,
+                Some(format_smolstr!("timeout parsing error {e:?}")),
+            )
+        })
+    }
+}
+
 impl From<DdlOwned> for SizeNode {
     fn from(value: DdlOwned) -> Self {
         match value {
