@@ -1,4 +1,4 @@
-FROM docker-public.binary.picodata.io/tarantool:latest
+FROM docker-public.binary.picodata.io/tarantool:2.11.2.159
 
 ENV PATH=/usr/local/bin:/root/.cargo/bin:${PATH}
 ENV LD_LIBRARY_PATH=/usr/local/lib64:$LD_LIBRARY_PATH
