@@ -308,7 +308,11 @@ local function multi_storage_dql(uuid_to_args, func, handler, opts, tier_name)
             f:discard()
         end
     end
-    return nil, err, err_uuid
+    local msg = "Unknown error"
+    if err ~= nil and err.message ~= nil then
+        msg = err.message
+    end
+    error(lerror.make("Error on replicaset " .. err_uuid .. ": " .. msg))
 end
 
 _G.group_buckets_by_replicasets = function(buckets, tier_name)
@@ -317,7 +321,7 @@ _G.group_buckets_by_replicasets = function(buckets, tier_name)
     for _, bucket_id in pairs(buckets) do
         local rs, err = router:route(bucket_id)
         if err ~= nil then
-            return nil, err
+            error(err)
         end
         local uuid = rs.uuid
         if map[uuid] then
@@ -336,7 +340,7 @@ _G.get_replicasets_from_buckets = function(buckets, tier_name)
     for _, bucket_id in pairs(buckets) do
         local rs, err = router:route(bucket_id)
         if err ~= nil then
-            return nil, err
+            error(err)
         end
         local uuid = rs.uuid
         if not map[uuid] then
