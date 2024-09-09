@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use super::{Procedure, SizeNode};
+use super::{NodeAligned, Procedure};
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -9,7 +9,7 @@ pub enum BlockOwned {
     Procedure(Procedure),
 }
 
-impl From<BlockOwned> for SizeNode {
+impl From<BlockOwned> for NodeAligned {
     fn from(value: BlockOwned) -> Self {
         match value {
             BlockOwned::Procedure(proc) => proc.into(),
@@ -22,15 +22,6 @@ impl From<BlockOwned> for SizeNode {
 pub enum MutBlock<'a> {
     /// Procedure body.
     Procedure(&'a mut Procedure),
-}
-
-impl MutBlock<'_> {
-    #[must_use]
-    pub fn get_block_owned(&self) -> BlockOwned {
-        match self {
-            MutBlock::Procedure(proc) => BlockOwned::Procedure((*proc).clone()),
-        }
-    }
 }
 
 #[allow(clippy::module_name_repetitions)]

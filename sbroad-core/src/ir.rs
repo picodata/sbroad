@@ -7,7 +7,7 @@ use node::block::{Block, MutBlock};
 use node::ddl::{Ddl, MutDdl};
 use node::expression::{Expression, MutExpression};
 use node::relational::{MutRelational, Relational};
-use node::{Invalid, Parameter, SizeNode};
+use node::{Invalid, NodeAligned, Parameter};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::cell::{RefCell, RefMut};
@@ -366,11 +366,6 @@ impl Nodes {
             && self.arena224.is_empty()
     }
 
-    // #[must_use]
-    // pub fn len(&self) -> usize {
-    //     self.arena.len()
-    // }
-
     pub fn iter32(&self) -> Iter<'_, Node32> {
         self.arena32.iter()
     }
@@ -397,9 +392,9 @@ impl Nodes {
     /// # Panics
     /// Inserts a new node to the arena and returns its position,
     /// that is treated as a pointer.
-    pub fn push(&mut self, node: SizeNode) -> NodeId {
+    pub fn push(&mut self, node: NodeAligned) -> NodeId {
         match node {
-            SizeNode::Node32(node32) => {
+            NodeAligned::Node32(node32) => {
                 let new_node_id = NodeId {
                     offset: u32::try_from(self.arena32.len()).unwrap(),
                     arena_type: ArenaType::Arena32,
@@ -409,7 +404,7 @@ impl Nodes {
 
                 new_node_id
             }
-            SizeNode::Node64(node64) => {
+            NodeAligned::Node64(node64) => {
                 let new_node_id = NodeId {
                     offset: u32::try_from(self.arena64.len()).unwrap(),
                     arena_type: ArenaType::Arena64,
@@ -419,7 +414,7 @@ impl Nodes {
 
                 new_node_id
             }
-            SizeNode::Node96(node96) => {
+            NodeAligned::Node96(node96) => {
                 let new_node_id = NodeId {
                     offset: u32::try_from(self.arena96.len()).unwrap(),
                     arena_type: ArenaType::Arena96,
@@ -429,7 +424,7 @@ impl Nodes {
 
                 new_node_id
             }
-            SizeNode::Node136(node136) => {
+            NodeAligned::Node136(node136) => {
                 let new_node_id = NodeId {
                     offset: u32::try_from(self.arena136.len()).unwrap(),
                     arena_type: ArenaType::Arena136,
@@ -439,7 +434,7 @@ impl Nodes {
 
                 new_node_id
             }
-            SizeNode::Node224(node224) => {
+            NodeAligned::Node224(node224) => {
                 let new_node_id = NodeId {
                     offset: u32::try_from(self.arena224.len()).unwrap(),
                     arena_type: ArenaType::Arena224,
@@ -479,14 +474,6 @@ impl Nodes {
         Ok(old_node)
     }
 }
-
-// impl<'nodes> IntoIterator for &'nodes Nodes {
-//     type Item = &'nodes Node;
-//     type IntoIter = Iter<'nodes, Node>;
-//     fn into_iter(self) -> Self::IntoIter {
-//         self.iter()
-//     }
-// }
 
 /// One level of `Slices`.
 /// Element of `slice` vec is a `motion_id` to execute.
@@ -807,76 +794,6 @@ impl Plan {
         self.relations.insert(table);
     }
 
-    /// Check that plan tree is valid.
-    ///
-    /// # Errors
-    /// Returns `SbroadError` when the plan tree check fails.
-    pub fn check(&self) -> Result<(), SbroadError> {
-        let _ = match self.top {
-            None => {
-                return Err(SbroadError::Invalid(
-                    Entity::Plan,
-                    Some("plan tree top is None".into()),
-                ))
-            }
-            Some(top) => match top.arena_type {
-                ArenaType::Arena32 => {
-                    let top_node = self.nodes.arena32.get(top.offset as usize);
-                    match top_node {
-                        Some(_) => Ok(()),
-                        None => Err(SbroadError::Invalid(
-                            Entity::Plan,
-                            Some("plan tree top index is out of bounds".into()),
-                        )),
-                    }
-                }
-                ArenaType::Arena64 => {
-                    let top_node = self.nodes.arena64.get(top.offset as usize);
-                    match top_node {
-                        Some(_) => Ok(()),
-                        None => Err(SbroadError::Invalid(
-                            Entity::Plan,
-                            Some("plan tree top index is out of bounds".into()),
-                        )),
-                    }
-                }
-                ArenaType::Arena96 => {
-                    let top_node = self.nodes.arena96.get(top.offset as usize);
-                    match top_node {
-                        Some(_) => Ok(()),
-                        None => Err(SbroadError::Invalid(
-                            Entity::Plan,
-                            Some("plan tree top index is out of bounds".into()),
-                        )),
-                    }
-                }
-                ArenaType::Arena136 => {
-                    let top_node = self.nodes.arena136.get(top.offset as usize);
-                    match top_node {
-                        Some(_) => Ok(()),
-                        None => Err(SbroadError::Invalid(
-                            Entity::Plan,
-                            Some("plan tree top index is out of bounds".into()),
-                        )),
-                    }
-                }
-                ArenaType::Arena224 => {
-                    let top_node = self.nodes.arena224.get(top.offset as usize);
-                    match top_node {
-                        Some(_) => Ok(()),
-                        None => Err(SbroadError::Invalid(
-                            Entity::Plan,
-                            Some("plan tree top index is out of bounds".into()),
-                        )),
-                    }
-                }
-            },
-        };
-
-        Ok(())
-        //TODO: additional consistency checks
-    }
-
     /// # Panics
     #[must_use]
     pub fn replace_with_stub(&mut self, dst_id: NodeId) -> NodeOwned {
@@ -889,7 +806,7 @@ impl Plan {
                     .unwrap();
                 let stub = Node32::Invalid(Invalid {});
                 let node32 = std::mem::replace(node32, stub);
-                node32.into_common_node()
+                node32.into_owned()
             }
             ArenaType::Arena64 => {
                 let node64 = self
@@ -899,7 +816,7 @@ impl Plan {
                     .unwrap();
                 let stub = Node64::Parameter(Parameter { param_type: None });
                 let node64 = std::mem::replace(node64, stub);
-                node64.into_common_node()
+                node64.into_owned()
             }
             ArenaType::Arena96 => {
                 let node96 = self
@@ -909,7 +826,7 @@ impl Plan {
                     .unwrap();
                 let stub = Node96::Invalid(Invalid {});
                 let node96 = std::mem::replace(node96, stub);
-                node96.into_common_node()
+                node96.into_owned()
             }
             ArenaType::Arena136 => {
                 let node136 = self
@@ -919,7 +836,7 @@ impl Plan {
                     .unwrap();
                 let stub = Node136::Invalid(Invalid {});
                 let node136 = std::mem::replace(node136, stub);
-                node136.into_common_node()
+                node136.into_owned()
             }
             ArenaType::Arena224 => {
                 let node224 = self
@@ -929,7 +846,7 @@ impl Plan {
                     .unwrap();
                 let stub = Node224::Invalid(Invalid {});
                 let node224 = std::mem::replace(node224, stub);
-                node224.into_common_node()
+                node224.into_owned()
             }
         }
     }

@@ -1,9 +1,10 @@
 use std::fmt::Debug;
 
+use crate::errors::SbroadError;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::protocol::VTablesMeta;
+use crate::ir::node::NodeId;
 use crate::ir::relation::SpaceEngine;
-use crate::{errors::SbroadError, ir::node::NodeId};
 
 #[cfg(not(feature = "mock"))]
 mod prod_imports {

@@ -477,7 +477,7 @@ impl ExecutionPlan {
 
             // Replace the node with some invalid value.
             let mut node: NodeOwned = if cte_ids.contains(&node_id) {
-                mut_plan.get_mut_node(node_id)?.get_common_node()
+                mut_plan.get_node(node_id)?.get_common_node()
             } else {
                 mut_plan.replace_with_stub(node_id)
             };

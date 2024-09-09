@@ -2,7 +2,6 @@
 
 use crate::backend::sql::ir::PatternWithParams;
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
-use crate::executor::bucket::Buckets;
 use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;

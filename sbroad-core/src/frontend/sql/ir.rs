@@ -13,8 +13,8 @@ use crate::ir::node::relational::{MutRelational, RelOwned, Relational};
 use crate::ir::node::{
     Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, Delete, Except,
     ExprInParentheses, GroupBy, Having, Insert, Intersect, Join, Limit, Motion, MutNode, Node,
-    NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation, ScanSubQuery, Selection,
-    SizeNode, StableFunction, Trim, UnaryExpr, Union, UnionAll, Update, Values, ValuesRow,
+    NodeAligned, NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation, ScanSubQuery,
+    Selection, StableFunction, Trim, UnaryExpr, Union, UnionAll, Update, Values, ValuesRow,
 };
 use crate::ir::operator::{OrderByElement, OrderByEntity};
 use crate::ir::transformation::redistribution::MotionOpcode;
@@ -347,7 +347,7 @@ impl Plan {
         let nodes = subtree.take_nodes();
         let mut map = CloneExprSubtreeMap::with_capacity(nodes.len());
         for LevelNode(_, id) in nodes {
-            let mut expr = self.get_mut_expression_node(id)?.get_expr_owned();
+            let mut expr = self.get_expression_node(id)?.get_expr_owned();
             match expr {
                 ExprOwned::Constant { .. }
                 | ExprOwned::Reference { .. }
@@ -768,7 +768,7 @@ impl SubtreeCloner {
         drop(dfs);
         for LevelNode(_, id) in nodes {
             let node = plan.get_node(id)?;
-            let new_node: SizeNode = match node {
+            let new_node: NodeAligned = match node {
                 Node::Relational(rel) => self.clone_relational(&rel, id)?.into(),
                 Node::Expression(expr) => self.clone_expression(&expr)?.into(),
                 _ => {

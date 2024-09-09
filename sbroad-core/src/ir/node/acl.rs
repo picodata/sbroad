@@ -4,8 +4,8 @@ use smol_str::{format_smolstr, ToSmolStr};
 use crate::errors::{Entity, SbroadError};
 
 use super::{
-    AlterUser, CreateRole, CreateUser, DropRole, DropUser, GrantPrivilege, RevokePrivilege,
-    SizeNode,
+    AlterUser, CreateRole, CreateUser, DropRole, DropUser, GrantPrivilege, NodeAligned,
+    RevokePrivilege,
 };
 
 #[allow(clippy::module_name_repetitions)]
@@ -46,7 +46,7 @@ impl AclOwned {
     }
 }
 
-impl From<AclOwned> for SizeNode {
+impl From<AclOwned> for NodeAligned {
     fn from(value: AclOwned) -> Self {
         match value {
             AclOwned::AlterUser(alter_user) => alter_user.into(),
@@ -70,25 +70,6 @@ pub enum MutAcl<'a> {
     AlterUser(&'a mut AlterUser),
     GrantPrivilege(&'a mut GrantPrivilege),
     RevokePrivilege(&'a mut RevokePrivilege),
-}
-
-impl MutAcl<'_> {
-    #[must_use]
-    pub fn get_acl_owned(&self) -> AclOwned {
-        match self {
-            MutAcl::AlterUser(alter_user) => AclOwned::AlterUser((*alter_user).clone()),
-            MutAcl::CreateRole(create_role) => AclOwned::CreateRole((*create_role).clone()),
-            MutAcl::CreateUser(create_user) => AclOwned::CreateUser((*create_user).clone()),
-            MutAcl::DropRole(drop_role) => AclOwned::DropRole((*drop_role).clone()),
-            MutAcl::DropUser(drop_user) => AclOwned::DropUser((*drop_user).clone()),
-            MutAcl::GrantPrivilege(grant_privelege) => {
-                AclOwned::GrantPrivilege((*grant_privelege).clone())
-            }
-            MutAcl::RevokePrivilege(revoke_privelege) => {
-                AclOwned::RevokePrivilege((*revoke_privelege).clone())
-            }
-        }
-    }
 }
 
 #[allow(clippy::module_name_repetitions)]

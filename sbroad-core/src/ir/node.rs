@@ -13,17 +13,14 @@ use tarantool::{
     space::SpaceEngineType,
 };
 
-use crate::{
-    errors::SbroadError,
-    ir::{
-        acl::{AlterOption, GrantRevokeType},
-        ddl::{ColumnDef, Language, ParamDef, SetParamScopeType, SetParamValue},
-        distribution::Distribution,
-        helpers::RepeatableState,
-        relation::Type,
-        transformation::redistribution::{ColumnPosition, MotionPolicy, Program},
-        value::Value,
-    },
+use crate::ir::{
+    acl::{AlterOption, GrantRevokeType},
+    ddl::{ColumnDef, Language, ParamDef, SetParamScopeType, SetParamValue},
+    distribution::Distribution,
+    helpers::RepeatableState,
+    relation::Type,
+    transformation::redistribution::{ColumnPosition, MotionPolicy, Program},
+    value::Value,
 };
 
 use super::{
@@ -102,7 +99,7 @@ pub struct Alias {
     pub child: NodeId,
 }
 
-impl From<Alias> for SizeNode {
+impl From<Alias> for NodeAligned {
     fn from(value: Alias) -> Self {
         Self::Node32(Node32::Alias(value))
     }
@@ -121,7 +118,7 @@ pub struct BoolExpr {
     pub right: NodeId,
 }
 
-impl From<BoolExpr> for SizeNode {
+impl From<BoolExpr> for NodeAligned {
     fn from(value: BoolExpr) -> Self {
         Self::Node32(Node32::Bool(value))
     }
@@ -142,7 +139,7 @@ pub struct ArithmeticExpr {
     pub right: NodeId,
 }
 
-impl From<ArithmeticExpr> for SizeNode {
+impl From<ArithmeticExpr> for NodeAligned {
     fn from(value: ArithmeticExpr) -> Self {
         Self::Node32(Node32::Arithmetic(value))
     }
@@ -159,7 +156,7 @@ pub struct Cast {
     pub to: cast::Type,
 }
 
-impl From<Cast> for SizeNode {
+impl From<Cast> for NodeAligned {
     fn from(value: Cast) -> Self {
         Self::Node32(Node32::Cast(value))
     }
@@ -176,7 +173,7 @@ pub struct Concat {
     pub right: NodeId,
 }
 
-impl From<Concat> for SizeNode {
+impl From<Concat> for NodeAligned {
     fn from(value: Concat) -> Self {
         Self::Node32(Node32::Concat(value))
     }
@@ -191,7 +188,7 @@ pub struct Constant {
     pub value: Value,
 }
 
-impl From<Constant> for SizeNode {
+impl From<Constant> for NodeAligned {
     fn from(value: Constant) -> Self {
         Self::Node64(Node64::Constant(value))
     }
@@ -217,7 +214,7 @@ pub struct Reference {
     pub col_type: Type,
 }
 
-impl From<Reference> for SizeNode {
+impl From<Reference> for NodeAligned {
     fn from(value: Reference) -> Self {
         Self::Node64(Node64::Reference(value))
     }
@@ -240,7 +237,7 @@ pub struct Row {
     pub distribution: Option<Distribution>,
 }
 
-impl From<Row> for SizeNode {
+impl From<Row> for NodeAligned {
     fn from(value: Row) -> Self {
         Self::Node64(Node64::Row(value))
     }
@@ -270,7 +267,7 @@ pub struct StableFunction {
     pub is_system: bool,
 }
 
-impl From<StableFunction> for SizeNode {
+impl From<StableFunction> for NodeAligned {
     fn from(value: StableFunction) -> Self {
         Self::Node96(Node96::StableFunction(value))
     }
@@ -287,7 +284,7 @@ pub struct Trim {
     pub target: NodeId,
 }
 
-impl From<Trim> for SizeNode {
+impl From<Trim> for NodeAligned {
     fn from(value: Trim) -> Self {
         Self::Node32(Node32::Trim(value))
     }
@@ -302,7 +299,7 @@ pub struct UnaryExpr {
     pub child: NodeId,
 }
 
-impl From<UnaryExpr> for SizeNode {
+impl From<UnaryExpr> for NodeAligned {
     fn from(value: UnaryExpr) -> Self {
         Self::Node32(Node32::Unary(value))
     }
@@ -313,7 +310,7 @@ pub struct ExprInParentheses {
     pub child: NodeId,
 }
 
-impl From<ExprInParentheses> for SizeNode {
+impl From<ExprInParentheses> for NodeAligned {
     fn from(value: ExprInParentheses) -> Self {
         Self::Node32(Node32::ExprInParentheses(value))
     }
@@ -326,7 +323,7 @@ pub struct Case {
     pub else_expr: Option<NodeId>,
 }
 
-impl From<Case> for SizeNode {
+impl From<Case> for NodeAligned {
     fn from(value: Case) -> Self {
         Self::Node64(Node64::Case(value))
     }
@@ -337,7 +334,7 @@ pub struct Parameter {
     pub param_type: Option<Type>,
 }
 
-impl From<Parameter> for SizeNode {
+impl From<Parameter> for NodeAligned {
     fn from(value: Parameter) -> Self {
         Self::Node64(Node64::Parameter(value))
     }
@@ -346,7 +343,7 @@ impl From<Parameter> for SizeNode {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CountAsterisk {}
 
-impl From<CountAsterisk> for SizeNode {
+impl From<CountAsterisk> for NodeAligned {
     fn from(value: CountAsterisk) -> Self {
         Self::Node32(Node32::CountAsterisk(value))
     }
@@ -362,7 +359,7 @@ pub struct ScanCte {
     pub output: NodeId,
 }
 
-impl From<ScanCte> for SizeNode {
+impl From<ScanCte> for NodeAligned {
     fn from(value: ScanCte) -> Self {
         Self::Node64(Node64::ScanCte(value))
     }
@@ -378,7 +375,7 @@ pub struct Except {
     pub output: NodeId,
 }
 
-impl From<Except> for SizeNode {
+impl From<Except> for NodeAligned {
     fn from(value: Except) -> Self {
         Self::Node32(Node32::Except(value))
     }
@@ -394,7 +391,7 @@ pub struct Delete {
     pub output: NodeId,
 }
 
-impl From<Delete> for SizeNode {
+impl From<Delete> for NodeAligned {
     fn from(value: Delete) -> Self {
         Self::Node64(Node64::Delete(value))
     }
@@ -415,7 +412,7 @@ pub struct Insert {
     pub conflict_strategy: ConflictStrategy,
 }
 
-impl From<Insert> for SizeNode {
+impl From<Insert> for NodeAligned {
     fn from(value: Insert) -> Self {
         Self::Node96(Node96::Insert(value))
     }
@@ -429,7 +426,7 @@ pub struct Intersect {
     pub output: NodeId,
 }
 
-impl From<Intersect> for SizeNode {
+impl From<Intersect> for NodeAligned {
     fn from(value: Intersect) -> Self {
         Self::Node32(Node32::Intersect(value))
     }
@@ -456,7 +453,7 @@ pub struct Update {
     pub output: NodeId,
 }
 
-impl From<Update> for SizeNode {
+impl From<Update> for NodeAligned {
     fn from(value: Update) -> Self {
         Self::Node136(Node136::Update(value))
     }
@@ -477,7 +474,7 @@ pub struct Join {
     pub kind: JoinKind,
 }
 
-impl From<Join> for SizeNode {
+impl From<Join> for NodeAligned {
     fn from(value: Join) -> Self {
         Self::Node64(Node64::Join(value))
     }
@@ -495,7 +492,7 @@ pub struct Limit {
     pub child: NodeId,
 }
 
-impl From<Limit> for SizeNode {
+impl From<Limit> for NodeAligned {
     fn from(value: Limit) -> Self {
         Self::Node32(Node32::Limit(value))
     }
@@ -522,7 +519,7 @@ pub struct Motion {
     pub is_child_subquery: bool,
 }
 
-impl From<Motion> for SizeNode {
+impl From<Motion> for NodeAligned {
     fn from(value: Motion) -> Self {
         Self::Node136(Node136::Motion(value))
     }
@@ -541,7 +538,7 @@ pub struct Projection {
     pub is_distinct: bool,
 }
 
-impl From<Projection> for SizeNode {
+impl From<Projection> for NodeAligned {
     fn from(value: Projection) -> Self {
         Self::Node64(Node64::Projection(value))
     }
@@ -557,7 +554,7 @@ pub struct ScanRelation {
     pub relation: SmolStr,
 }
 
-impl From<ScanRelation> for SizeNode {
+impl From<ScanRelation> for NodeAligned {
     fn from(value: ScanRelation) -> Self {
         Self::Node64(Node64::ScanRelation(value))
     }
@@ -574,7 +571,7 @@ pub struct ScanSubQuery {
     pub output: NodeId,
 }
 
-impl From<ScanSubQuery> for SizeNode {
+impl From<ScanSubQuery> for NodeAligned {
     fn from(value: ScanSubQuery) -> Self {
         Self::Node64(Node64::ScanSubQuery(value))
     }
@@ -593,7 +590,7 @@ pub struct Selection {
     pub output: NodeId,
 }
 
-impl From<Selection> for SizeNode {
+impl From<Selection> for NodeAligned {
     fn from(value: Selection) -> Self {
         Self::Node64(Node64::Selection(value))
     }
@@ -608,7 +605,7 @@ pub struct GroupBy {
     pub is_final: bool,
 }
 
-impl From<GroupBy> for SizeNode {
+impl From<GroupBy> for NodeAligned {
     fn from(value: GroupBy) -> Self {
         Self::Node64(Node64::GroupBy(value))
     }
@@ -621,7 +618,7 @@ pub struct Having {
     pub filter: NodeId,
 }
 
-impl From<Having> for SizeNode {
+impl From<Having> for NodeAligned {
     fn from(value: Having) -> Self {
         Self::Node64(Node64::Having(value))
     }
@@ -634,7 +631,7 @@ pub struct OrderBy {
     pub order_by_elements: Vec<OrderByElement>,
 }
 
-impl From<OrderBy> for SizeNode {
+impl From<OrderBy> for NodeAligned {
     fn from(value: OrderBy) -> Self {
         Self::Node64(Node64::OrderBy(value))
     }
@@ -650,7 +647,7 @@ pub struct UnionAll {
     pub output: NodeId,
 }
 
-impl From<UnionAll> for SizeNode {
+impl From<UnionAll> for NodeAligned {
     fn from(value: UnionAll) -> Self {
         Self::Node32(Node32::UnionAll(value))
     }
@@ -664,7 +661,7 @@ pub struct Values {
     pub children: Vec<NodeId>,
 }
 
-impl From<Values> for SizeNode {
+impl From<Values> for NodeAligned {
     fn from(value: Values) -> Self {
         Self::Node32(Node32::Values(value))
     }
@@ -684,7 +681,7 @@ pub struct ValuesRow {
     pub children: Vec<NodeId>,
 }
 
-impl From<ValuesRow> for SizeNode {
+impl From<ValuesRow> for NodeAligned {
     fn from(value: ValuesRow) -> Self {
         Self::Node64(Node64::ValuesRow(value))
     }
@@ -696,7 +693,7 @@ pub struct DropRole {
     pub timeout: Decimal,
 }
 
-impl From<DropRole> for SizeNode {
+impl From<DropRole> for NodeAligned {
     fn from(value: DropRole) -> Self {
         Self::Node64(Node64::DropRole(value))
     }
@@ -708,7 +705,7 @@ pub struct DropUser {
     pub timeout: Decimal,
 }
 
-impl From<DropUser> for SizeNode {
+impl From<DropUser> for NodeAligned {
     fn from(value: DropUser) -> Self {
         Self::Node64(Node64::DropUser(value))
     }
@@ -720,7 +717,7 @@ pub struct CreateRole {
     pub timeout: Decimal,
 }
 
-impl From<CreateRole> for SizeNode {
+impl From<CreateRole> for NodeAligned {
     fn from(value: CreateRole) -> Self {
         Self::Node64(Node64::CreateRole(value))
     }
@@ -734,7 +731,7 @@ pub struct CreateUser {
     pub timeout: Decimal,
 }
 
-impl From<CreateUser> for SizeNode {
+impl From<CreateUser> for NodeAligned {
     fn from(value: CreateUser) -> Self {
         Self::Node136(Node136::CreateUser(value))
     }
@@ -747,7 +744,7 @@ pub struct AlterUser {
     pub timeout: Decimal,
 }
 
-impl From<AlterUser> for SizeNode {
+impl From<AlterUser> for NodeAligned {
     fn from(value: AlterUser) -> Self {
         Self::Node136(Node136::AlterUser(value))
     }
@@ -760,7 +757,7 @@ pub struct GrantPrivilege {
     pub timeout: Decimal,
 }
 
-impl From<GrantPrivilege> for SizeNode {
+impl From<GrantPrivilege> for NodeAligned {
     fn from(value: GrantPrivilege) -> Self {
         Self::Node136(Node136::GrantPrivilege(value))
     }
@@ -773,7 +770,7 @@ pub struct RevokePrivilege {
     pub timeout: Decimal,
 }
 
-impl From<RevokePrivilege> for SizeNode {
+impl From<RevokePrivilege> for NodeAligned {
     fn from(value: RevokePrivilege) -> Self {
         Self::Node136(Node136::RevokePrivilege(value))
     }
@@ -797,7 +794,7 @@ pub struct CreateTable {
     pub tier: Option<SmolStr>,
 }
 
-impl From<CreateTable> for SizeNode {
+impl From<CreateTable> for NodeAligned {
     fn from(value: CreateTable) -> Self {
         Self::Node224(Node224::CreateTable(value))
     }
@@ -809,7 +806,7 @@ pub struct DropTable {
     pub timeout: Decimal,
 }
 
-impl From<DropTable> for SizeNode {
+impl From<DropTable> for NodeAligned {
     fn from(value: DropTable) -> Self {
         Self::Node64(Node64::DropTable(value))
     }
@@ -824,7 +821,7 @@ pub struct CreateProc {
     pub timeout: Decimal,
 }
 
-impl From<CreateProc> for SizeNode {
+impl From<CreateProc> for NodeAligned {
     fn from(value: CreateProc) -> Self {
         Self::Node136(Node136::CreateProc(value))
     }
@@ -837,7 +834,7 @@ pub struct DropProc {
     pub timeout: Decimal,
 }
 
-impl From<DropProc> for SizeNode {
+impl From<DropProc> for NodeAligned {
     fn from(value: DropProc) -> Self {
         Self::Node96(Node96::DropProc(value))
     }
@@ -851,7 +848,7 @@ pub struct RenameRoutine {
     pub timeout: Decimal,
 }
 
-impl From<RenameRoutine> for SizeNode {
+impl From<RenameRoutine> for NodeAligned {
     fn from(value: RenameRoutine) -> Self {
         Self::Node136(Node136::RenameRoutine(value))
     }
@@ -875,7 +872,7 @@ pub struct CreateIndex {
     pub timeout: Decimal,
 }
 
-impl From<CreateIndex> for SizeNode {
+impl From<CreateIndex> for NodeAligned {
     fn from(value: CreateIndex) -> Self {
         Self::Node224(Node224::CreateIndex(value))
     }
@@ -887,7 +884,7 @@ pub struct DropIndex {
     pub timeout: Decimal,
 }
 
-impl From<DropIndex> for SizeNode {
+impl From<DropIndex> for NodeAligned {
     fn from(value: DropIndex) -> Self {
         Self::Node64(Node64::DropIndex(value))
     }
@@ -909,13 +906,13 @@ pub struct AlterSystem {
     pub timeout: Decimal,
 }
 
-impl From<AlterSystem> for SizeNode {
+impl From<AlterSystem> for NodeAligned {
     fn from(value: AlterSystem) -> Self {
         Self::Node136(Node136::AlterSystem(value))
     }
 }
 
-impl From<SetParam> for SizeNode {
+impl From<SetParam> for NodeAligned {
     fn from(value: SetParam) -> Self {
         Self::Node64(Node64::SetParam(value))
     }
@@ -927,7 +924,7 @@ pub struct SetTransaction {
     pub timeout: Decimal,
 }
 
-impl From<SetTransaction> for SizeNode {
+impl From<SetTransaction> for NodeAligned {
     fn from(value: SetTransaction) -> Self {
         Self::Node64(Node64::SetTransaction(value))
     }
@@ -936,7 +933,7 @@ impl From<SetTransaction> for SizeNode {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Invalid;
 
-impl From<Invalid> for SizeNode {
+impl From<Invalid> for NodeAligned {
     fn from(value: Invalid) -> Self {
         Self::Node32(Node32::Invalid(value))
     }
@@ -951,7 +948,7 @@ pub struct Procedure {
     pub values: Vec<NodeId>,
 }
 
-impl From<Procedure> for SizeNode {
+impl From<Procedure> for NodeAligned {
     fn from(value: Procedure) -> Self {
         Self::Node64(Node64::Procedure(value))
     }
@@ -967,7 +964,7 @@ pub struct Union {
     pub output: NodeId,
 }
 
-impl From<Union> for SizeNode {
+impl From<Union> for NodeAligned {
     fn from(value: Union) -> Self {
         Self::Node32(Node32::Union(value))
     }
@@ -994,16 +991,9 @@ pub enum Node32 {
     Values(Values),
 }
 
-const _: () = {
-    assert!(std::mem::size_of::<Node32>() == 40);
-    assert!(std::mem::size_of::<Node64>() == 72);
-    assert!(std::mem::size_of::<Node96>() == 96);
-    assert!(std::mem::size_of::<Node136>() == 136);
-    assert!(std::mem::size_of::<Node224>() == 224);
-};
 impl Node32 {
     #[must_use]
-    pub fn into_common_node(self) -> NodeOwned {
+    pub fn into_owned(self) -> NodeOwned {
         match self {
             Node32::Alias(alias) => NodeOwned::Expression(ExprOwned::Alias(alias)),
             Node32::Arithmetic(arithm) => NodeOwned::Expression(ExprOwned::Arithmetic(arithm)),
@@ -1057,17 +1047,8 @@ pub enum Node64 {
 }
 
 impl Node64 {
-    /// # Errors
-    pub fn into_expr_node(&self) -> Result<Expression<'_>, SbroadError> {
-        match self {
-            Node64::Case(case) => Ok(Expression::Case(case)),
-            Node64::Constant(constant) => Ok(Expression::Constant(constant)),
-            _ => Err(SbroadError::Invalid(crate::errors::Entity::Node, None)),
-        }
-    }
-
     #[must_use]
-    pub fn into_common_node(self) -> NodeOwned {
+    pub fn into_owned(self) -> NodeOwned {
         match self {
             Node64::Case(case) => NodeOwned::Expression(ExprOwned::Case(case)),
             Node64::Constant(constant) => NodeOwned::Expression(ExprOwned::Constant(constant)),
@@ -1114,7 +1095,7 @@ pub enum Node96 {
 
 impl Node96 {
     #[must_use]
-    pub fn into_common_node(self) -> NodeOwned {
+    pub fn into_owned(self) -> NodeOwned {
         match self {
             Node96::DropProc(drop_proc) => NodeOwned::Ddl(DdlOwned::DropProc(drop_proc)),
             Node96::Insert(insert) => NodeOwned::Relational(RelOwned::Insert(insert)),
@@ -1143,7 +1124,7 @@ pub enum Node136 {
 
 impl Node136 {
     #[must_use]
-    pub fn into_common_node(self) -> NodeOwned {
+    pub fn into_owned(self) -> NodeOwned {
         match self {
             Node136::AlterUser(alter_user) => NodeOwned::Acl(AclOwned::AlterUser(alter_user)),
             Node136::AlterSystem(alter_system) => {
@@ -1177,7 +1158,7 @@ pub enum Node224 {
 
 impl Node224 {
     #[must_use]
-    pub fn into_common_node(self) -> NodeOwned {
+    pub fn into_owned(self) -> NodeOwned {
         match self {
             Node224::CreateTable(create_table) => {
                 NodeOwned::Ddl(DdlOwned::CreateTable(create_table))
@@ -1191,7 +1172,7 @@ impl Node224 {
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub enum SizeNode {
+pub enum NodeAligned {
     Node32(Node32),
     Node64(Node64),
     Node96(Node96),
@@ -1199,31 +1180,31 @@ pub enum SizeNode {
     Node224(Node224),
 }
 
-impl From<Node32> for SizeNode {
+impl From<Node32> for NodeAligned {
     fn from(value: Node32) -> Self {
         Self::Node32(value)
     }
 }
 
-impl From<Node64> for SizeNode {
+impl From<Node64> for NodeAligned {
     fn from(value: Node64) -> Self {
         Self::Node64(value)
     }
 }
 
-impl From<Node96> for SizeNode {
+impl From<Node96> for NodeAligned {
     fn from(value: Node96) -> Self {
         Self::Node96(value)
     }
 }
 
-impl From<Node136> for SizeNode {
+impl From<Node136> for NodeAligned {
     fn from(value: Node136) -> Self {
         Self::Node136(value)
     }
 }
 
-impl From<Node224> for SizeNode {
+impl From<Node224> for NodeAligned {
     fn from(value: Node224) -> Self {
         Self::Node224(value)
     }
@@ -1250,21 +1231,6 @@ pub enum MutNode<'nodes> {
     Block(MutBlock<'nodes>),
     Parameter(&'nodes mut Parameter),
     Invalid(&'nodes mut Invalid),
-}
-
-impl MutNode<'_> {
-    #[must_use]
-    pub fn get_common_node(self) -> NodeOwned {
-        match self {
-            MutNode::Expression(expr) => NodeOwned::Expression(expr.get_expr_owned()),
-            MutNode::Relational(rel) => NodeOwned::Relational(rel.get_rel_owned()),
-            MutNode::Ddl(ddl) => NodeOwned::Ddl(ddl.get_ddl_owned()),
-            MutNode::Acl(acl) => NodeOwned::Acl(acl.get_acl_owned()),
-            MutNode::Block(block) => NodeOwned::Block(block.get_block_owned()),
-            MutNode::Parameter(param) => NodeOwned::Parameter((*param).clone()),
-            MutNode::Invalid(inv) => NodeOwned::Invalid((*inv).clone()),
-        }
-    }
 }
 
 impl Node<'_> {
@@ -1295,7 +1261,7 @@ pub enum NodeOwned {
     Invalid(Invalid),
 }
 
-impl From<NodeOwned> for SizeNode {
+impl From<NodeOwned> for NodeAligned {
     fn from(value: NodeOwned) -> Self {
         match value {
             NodeOwned::Acl(acl) => acl.into(),
@@ -1308,3 +1274,6 @@ impl From<NodeOwned> for SizeNode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

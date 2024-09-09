@@ -27,7 +27,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use super::expression::{ColumnPositionMap, ExpressionId};
 use super::node::expression::{Expression, MutExpression};
 use super::node::relational::Relational;
-use super::node::{ArenaType, Limit, Node, SizeNode};
+use super::node::{ArenaType, Limit, Node, NodeAligned};
 use super::transformation::redistribution::{MotionPolicy, Program};
 use super::tree::traversal::{LevelNode, PostOrderWithFilter, EXPR_CAPACITY};
 use crate::ir::distribution::{Distribution, Key, KeySet};
@@ -325,7 +325,7 @@ impl Plan {
     ///
     /// # Errors
     /// - failed to oupdate shard columns info due to invalid plan subtree
-    pub fn add_relational(&mut self, node: SizeNode) -> Result<NodeId, SbroadError> {
+    pub fn add_relational(&mut self, node: NodeAligned) -> Result<NodeId, SbroadError> {
         let rel_id = self.nodes.push(node);
         let mut context = self.context_mut();
         context.shard_col_info.update_node(rel_id, self)?;
@@ -1261,7 +1261,7 @@ impl Plan {
         }
 
         let output = self.add_row_for_union_except(left, right)?;
-        let union_all: SizeNode = if remove_duplicates {
+        let union_all: NodeAligned = if remove_duplicates {
             Union {
                 left,
                 right,

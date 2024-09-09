@@ -12,6 +12,15 @@ use tarantool::{
     tlua::StringInLua,
 };
 
+use crate::ir::{
+    helpers::RepeatableState,
+    transformation::redistribution::{MotionOpcode, MotionPolicy},
+    tree::{
+        relation::RelationalIterator,
+        traversal::{LevelNode, PostOrderWithFilter, REL_CAPACITY},
+    },
+    Plan,
+};
 use crate::{
     executor::{
         engine::{helpers::build_optional_binary, ConvertToDispatchResult, DispatchReturnFormat},
@@ -24,15 +33,6 @@ use crate::{
     },
     otm::child_span,
 };
-use crate::ir::{
-        helpers::RepeatableState,
-        transformation::redistribution::{MotionOpcode, MotionPolicy},
-        tree::{
-            relation::RelationalIterator,
-            traversal::{LevelNode, PostOrderWithFilter, REL_CAPACITY},
-        },
-        Plan,
-    };
 use ahash::AHashMap;
 use rand::{thread_rng, Rng};
 use sbroad_proc::otm_child_span;

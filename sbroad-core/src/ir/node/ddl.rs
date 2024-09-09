@@ -4,8 +4,8 @@ use smol_str::{format_smolstr, ToSmolStr};
 use crate::errors::{Entity, SbroadError};
 
 use super::{
-    AlterSystem, CreateIndex, CreateProc, CreateTable, DropIndex, DropProc, DropTable,
-    RenameRoutine, SetParam, SetTransaction, SizeNode,
+    AlterSystem, CreateIndex, CreateProc, CreateTable, DropIndex, DropProc, DropTable, NodeAligned,
+    RenameRoutine, SetParam, SetTransaction,
 };
 
 #[allow(clippy::module_name_repetitions)]
@@ -52,7 +52,7 @@ impl DdlOwned {
     }
 }
 
-impl From<DdlOwned> for SizeNode {
+impl From<DdlOwned> for NodeAligned {
     fn from(value: DdlOwned) -> Self {
         match value {
             DdlOwned::CreateIndex(create_index) => create_index.into(),
@@ -97,24 +97,6 @@ pub enum Ddl<'a> {
     DropIndex(&'a DropIndex),
     SetParam(&'a SetParam),
     SetTransaction(&'a SetTransaction),
-}
-
-impl MutDdl<'_> {
-    #[must_use]
-    pub fn get_ddl_owned(&self) -> DdlOwned {
-        match self {
-            MutDdl::CreateIndex(create_index) => DdlOwned::CreateIndex((*create_index).clone()),
-            MutDdl::CreateProc(create_proc) => DdlOwned::CreateProc((*create_proc).clone()),
-            MutDdl::CreateTable(create_table) => DdlOwned::CreateTable((*create_table).clone()),
-            MutDdl::DropIndex(drop_index) => DdlOwned::DropIndex((*drop_index).clone()),
-            MutDdl::DropProc(drop_proc) => DdlOwned::DropProc((*drop_proc).clone()),
-            MutDdl::DropTable(drop_table) => DdlOwned::DropTable((*drop_table).clone()),
-            MutDdl::RenameRoutine(rename) => DdlOwned::RenameRoutine((*rename).clone()),
-            MutDdl::AlterSystem(alter_system) => DdlOwned::AlterSystem((*alter_system).clone()),
-            MutDdl::SetParam(set_param) => DdlOwned::SetParam((*set_param).clone()),
-            MutDdl::SetTransaction(set_trans) => DdlOwned::SetTransaction((*set_trans).clone()),
-        }
-    }
 }
 
 impl Ddl<'_> {

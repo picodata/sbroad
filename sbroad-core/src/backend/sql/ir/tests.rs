@@ -1,7 +1,6 @@
 use pretty_assertions::assert_eq;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
-use crate::executor::bucket::Buckets;
 
 use crate::executor::ir::ExecutionPlan;
 

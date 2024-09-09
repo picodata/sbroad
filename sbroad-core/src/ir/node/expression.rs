@@ -7,7 +7,7 @@ use crate::{
 
 use super::{
     Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, CountAsterisk,
-    ExprInParentheses, NodeId, Reference, Row, SizeNode, StableFunction, Trim, UnaryExpr,
+    ExprInParentheses, NodeAligned, NodeId, Reference, Row, StableFunction, Trim, UnaryExpr,
 };
 
 #[allow(clippy::module_name_repetitions)]
@@ -29,7 +29,7 @@ pub enum ExprOwned {
     ExprInParentheses(ExprInParentheses),
 }
 
-impl From<ExprOwned> for SizeNode {
+impl From<ExprOwned> for NodeAligned {
     fn from(value: ExprOwned) -> Self {
         match value {
             ExprOwned::Alias(alias) => alias.into(),
@@ -236,28 +236,6 @@ impl MutExpression<'_> {
     pub fn flush_parent_in_reference(&mut self) {
         if let MutExpression::Reference(Reference { parent, .. }) = self {
             *parent = None;
-        }
-    }
-
-    #[must_use]
-    pub fn get_expr_owned(&self) -> ExprOwned {
-        match self {
-            MutExpression::Alias(alias) => ExprOwned::Alias((*alias).clone()),
-            MutExpression::Arithmetic(arithm) => ExprOwned::Arithmetic((*arithm).clone()),
-            MutExpression::Bool(bool) => ExprOwned::Bool((*bool).clone()),
-            MutExpression::Case(case) => ExprOwned::Case((*case).clone()),
-            MutExpression::Cast(cast) => ExprOwned::Cast((*cast).clone()),
-            MutExpression::Concat(con) => ExprOwned::Concat((*con).clone()),
-            MutExpression::Constant(constant) => ExprOwned::Constant((*constant).clone()),
-            MutExpression::CountAsterisk(count) => ExprOwned::CountAsterisk((*count).clone()),
-            MutExpression::ExprInParentheses(expr_par) => {
-                ExprOwned::ExprInParentheses((*expr_par).clone())
-            }
-            MutExpression::Reference(reference) => ExprOwned::Reference((*reference).clone()),
-            MutExpression::Row(row) => ExprOwned::Row((*row).clone()),
-            MutExpression::StableFunction(sfunc) => ExprOwned::StableFunction((*sfunc).clone()),
-            MutExpression::Trim(trim) => ExprOwned::Trim((*trim).clone()),
-            MutExpression::Unary(unary) => ExprOwned::Unary((*unary).clone()),
         }
     }
 }

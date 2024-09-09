@@ -7,8 +7,8 @@ use crate::{
 };
 
 use super::{
-    Delete, Except, GroupBy, Having, Insert, Intersect, Join, Limit, Motion, NodeId, OrderBy,
-    Projection, ScanCte, ScanRelation, ScanSubQuery, Selection, SizeNode, Union, UnionAll, Update,
+    Delete, Except, GroupBy, Having, Insert, Intersect, Join, Limit, Motion, NodeAligned, NodeId,
+    OrderBy, Projection, ScanCte, ScanRelation, ScanSubQuery, Selection, Union, UnionAll, Update,
     Values, ValuesRow,
 };
 
@@ -37,7 +37,7 @@ pub enum RelOwned {
     ValuesRow(ValuesRow),
 }
 
-impl From<RelOwned> for SizeNode {
+impl From<RelOwned> for NodeAligned {
     fn from(value: RelOwned) -> Self {
         match value {
             RelOwned::ScanCte(scan_cte) => scan_cte.into(),
@@ -529,32 +529,6 @@ impl MutRelational<'_> {
                 Entity::Relational,
                 Some("Relational node is not a Scan.".into()),
             )),
-        }
-    }
-
-    #[must_use]
-    pub fn get_rel_owned(&self) -> RelOwned {
-        match self {
-            MutRelational::Delete(del) => RelOwned::Delete((*del).clone()),
-            MutRelational::Except(except) => RelOwned::Except((*except).clone()),
-            MutRelational::GroupBy(group_by) => RelOwned::GroupBy((*group_by).clone()),
-            MutRelational::Having(having) => RelOwned::Having((*having).clone()),
-            MutRelational::Insert(insert) => RelOwned::Insert((*insert).clone()),
-            MutRelational::Intersect(intersect) => RelOwned::Intersect((*intersect).clone()),
-            MutRelational::Join(join) => RelOwned::Join((*join).clone()),
-            MutRelational::Limit(limit) => RelOwned::Limit((*limit).clone()),
-            MutRelational::Motion(motion) => RelOwned::Motion((*motion).clone()),
-            MutRelational::OrderBy(order_by) => RelOwned::OrderBy((*order_by).clone()),
-            MutRelational::Projection(proj) => RelOwned::Projection((*proj).clone()),
-            MutRelational::ScanCte(scan_cte) => RelOwned::ScanCte((*scan_cte).clone()),
-            MutRelational::ScanRelation(scan_rel) => RelOwned::ScanRelation((*scan_rel).clone()),
-            MutRelational::ScanSubQuery(ssubquery) => RelOwned::ScanSubQuery((*ssubquery).clone()),
-            MutRelational::Selection(sel) => RelOwned::Selection((*sel).clone()),
-            MutRelational::Union(un) => RelOwned::Union((*un).clone()),
-            MutRelational::UnionAll(union_all) => RelOwned::UnionAll((*union_all).clone()),
-            MutRelational::Update(upd) => RelOwned::Update((*upd).clone()),
-            MutRelational::Values(values) => RelOwned::Values((*values).clone()),
-            MutRelational::ValuesRow(values_row) => RelOwned::ValuesRow((*values_row).clone()),
         }
     }
 }
