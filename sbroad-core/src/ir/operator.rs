@@ -916,10 +916,9 @@ impl Plan {
     ) -> Result<NodeId, SbroadError> {
         let child_rel_node = self.get_relation_node(child_id)?;
         let alias = match child_rel_node {
-            Relational::ScanSubQuery { alias, .. } | Relational::ScanRelation { alias, .. } => {
-                alias.clone()
-            }
-            Relational::ScanCte { alias, .. } => Some(alias.clone()),
+            Relational::ScanSubQuery(ScanSubQuery { alias, .. })
+            | Relational::ScanRelation(ScanRelation { alias, .. }) => alias.clone(),
+            Relational::ScanCte(ScanCte { alias, .. }) => Some(alias.clone()),
             _ => None,
         };
 
@@ -1722,7 +1721,7 @@ impl Plan {
                 if let Expression::Alias(Alias { child, .. }) = col_node {
                     let child_node = self.get_expression_node(*child)?;
                     if let Expression::Reference(Reference { position: pos, .. }) = child_node {
-                        let rel_id = *self.get_relational_from_reference_node(*child)?;
+                        let rel_id = self.get_relational_from_reference_node(*child)?;
                         let rel_node = self.get_relation_node(rel_id)?;
                         if rel_node == node {
                             return Err(SbroadError::DuplicatedValue(format_smolstr!(

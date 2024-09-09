@@ -91,8 +91,8 @@
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::helpers::RepeatableState;
-use crate::ir::node::expression::{Expression, ReferenceAsteriskSource};
-use crate::ir::node::{Constant, NodeId, Reference, Row};
+use crate::ir::node::expression::Expression;
+use crate::ir::node::{Constant, NodeId, Reference, ReferenceAsteriskSource, Row};
 use crate::ir::operator::Bool;
 use crate::ir::relation::Type;
 use crate::ir::transformation::merge_tuples::Chain;

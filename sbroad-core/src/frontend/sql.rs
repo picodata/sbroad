@@ -3,6 +3,7 @@
 //! Parses an SQL statement to the abstract syntax tree (AST)
 //! and builds the intermediate representation (IR).
 
+use crate::ir::node::ReferenceAsteriskSource;
 use ahash::{AHashMap, AHashSet};
 use core::panic;
 use itertools::Itertools;
@@ -33,7 +34,7 @@ use crate::ir::expression::{
     ColumnPositionMap, ColumnWithScan, ColumnsRetrievalSpec, ExpressionId, FunctionFeature,
     Position, TrimKind,
 };
-use crate::ir::node::expression::{Expression, MutExpression, ReferenceAsteriskSource};
+use crate::ir::node::expression::{Expression, MutExpression};
 use crate::ir::node::relational::Relational;
 use crate::ir::node::{
     AlterSystem, AlterUser, BoolExpr, Constant, CountAsterisk, CreateIndex, CreateProc, CreateRole,

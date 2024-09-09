@@ -144,7 +144,7 @@ impl Plan {
                     col_type,
                     ..
                 }) => {
-                    let alias_name = self.get_alias_from_reference_node(expr).unwrap();
+                    let alias_name = self.get_alias_from_reference_node(&expr).unwrap();
 
                     writeln!(buf, "Reference")?;
                     writeln_with_tabulation(
@@ -156,9 +156,9 @@ impl Plan {
                     // See explain logic for Reference node
                     let rel_id = self.get_relational_from_reference_node(node_id);
                     if let Ok(rel_id) = rel_id {
-                        let rel_node = self.get_relation_node(*rel_id);
+                        let rel_node = self.get_relation_node(rel_id);
                         if rel_node.is_ok() {
-                            if let Ok(Some(name)) = self.scan_name(*rel_id, *position) {
+                            if let Ok(Some(name)) = self.scan_name(rel_id, *position) {
                                 writeln_with_tabulation(
                                     buf,
                                     tabulation_number + 1,

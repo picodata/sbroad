@@ -82,13 +82,13 @@ fn front_sql_global_tbl_sq1() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
-    selection ROW("global_t"."a"::integer) in ROW($0) or ROW("global_t"."a"::integer) in ROW($1)
+    selection ROW("global_t"."a"::integer) in ROW($1) or ROW("global_t"."a"::integer) in ROW($0)
         scan "global_t"
 subquery $0:
 scan
-            projection (sum(("sum_39"::decimal))::decimal -> "col_1")
+            projection (sum(("sum_1596"::decimal))::decimal -> "col_1")
                 motion [policy: full]
-                    projection (sum(("t"."a"::unsigned))::decimal -> "sum_39")
+                    projection (sum(("t"."a"::unsigned))::decimal -> "sum_1596")
                         scan "t"
 subquery $1:
 motion [policy: full]
@@ -118,18 +118,18 @@ fn front_sql_global_tbl_multiple_sqs1() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
-    selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($1, $1) and ROW("global_t"."a"::integer) in ROW($0)
+    selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($0, $0) and ROW("global_t"."a"::integer) in ROW($1)
         scan "global_t"
 subquery $0:
 scan
-            projection (sum(("sum_096"::decimal))::decimal -> "col_1")
-                motion [policy: full]
-                    projection (sum(("t"."a"::unsigned))::decimal -> "sum_096")
-                        scan "t"
-subquery $1:
-scan
             projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                 scan "t"
+subquery $1:
+scan
+            projection (sum(("sum_1796"::decimal))::decimal -> "col_1")
+                motion [policy: full]
+                    projection (sum(("t"."a"::unsigned))::decimal -> "sum_1796")
+                        scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -155,19 +155,19 @@ fn front_sql_global_tbl_multiple_sqs2() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
-    selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($1, $1) or ROW("global_t"."a"::integer) in ROW($0)
+    selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($0, $0) or ROW("global_t"."a"::integer) in ROW($1)
         scan "global_t"
 subquery $0:
-scan
-            projection (sum(("sum_096"::decimal))::decimal -> "col_1")
-                motion [policy: full]
-                    projection (sum(("t"."a"::unsigned))::decimal -> "sum_096")
-                        scan "t"
-subquery $1:
 motion [policy: full]
             scan
                 projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                     scan "t"
+subquery $1:
+scan
+            projection (sum(("sum_1796"::decimal))::decimal -> "col_1")
+                motion [policy: full]
+                    projection (sum(("t"."a"::unsigned))::decimal -> "sum_1796")
+                        scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -215,7 +215,7 @@ fn front_sql_global_tbl_sq3() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
-    selection not ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($0, $0) or ROW("global_t"."a"::integer, "global_t"."b"::integer) < ROW($1, $1)
+    selection not ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($1, $1) or ROW("global_t"."a"::integer, "global_t"."b"::integer) < ROW($0, $0)
         scan "global_t"
 subquery $0:
 motion [policy: full]
@@ -315,7 +315,7 @@ fn front_sql_global_tbl_sq6() {
     let expected_explain = String::from(
         r#"projection ("t"."a"::unsigned -> "a", "t2"."f"::unsigned -> "f")
     selection ROW("t2"."e"::unsigned) in ROW($3)
-        join on ROW("t"."a"::unsigned, "t"."b"::unsigned) = ROW("t2"."e"::unsigned, "t2"."f"::unsigned) or ROW("t"."c"::unsigned) in ROW($2) or exists ROW($1) and not ROW("t"."d"::unsigned) in ROW($0)
+        join on ROW("t"."a"::unsigned, "t"."b"::unsigned) = ROW("t2"."e"::unsigned, "t2"."f"::unsigned) or ROW("t"."c"::unsigned) in ROW($2) or exists ROW($0) and not ROW("t"."d"::unsigned) in ROW($1)
             scan "t"
                 projection ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d")
                     scan "t"
@@ -325,13 +325,13 @@ fn front_sql_global_tbl_sq6() {
                         scan "t2"
 subquery $0:
 scan
-                projection ("global_t"."a"::integer -> "a1")
-                    scan "global_t"
-subquery $1:
-scan
                 projection (ROW("global_t"."a"::integer) * ROW(20::unsigned) -> "a1")
                     selection ROW("global_t"."a"::integer) = ROW(1::unsigned)
                         scan "global_t"
+subquery $1:
+scan
+                projection ("global_t"."a"::integer -> "a1")
+                    scan "global_t"
 subquery $2:
 scan
                 projection ("global_t"."a"::integer -> "a1")
@@ -361,7 +361,7 @@ fn front_sql_global_tbl_sq7() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("t"."a"::unsigned -> "a", "t2"."f"::unsigned -> "f")
-    join on ROW("t"."a"::unsigned, "t"."b"::unsigned) = ROW("t2"."e"::unsigned, "t2"."f"::unsigned) or ROW("t"."c"::unsigned) in ROW($0) or not ROW("t"."d"::unsigned) in ROW($1)
+    join on ROW("t"."a"::unsigned, "t"."b"::unsigned) = ROW("t2"."e"::unsigned, "t2"."f"::unsigned) or ROW("t"."c"::unsigned) in ROW($1) or not ROW("t"."d"::unsigned) in ROW($0)
         scan "t"
             projection ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d")
                 scan "t"
@@ -492,9 +492,9 @@ fn front_sql_global_join4() {
         r#"projection ("s"."e"::decimal -> "e")
     left join on true::boolean
         scan "s"
-            projection (sum(("sum_096"::decimal))::decimal -> "e")
+            projection (sum(("sum_696"::decimal))::decimal -> "e")
                 motion [policy: full]
-                    projection (sum(("t2"."e"::unsigned))::decimal -> "sum_096")
+                    projection (sum(("t2"."e"::unsigned))::decimal -> "sum_696")
                         scan "t2"
         scan "global_t"
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
@@ -525,9 +525,9 @@ fn front_sql_global_join5() {
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                 scan "global_t"
         scan "s"
-            projection (sum(("sum_096"::decimal))::decimal -> "e")
+            projection (sum(("sum_896"::decimal))::decimal -> "e")
                 motion [policy: full]
-                    projection (sum(("t2"."e"::unsigned))::decimal -> "sum_096")
+                    projection (sum(("t2"."e"::unsigned))::decimal -> "sum_896")
                         scan "t2"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -808,11 +808,11 @@ fn front_sql_global_aggregate5() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("column_1432"::integer -> "col_1", sum(("sum_196"::decimal))::decimal -> "col_2")
-    having ROW(sum(("sum_096"::decimal::double))::decimal / sum(("count_096"::decimal::double))::decimal) > ROW(3::unsigned)
-        group by ("column_1432"::integer) output: ("column_1432"::integer -> "column_1432", "sum_196"::decimal -> "sum_196", "sum_096"::decimal -> "sum_096", "count_096"::integer -> "count_096")
+        r#"projection ("column_1432"::integer -> "col_1", sum(("sum_2696"::decimal))::decimal -> "col_2")
+    having ROW(sum(("sum_2096"::decimal::double))::decimal / sum(("count_2096"::decimal::double))::decimal) > ROW(3::unsigned)
+        group by ("column_1432"::integer) output: ("column_1432"::integer -> "column_1432", "sum_2696"::decimal -> "sum_2696", "sum_2096"::decimal -> "sum_2096", "count_2096"::integer -> "count_2096")
             motion [policy: segment([ref("column_1432")])]
-                projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "column_1432", sum(("global_t"."a"::integer))::decimal -> "sum_196", sum(("global_t"."b"::integer))::decimal -> "sum_096", count(("global_t"."b"::integer))::integer -> "count_096")
+                projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "column_1432", sum(("global_t"."a"::integer))::decimal -> "sum_2696", sum(("global_t"."b"::integer))::decimal -> "sum_2096", count(("global_t"."b"::integer))::integer -> "count_2096")
                     group by (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer)) output: ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                         selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($0, $0)
                             scan "global_t"
@@ -1055,9 +1055,9 @@ fn front_sql_global_union_all3() {
                 projection ("global_t"."a"::integer -> "a")
                     scan "global_t"
                 motion [policy: segment([ref("col_1")])]
-                    projection (sum(("sum_096"::decimal))::decimal -> "col_1")
+                    projection (sum(("sum_996"::decimal))::decimal -> "col_1")
                         motion [policy: full]
-                            projection (sum(("t2"."e"::unsigned))::decimal -> "sum_096")
+                            projection (sum(("t2"."e"::unsigned))::decimal -> "sum_996")
                                 scan "t2"
     motion [policy: local]
         projection ("global_t"."b"::integer -> "b")
@@ -1164,9 +1164,9 @@ fn front_sql_global_union2() {
         projection ("global_t"."a"::integer -> "a")
             scan "global_t"
         motion [policy: segment([ref("col_1")])]
-            projection (sum(("sum_096"::decimal))::decimal -> "col_1")
+            projection (sum(("sum_996"::decimal))::decimal -> "col_1")
                 motion [policy: full]
-                    projection (sum(("t2"."e"::unsigned))::decimal -> "sum_096")
+                    projection (sum(("t2"."e"::unsigned))::decimal -> "sum_996")
                         scan "t2"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -1313,9 +1313,9 @@ fn check_plan_except_global_vs_single() {
         r#"except
     projection ("global_t"."a"::integer -> "a")
         scan "global_t"
-    projection (sum(("sum_096"::decimal))::decimal -> "col_1")
+    projection (sum(("sum_996"::decimal))::decimal -> "col_1")
         motion [policy: full]
-            projection (sum(("t2"."e"::unsigned))::decimal -> "sum_096")
+            projection (sum(("t2"."e"::unsigned))::decimal -> "sum_996")
                 scan "t2"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -1337,9 +1337,9 @@ fn check_plan_except_single_vs_global() {
 
     let expected_explain = String::from(
         r#"except
-    projection (sum(("sum_096"::decimal))::decimal -> "col_1")
+    projection (sum(("sum_696"::decimal))::decimal -> "col_1")
         motion [policy: full]
-            projection (sum(("t2"."e"::unsigned))::decimal -> "sum_096")
+            projection (sum(("t2"."e"::unsigned))::decimal -> "sum_696")
                 scan "t2"
     projection ("global_t"."a"::integer -> "a")
         scan "global_t"

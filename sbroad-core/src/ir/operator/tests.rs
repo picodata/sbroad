@@ -31,11 +31,11 @@ fn scan_rel() {
     plan.add_rel(t);
 
     let scan_output = NodeId {
-        offset: 4,
+        offset: 0,
         arena_type: ArenaType::Arena64,
     };
     let scan_node = NodeId {
-        offset: 5,
+        offset: 1,
         arena_type: ArenaType::Arena64,
     };
 
@@ -94,7 +94,7 @@ fn projection() {
         SbroadError::Invalid(
             Entity::Node,
             Some(
-                "node is not Relational type: Expression(Alias(Alias { name: \"a\", child: NodeId { offset: 0, arena_type: Arena64 } }))".into()
+                "node is not Relational type: Expression(Alias(Alias { name: \"a\", child: NodeId { offset: 0, arena_type: Arena96 } }))".into()
             )
         ),
         plan.add_proj(test_node, &["a"], false, false).unwrap_err()
@@ -374,7 +374,7 @@ fn sub_query() {
     assert_eq!(
         SbroadError::Invalid(
             Entity::Node,
-            Some("node is not Relational type: Expression(Alias(Alias { name: \"a\", child: NodeId { offset: 0, arena_type: Arena64 } }))".into())
+            Some("node is not Relational type: Expression(Alias(Alias { name: \"a\", child: NodeId { offset: 0, arena_type: Arena96 } }))".into())
         ),
         plan.add_sub_query(a, Some("sq")).unwrap_err()
     );

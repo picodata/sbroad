@@ -449,7 +449,7 @@ impl ExecutionPlan {
                                     }
                                     Expression::Reference(Reference { position, .. }) => {
                                         let rel_id =
-                                            *ir_plan.get_relational_from_reference_node(*id)?;
+                                            ir_plan.get_relational_from_reference_node(*id)?;
                                         let rel_node = ir_plan.get_relation_node(rel_id)?;
 
                                         if rel_node.is_motion() {

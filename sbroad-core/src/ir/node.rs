@@ -194,6 +194,25 @@ impl From<Constant> for NodeAligned {
     }
 }
 
+/// Helper structure for cases of references generated from asterisk.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, Hash)]
+pub struct ReferenceAsteriskSource {
+    /// None                -> generated from simple asterisk: `select * from t`
+    /// Some(relation_name) -> generated from table asterisk: `select t.* from t`
+    pub relation_name: Option<SmolStr>,
+    /// Unique asterisk id local for single Projection
+    pub asterisk_id: usize,
+}
+
+impl ReferenceAsteriskSource {
+    pub fn new(relation_name: Option<SmolStr>, asterisk_id: usize) -> Self {
+        Self {
+            relation_name,
+            asterisk_id,
+        }
+    }
+}
+
 /// Reference to the position in the incoming tuple(s).
 /// Uses a relative pointer as a coordinate system:
 /// - relational node (containing this reference)
@@ -212,11 +231,14 @@ pub struct Reference {
     pub position: usize,
     /// Referred column type in the input tuple.
     pub col_type: Type,
+    /// Field indicating whether this reference resulted
+    /// from an asterisk "*" under projection.
+    pub asterisk_source: Option<ReferenceAsteriskSource>,
 }
 
 impl From<Reference> for NodeAligned {
     fn from(value: Reference) -> Self {
-        Self::Node64(Node64::Reference(value))
+        Self::Node96(Node96::Reference(value))
     }
 }
 
@@ -511,12 +533,6 @@ pub struct Motion {
     pub program: Program,
     /// Outputs tuple node index in the plan node arena.
     pub output: NodeId,
-    /// A helper field indicating whether first element of
-    /// `children` vec is a `Relational::SubQuery`.
-    /// We need it on the stage of translating Plan to SQL, because
-    /// by that moment we've already erased `children` information using
-    /// `unlink_motion_subtree` function.
-    pub is_child_subquery: bool,
 }
 
 impl From<Motion> for NodeAligned {
@@ -1031,8 +1047,7 @@ pub enum Node64 {
     OrderBy(OrderBy),
     Procedure(Procedure),
     Join(Join),
-    Row(Row), // move to Node64
-    Reference(Reference),
+    Row(Row),
     Delete(Delete),
     ScanRelation(ScanRelation),
     ScanSubQuery(ScanSubQuery),
@@ -1066,7 +1081,6 @@ impl Node64 {
             Node64::Row(row) => NodeOwned::Expression(ExprOwned::Row(row)),
             Node64::Procedure(proc) => NodeOwned::Block(BlockOwned::Procedure(proc)),
             Node64::Projection(proj) => NodeOwned::Relational(RelOwned::Projection(proj)),
-            Node64::Reference(reference) => NodeOwned::Expression(ExprOwned::Reference(reference)),
             Node64::ScanCte(scan_cte) => NodeOwned::Relational(RelOwned::ScanCte(scan_cte)),
             Node64::ScanRelation(scan_rel) => {
                 NodeOwned::Relational(RelOwned::ScanRelation(scan_rel))
@@ -1087,6 +1101,7 @@ impl Node64 {
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Node96 {
+    Reference(Reference),
     Invalid(Invalid),
     StableFunction(StableFunction),
     DropProc(DropProc),
@@ -1097,6 +1112,7 @@ impl Node96 {
     #[must_use]
     pub fn into_owned(self) -> NodeOwned {
         match self {
+            Node96::Reference(reference) => NodeOwned::Expression(ExprOwned::Reference(reference)),
             Node96::DropProc(drop_proc) => NodeOwned::Ddl(DdlOwned::DropProc(drop_proc)),
             Node96::Insert(insert) => NodeOwned::Relational(RelOwned::Insert(insert)),
             Node96::Invalid(inv) => NodeOwned::Invalid(inv),

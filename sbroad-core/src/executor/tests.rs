@@ -5,7 +5,6 @@ use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::operator::Relational;
 use crate::ir::tests::vcolumn_integer_user_non_null;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use smol_str::SmolStr;
@@ -976,9 +975,9 @@ fn groupby_linker_test() {
             LuaValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {} {}",
-                    r#"SELECT "column_764" as "ii" FROM"#,
+                    r#"SELECT "column_596" as "ii" FROM"#,
                     r#"(SELECT "COL_1" FROM "TMP_test_0136")"#,
-                    r#"GROUP BY "column_764""#,
+                    r#"GROUP BY "column_596""#,
                 ),
                 vec![],
             ))),

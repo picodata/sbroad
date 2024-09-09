@@ -29,8 +29,9 @@ use crate::executor::engine::TableVersionMap;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::node::{
     Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, ExprInParentheses,
-    GroupBy, Insert, Motion, MutNode, Node, Node136, Node224, Node32, Node64, Node96, NodeId,
-    NodeOwned, Projection, Reference, Row, ScanRelation, StableFunction, Trim, UnaryExpr, Values,
+    GroupBy, Having, Insert, Limit, Motion, MutNode, Node, Node136, Node224, Node32, Node64,
+    Node96, NodeId, NodeOwned, OrderBy, Projection, Reference, Row, ScanRelation, Selection,
+    StableFunction, Trim, UnaryExpr, Values,
 };
 use crate::ir::operator::Bool;
 use crate::ir::relation::Column;
@@ -119,7 +120,6 @@ impl Nodes {
                 Node64::Parameter(param) => Node::Parameter(param),
                 Node64::Procedure(proc) => Node::Block(Block::Procedure(proc)),
                 Node64::Projection(proj) => Node::Relational(Relational::Projection(proj)),
-                Node64::Reference(reference) => Node::Expression(Expression::Reference(reference)),
                 Node64::ScanCte(scan_cte) => Node::Relational(Relational::ScanCte(scan_cte)),
                 Node64::ScanRelation(scan_rel) => {
                     Node::Relational(Relational::ScanRelation(scan_rel))
@@ -135,6 +135,7 @@ impl Nodes {
                 }
             }),
             ArenaType::Arena96 => self.arena96.get(id.offset as usize).map(|node| match node {
+                Node96::Reference(reference) => Node::Expression(Expression::Reference(reference)),
                 Node96::DropProc(drop_proc) => Node::Ddl(Ddl::DropProc(drop_proc)),
                 Node96::Insert(insert) => Node::Relational(Relational::Insert(insert)),
                 Node96::Invalid(inv) => Node::Invalid(inv),
@@ -238,9 +239,6 @@ impl Nodes {
                     Node64::Projection(proj) => {
                         MutNode::Relational(MutRelational::Projection(proj))
                     }
-                    Node64::Reference(reference) => {
-                        MutNode::Expression(MutExpression::Reference(reference))
-                    }
                     Node64::ScanCte(scan_cte) => {
                         MutNode::Relational(MutRelational::ScanCte(scan_cte))
                     }
@@ -263,6 +261,9 @@ impl Nodes {
                 .arena96
                 .get_mut(id.offset as usize)
                 .map(|node| match node {
+                    Node96::Reference(reference) => {
+                        MutNode::Expression(MutExpression::Reference(reference))
+                    }
                     Node96::DropProc(drop_proc) => MutNode::Ddl(MutDdl::DropProc(drop_proc)),
                     Node96::Insert(insert) => MutNode::Relational(MutRelational::Insert(insert)),
                     Node96::Invalid(inv) => MutNode::Invalid(inv),
@@ -1030,26 +1031,26 @@ impl Plan {
     ///     Selection
     ///         Scan
     /// the source would be the Scan. It could also be a Join or Union nodes.
-    pub fn get_reference_source_relation(&self, ref_id: usize) -> Result<usize, SbroadError> {
+    pub fn get_reference_source_relation(&self, ref_id: NodeId) -> Result<NodeId, SbroadError> {
         let mut ref_id = ref_id;
         let mut ref_node = self.get_expression_node(ref_id)?;
-        if let Expression::Alias { child, .. } = ref_node {
+        if let Expression::Alias(Alias { child, .. }) = ref_node {
             ref_node = self.get_expression_node(*child)?;
             ref_id = *child;
         }
-        let Expression::Reference { position, .. } = ref_node else {
+        let Expression::Reference(Reference { position, .. }) = ref_node else {
             panic!("Expected reference")
         };
-        let ref_parent_node_id = *self.get_relational_from_reference_node(ref_id)?;
+        let ref_parent_node_id = self.get_relational_from_reference_node(ref_id)?;
         let ref_source_node = self.get_relation_node(ref_parent_node_id)?;
         match ref_source_node {
             Relational::Delete { .. } | Relational::Insert { .. } | Relational::Update { .. } => {
                 panic!("Reference source search shouldn't reach DML node.")
             }
-            Relational::Selection { output, .. }
-            | Relational::Having { output, .. }
-            | Relational::OrderBy { output, .. }
-            | Relational::Limit { output, .. } => {
+            Relational::Selection(Selection { output, .. })
+            | Relational::Having(Having { output, .. })
+            | Relational::OrderBy(OrderBy { output, .. })
+            | Relational::Limit(Limit { output, .. }) => {
                 let source_output_list = self.get_row_list(*output)?;
                 let source_ref_id = source_output_list[*position];
                 self.get_reference_source_relation(source_ref_id)

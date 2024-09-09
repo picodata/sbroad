@@ -53,8 +53,8 @@ fn split_columns3() {
             "{} {} {} {}",
             r#"unexpected number of values:"#,
             r#"left and right rows have different number of columns:"#,
-            r#"Row(Row { list: [NodeId { offset: 7, arena_type: Arena64 }, NodeId { offset: 8, arena_type: Arena64 }, NodeId { offset: 9, arena_type: Arena64 }], distribution: None }),"#,
-            r#"Row(Row { list: [NodeId { offset: 10, arena_type: Arena64 }, NodeId { offset: 11, arena_type: Arena64 }], distribution: None })"#,
+            r#"Row(Row { list: [NodeId { offset: 5, arena_type: Arena96 }, NodeId { offset: 2, arena_type: Arena64 }, NodeId { offset: 6, arena_type: Arena96 }], distribution: None }),"#,
+            r#"Row(Row { list: [NodeId { offset: 3, arena_type: Arena64 }, NodeId { offset: 7, arena_type: Arena96 }], distribution: None })"#,
         ),
         format!("{plan_err}")
     );

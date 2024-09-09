@@ -9,12 +9,12 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::Vshard;
 use crate::executor::vtable::{VirtualTable, VirtualTableMap};
 use crate::ir::node::expression::ExprOwned;
+use crate::ir::node::expression::{Expression, MutExpression};
 use crate::ir::node::relational::{MutRelational, RelOwned, Relational};
 use crate::ir::node::{
     Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Delete, ExprInParentheses,
     GroupBy, Having, Insert, Join, Motion, Node, Node136, NodeId, NodeOwned, OrderBy, Reference,
-    Row, ScanCte, ScanRelation, ScanSubQuery, Selection, StableFunction, Trim, UnaryExpr, Update,
-    ValuesRow,
+    Row, ScanCte, ScanRelation, Selection, StableFunction, Trim, UnaryExpr, Update, ValuesRow,
 };
 use crate::ir::operator::{OrderByElement, OrderByEntity};
 use crate::ir::relation::SpaceEngine;
@@ -453,13 +453,12 @@ impl ExecutionPlan {
             HashMap::with_capacity(vtables_capacity);
 
         let mut new_plan = Plan::new();
-        new_plan.nodes.reserve(nodes.len());
 
         // In case we have a Motion among rel node children (maybe not direct), we
         // need to rename rel output aliases, because Motion
         // may have changed them according to its vtable column names.
         // This map tracks outputs of rel nodes that have changed their aliases.
-        let mut rel_renamed_output_lists: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut rel_renamed_output_lists: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
 
         for LevelNode(_, node_id) in nodes {
             // We have already processed this node (sub-queries in BETWEEN
@@ -520,7 +519,7 @@ impl ExecutionPlan {
                                 .clone();
                             new_plan.add_rel(table);
                         }
-                        Relational::Motion {
+                        RelOwned::Motion(Motion {
                             children,
                             policy,
                             output,
@@ -535,7 +534,7 @@ impl ExecutionPlan {
                                 // We need to fix motion aliases based on materialized
                                 // vtable. Motion's aliases will copy "COL_i" naming of
                                 // vtable.
-                                let output_list: Vec<usize> =
+                                let output_list: Vec<NodeId> =
                                     new_plan.get_row_list(subtree_map.get_id(*output))?.to_vec();
 
                                 if node_id != top {
@@ -549,7 +548,7 @@ impl ExecutionPlan {
                                             let alias = new_plan.get_mut_expression_node(
                                                 *alias_id
                                             )?;
-                                            let Expression::Alias { ref mut name, .. } = alias else {
+                                            let MutExpression::Alias(Alias { ref mut name, .. }) = alias else {
                                                 return Err(SbroadError::Invalid(
                                                     Entity::Expression,
                                                     Some(format_smolstr!("Expected Alias under Motion output, got {alias:?}"))
@@ -629,8 +628,8 @@ impl ExecutionPlan {
                         *child_id = subtree_map.get_id(*child_id);
 
                         let child_rel_node = new_plan.get_relation_node(*child_id)?;
-                        if let Relational::Motion { output, .. } = child_rel_node {
-                            let motion_output_list: Vec<usize> =
+                        if let Relational::Motion(Motion { output, .. }) = child_rel_node {
+                            let motion_output_list: Vec<NodeId> =
                                 new_plan.get_row_list(*output)?.to_vec();
                             rel_renamed_output_lists.insert(*child_id, motion_output_list);
                         }
@@ -644,20 +643,20 @@ impl ExecutionPlan {
                     // only References that have an Asterisk source.
                     // References without asterisks would be covered with aliases like
                     // "COL_1 as <alias>".
-                    let is_projection = matches!(rel, Relational::Projection { .. });
+                    let is_projection = matches!(rel, RelOwned::Projection(_));
                     if !rel_renamed_output_lists.is_empty() {
-                        let rel_output_list: Vec<usize> =
-                            new_plan.get_row_list(rel.output())?.to_vec();
+                        let rel_output_list: Vec<NodeId> =
+                            new_plan.get_row_list(*rel.mut_output())?.to_vec();
 
                         for output_id in &rel_output_list {
                             let ref_under_alias = new_plan.get_child_under_alias(*output_id)?;
                             let ref_expr = new_plan.get_expression_node(ref_under_alias)?;
-                            let Expression::Reference {
+                            let Expression::Reference(Reference {
                                 position,
                                 targets,
                                 asterisk_source,
                                 ..
-                            } = ref_expr
+                            }) = ref_expr
                             else {
                                 continue;
                             };
@@ -699,7 +698,8 @@ impl ExecutionPlan {
                                 let child_alias_name = child_alias.get_alias_name()?.to_smolstr();
 
                                 let rel_alias = new_plan.get_mut_expression_node(*output_id)?;
-                                if let Expression::Alias { ref mut name, .. } = rel_alias {
+                                if let MutExpression::Alias(Alias { ref mut name, .. }) = rel_alias
+                                {
                                     *name = child_alias_name;
                                 } else {
                                     panic!("Expected alias under Row output list");
@@ -707,10 +707,31 @@ impl ExecutionPlan {
                             }
                         }
 
+                        let arena_type = match rel {
+                            RelOwned::Union(_)
+                            | RelOwned::UnionAll(_)
+                            | RelOwned::Except(_)
+                            | RelOwned::Values(_)
+                            | RelOwned::Intersect(_)
+                            | RelOwned::Limit(_) => ArenaType::Arena32,
+                            RelOwned::ScanCte(_)
+                            | RelOwned::Selection(_)
+                            | RelOwned::Having(_)
+                            | RelOwned::ValuesRow(_)
+                            | RelOwned::OrderBy(_)
+                            | RelOwned::ScanRelation(_)
+                            | RelOwned::Join(_)
+                            | RelOwned::Delete(_)
+                            | RelOwned::ScanSubQuery(_)
+                            | RelOwned::GroupBy(_)
+                            | RelOwned::Projection(_) => ArenaType::Arena64,
+                            RelOwned::Insert(_) => ArenaType::Arena96,
+                            RelOwned::Update(_) | RelOwned::Motion(_) => ArenaType::Arena136,
+                        };
+                        let next_id = new_plan.nodes.next_id(arena_type);
+
                         rel_renamed_output_lists.insert(next_id, rel_output_list);
                     }
-
-                    new_plan.replace_parent_in_subtree(rel.output(), None, Some(next_id))?;
                 }
                 NodeOwned::Expression(ref mut expr) => match expr {
                     ExprOwned::Alias(Alias { ref mut child, .. })

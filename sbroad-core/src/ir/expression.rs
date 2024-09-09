@@ -21,6 +21,7 @@ use super::{
 };
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::to_user;
+use crate::ir::node::ReferenceAsteriskSource;
 use crate::ir::operator::Bool;
 use crate::ir::relation::Type;
 use crate::ir::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
@@ -31,25 +32,6 @@ pub mod concat;
 pub mod types;
 
 pub(crate) type ExpressionId = NodeId;
-
-/// Helper structure for cases of references generated from asterisk.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, Hash)]
-pub struct ReferenceAsteriskSource {
-    /// None                -> generated from simple asterisk: `select * from t`
-    /// Some(relation_name) -> generated from table asterisk: `select t.* from t`
-    pub relation_name: Option<SmolStr>,
-    /// Unique asterisk id local for single Projection
-    pub asterisk_id: usize,
-}
-
-impl ReferenceAsteriskSource {
-    pub fn new(relation_name: Option<SmolStr>, asterisk_id: usize) -> Self {
-        Self {
-            relation_name,
-            asterisk_id,
-        }
-    }
-}
 
 #[derive(Clone, Debug, Hash, Deserialize, PartialEq, Eq, Serialize)]
 pub enum FunctionFeature {
@@ -597,7 +579,7 @@ impl<'plan> Comparator<'plan> {
                 func_type,
                 feature,
                 is_system: is_aggr,
-            } => {
+            }) => {
                 feature.hash(state);
                 func_type.hash(state);
                 name.hash(state);
@@ -1318,17 +1300,20 @@ impl Plan {
     ///
     /// # Panics
     /// - Plan is in inconsistent state.
-    pub fn get_relational_from_reference_node(&self, ref_id: NodeId) -> Result<&usize, SbroadError> {
+    pub fn get_relational_from_reference_node(
+        &self,
+        ref_id: NodeId,
+    ) -> Result<NodeId, SbroadError> {
         if let Node::Expression(Expression::Reference(Reference {
-                                                          targets, parent, ..
-                                                      })) = self.get_node(ref_id)?
+            targets, parent, ..
+        })) = self.get_node(ref_id)?
         {
             let Some(referred_rel_id) = parent else {
                 panic!("Reference ({ref_id}) parent node not found.");
             };
             let rel = self.get_relation_node(*referred_rel_id)?;
             if let Relational::Insert { .. } = rel {
-                return Ok(referred_rel_id);
+                return Ok(*referred_rel_id);
             }
             let children = self.children(*referred_rel_id);
             match targets {
@@ -1340,7 +1325,7 @@ impl Plan {
                 Some(positions) => match (positions.first(), positions.get(1)) {
                     (Some(first), None) => {
                         if let Some(child_id) = children.get(*first) {
-                            return Ok(child_id);
+                            return Ok(*child_id);
                         }
                         // When we dispatch IR to the storage, we truncate the
                         // subtree below the Motion node. So, the references in
@@ -1348,7 +1333,7 @@ impl Plan {
                         // a special way: we return the Motion node itself. Be
                         // aware of the circular references in the tree!
                         if let Relational::Motion { .. } = rel {
-                            return Ok(referred_rel_id);
+                            return Ok(*referred_rel_id);
                         }
                         return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                             "Relational node {rel:?} has no children"

@@ -1088,7 +1088,7 @@ pub fn materialize_motion(
 
     // We should get a motion alias name before we take the subtree in `dispatch` method.
     let motion_node = plan.get_ir_plan().get_relation_node(motion_node_id)?;
-    let alias = if let Relational::Motion { alias, .. } = motion_node {
+    let alias = if let Relational::Motion(Motion { alias, .. }) = motion_node {
         alias.clone()
     } else {
         panic!("Expected motion node, got {motion_node:?}");
@@ -1103,7 +1103,7 @@ pub fn materialize_motion(
         .expect("must've failed earlier");
     // Unlink motion node's child sub tree (it is already replaced with invalid values).
     plan.unlink_motion_subtree(motion_node_id)?;
-    let mut vtable = result.as_virtual_table(column_names, possibly_incorrect_types)?;
+    let mut vtable = result.as_virtual_table(possibly_incorrect_types)?;
 
     if let Some(name) = alias {
         vtable.set_alias(name.as_str());

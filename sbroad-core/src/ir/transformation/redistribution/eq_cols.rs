@@ -302,7 +302,7 @@ impl EqualityCols {
                         col_type: col_type_left,
                         asterisk_source: asterisk_source_left,
                     }),
-                    Expression::Reference {
+                    Expression::Reference(Reference {
                         targets: targets_right,
                         position: pos_right,
                         parent: parent_right,
@@ -320,7 +320,7 @@ impl EqualityCols {
                         && asterisk_source_left == asterisk_source_right
                     {
                         let left_referred_child_id =
-                            *plan.get_relational_from_reference_node(*left_id)?;
+                            plan.get_relational_from_reference_node(*left_id)?;
                         let (inner_pos, outer_pos) = if left_referred_child_id == inner_id {
                             (*pos_left, *pos_right)
                         } else {

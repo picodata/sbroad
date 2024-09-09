@@ -130,7 +130,7 @@ fn exec_plan_subtree_two_stage_groupby_test() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "T1"."FIRST_NAME" as "column_764" FROM "test_space" as "T1" GROUP BY "T1"."FIRST_NAME""#
+            r#"SELECT "T1"."FIRST_NAME" as "column_596" FROM "test_space" as "T1" GROUP BY "T1"."FIRST_NAME""#
                 .to_string(),
             vec![]
         )
@@ -187,9 +187,9 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
         sql,
         PatternWithParams::new(
             f_sql(
-                r#"SELECT "T1"."FIRST_NAME" as "column_12",
-"T1"."sys_op" as "column_13",
-"T1"."sysFrom" as "column_14"
+                r#"SELECT "T1"."FIRST_NAME" as "column_596",
+"T1"."sys_op" as "column_696",
+"T1"."sysFrom" as "column_796"
 FROM "test_space" as "T1"
 GROUP BY "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom""#
             ),
@@ -205,7 +205,7 @@ GROUP BY "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom""#
             f_sql(
                 r#"SELECT "COL_1" as "FIRST_NAME",
 "COL_2" as "sys_op", "COL_3" as "sysFrom"
-FROM (SELECT "COL_1","COL_2","COL_3" FROM "TMP_test_14")
+FROM (SELECT "COL_1","COL_2","COL_3" FROM "TMP_test_0136")
 GROUP BY "COL_1", "COL_2", "COL_3""#
             ),
             vec![]
@@ -265,11 +265,11 @@ fn exec_plan_subtree_aggregates() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {} {} {} {}",
-                r#"SELECT "T1"."sys_op" as "column_764", "T1"."id" as "column_2864","#,
-                r#"("T1"."id") * ("T1"."sys_op") as "column_1632", group_concat ("T1"."FIRST_NAME", ?) as "group_concat_496","#,
-                r#"count ("T1"."sysFrom") as "count_096", total ("T1"."id") as "total_696","#,
-                r#"min ("T1"."id") as "min_796", count ("T1"."id") as "count_596","#,
-                r#"max ("T1"."id") as "max_896", sum ("T1"."id") as "sum_196""#,
+                r#"SELECT "T1"."sys_op" as "column_596", ("T1"."id") * ("T1"."sys_op") as "column_1632","#,
+                r#""T1"."id" as "column_2096", group_concat ("T1"."FIRST_NAME", ?) as "group_concat_2496","#,
+                r#"count ("T1"."sysFrom") as "count_1596", total ("T1"."id") as "total_2896","#,
+                r#"min ("T1"."id") as "min_3096", count ("T1"."id") as "count_2696","#,
+                r#"max ("T1"."id") as "max_3296", sum ("T1"."id") as "sum_1796""#,
                 r#"FROM "test_space" as "T1""#,
                 r#"GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#,
             ),
@@ -337,7 +337,7 @@ fn exec_plan_subtree_aggregates_no_groupby() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT ("T1"."id") + ("T1"."sysFrom") as "column_632", count ("T1"."sysFrom") as "count_096" FROM "test_space" as "T1" GROUP BY ("T1"."id") + ("T1"."sysFrom")"#.to_string(),
+            r#"SELECT ("T1"."id") + ("T1"."sysFrom") as "column_632", count ("T1"."sysFrom") as "count_696" FROM "test_space" as "T1" GROUP BY ("T1"."id") + ("T1"."sysFrom")"#.to_string(),
             vec![]
         ));
 
@@ -546,7 +546,7 @@ fn exec_plan_subtree_count_asterisk() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT count (*) as "count_096" FROM "test_space""#.to_string(),
+            r#"SELECT count (*) as "count_596" FROM "test_space""#.to_string(),
             vec![]
         )
     );
@@ -615,8 +615,8 @@ fn exec_plan_subtree_having() {
         PatternWithParams::new(
             format!(
                 "{} {} {}",
-                r#"SELECT "T1"."sys_op" as "column_764", ("T1"."sys_op") * (?) as "column_2032","#,
-                r#"count (("T1"."sys_op") * (?)) as "count_196" FROM "test_space" as "T1""#,
+                r#"SELECT "T1"."sys_op" as "column_596", ("T1"."sys_op") * (?) as "column_2032","#,
+                r#"count (("T1"."sys_op") * (?)) as "count_2296" FROM "test_space" as "T1""#,
                 r#"GROUP BY "T1"."sys_op", ("T1"."sys_op") * (?)"#,
             ),
             vec![Value::Unsigned(2), Value::Unsigned(2), Value::Unsigned(2)]
@@ -699,7 +699,7 @@ fn exec_plan_subtree_having_without_groupby() {
             format!(
                 "{} {} {}",
                 r#"SELECT ("T1"."sys_op") * (?) as "column_1332","#,
-                r#"count (("T1"."sys_op") * (?)) as "count_196" FROM "test_space" as "T1""#,
+                r#"count (("T1"."sys_op") * (?)) as "count_1496" FROM "test_space" as "T1""#,
                 r#"GROUP BY ("T1"."sys_op") * (?)"#,
             ),
             vec![Value::Unsigned(2), Value::Unsigned(2), Value::Unsigned(2)]
@@ -1125,8 +1125,7 @@ fn local_translation_asterisk_single() {
     let exec_plan = query.get_mut_exec_plan();
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -1145,8 +1144,7 @@ fn local_translation_asterisk_several() {
     let exec_plan = query.get_mut_exec_plan();
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -1168,8 +1166,7 @@ fn local_translation_asterisk_named() {
     let exec_plan = query.get_mut_exec_plan();
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -1191,8 +1188,7 @@ fn local_translation_asterisk_with_additional_columns() {
     let exec_plan = query.get_mut_exec_plan();
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -1225,7 +1221,7 @@ fn exec_plan_order_by() {
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -1234,13 +1230,7 @@ fn exec_plan_order_by() {
     let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
 
     // Check sub-query
-    let sql = get_sql_from_execution_plan(
-        exec_plan,
-        motion_child_id,
-        Snapshot::Oldest,
-        &Buckets::All,
-        "test",
-    );
+    let sql = get_sql_from_execution_plan(exec_plan, motion_child_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -1250,8 +1240,7 @@ fn exec_plan_order_by() {
     );
 
     // Check main query
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -1321,7 +1310,7 @@ fn exec_plan_order_by_with_join() {
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
     let slices = query.exec_plan.get_ir_plan().clone_slices();
-    let mut sq_vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut sq_vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
 
     let sq_motion_id = *slices.slice(0).unwrap().position(0).unwrap();
     let mut sq_vtable = VirtualTable::new();
@@ -1353,13 +1342,8 @@ fn exec_plan_order_by_with_join() {
 
     // Check sub-query.
     let sq_motion_child_id = exec_plan.get_motion_subtree_root(sq_motion_id).unwrap();
-    let sql = get_sql_from_execution_plan(
-        exec_plan,
-        sq_motion_child_id,
-        Snapshot::Oldest,
-        &Buckets::All,
-        "test",
-    );
+    let sql =
+        get_sql_from_execution_plan(exec_plan, sq_motion_child_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(r#"SELECT "t"."a" FROM "t""#.to_string(), vec![])
@@ -1373,24 +1357,22 @@ fn exec_plan_order_by_with_join() {
         exec_plan,
         order_by_motion_child_id,
         Snapshot::Oldest,
-        &Buckets::All,
-        "test",
+        TEMPLATE,
     );
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT * FROM (SELECT "t"."a" FROM "t") as "f" INNER JOIN (SELECT "COL_1" FROM "TMP_test_28") as "s" ON ?"#.to_string(),
+            r#"SELECT * FROM (SELECT "t"."a" FROM "t") as "f" INNER JOIN (SELECT "COL_1" FROM "TMP_test_0136") as "s" ON ?"#.to_string(),
             vec![Value::Boolean(true)]
         )
     );
 
     // Check main query.
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "COL_1" as "a", "COL_2" as "a" FROM (SELECT "COL_1","COL_2" FROM "TMP_test_10") ORDER BY 1"#.to_string(),
+            r#"SELECT "COL_1" as "a", "COL_2" as "a" FROM (SELECT "COL_1","COL_2" FROM "TMP_test_0136") ORDER BY 1"#.to_string(),
             vec![]
         ));
 }

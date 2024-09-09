@@ -244,7 +244,7 @@ fn subtree_next<'plan>(
                             .get_plan()
                             .get_relational_from_reference_node(iter.get_current())
                         {
-                            match iter.get_plan().get_relation_node(*rel_id) {
+                            match iter.get_plan().get_relation_node(rel_id) {
                                 Ok(rel_node)
                                     if rel_node.is_subquery_or_cte() || rel_node.is_motion() =>
                                 {
@@ -256,17 +256,17 @@ fn subtree_next<'plan>(
                                         | Relational::Having(Having { children, .. }),
                                     ) = parent
                                     {
-                                        if children.iter().skip(1).any(|&c| c == *rel_id) {
+                                        if children.iter().skip(1).any(|&c| c == rel_id) {
                                             is_additional = true;
                                         }
                                     }
                                     if let Ok(Relational::Join(Join { children, .. })) = parent {
-                                        if children.iter().skip(2).any(|&c| c == *rel_id) {
+                                        if children.iter().skip(2).any(|&c| c == rel_id) {
                                             is_additional = true;
                                         }
                                     }
                                     if is_additional {
-                                        return Some(*rel_id);
+                                        return Some(rel_id);
                                     }
                                 }
                                 _ => {}

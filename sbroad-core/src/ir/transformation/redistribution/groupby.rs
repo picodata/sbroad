@@ -23,7 +23,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ir::function::{Behavior, Function};
 use crate::ir::helpers::RepeatableState;
-use std::hash::{BuildHasher, Hash, Hasher, RandomState};
+use crate::utils::{OrderedMap, OrderedSet};
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 const AGGR_CAPACITY: usize = 10;
@@ -299,7 +300,7 @@ impl<'plan> ExpressionMapper<'plan> {
         let is_sq_ref = is_ref
             && self.plan.is_additional_child_of_rel(
                 node_id,
-                *self.plan.get_relational_from_reference_node(current)?,
+                self.plan.get_relational_from_reference_node(current)?,
             )?;
         // Because subqueries are replaced with References, we must not
         // try to match these references against any GroupBy expressions
@@ -350,75 +351,6 @@ impl<'plan> ExpressionMapper<'plan> {
 
     pub fn get_matches(&mut self) -> GroupbyExpressionsMap {
         std::mem::take(&mut self.map)
-    }
-}
-
-struct OrderedMap<K, V, S = RandomState> {
-    map: HashMap<K, V, S>,
-    order: Vec<(K, V)>,
-}
-
-impl<K: Clone + Hash + Eq, V: Clone, S: BuildHasher> OrderedMap<K, V, S> {
-    fn with_hasher(hasher: S) -> Self {
-        Self {
-            map: HashMap::<K, V, S>::with_hasher(hasher),
-            order: Vec::<(K, V)>::new(),
-        }
-    }
-
-    fn with_capacity_and_hasher(capacity: usize, hasher: S) -> Self {
-        Self {
-            map: HashMap::<K, V, S>::with_capacity_and_hasher(capacity, hasher),
-            order: Vec::<(K, V)>::new(),
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.map.len()
-    }
-
-    fn get(&self, key: &K) -> Option<&V> {
-        self.map.get(key)
-    }
-
-    fn remove(&mut self, key: &K) -> Option<V> {
-        self.order.retain(|(k, _)| k != key);
-        self.map.remove(key)
-    }
-
-    fn insert(&mut self, key: K, value: V) {
-        if self.map.insert(key.clone(), value.clone()).is_none() {
-            self.order.push((key, value));
-        }
-    }
-
-    fn get_ordered(&self) -> &Vec<(K, V)> {
-        &self.order
-    }
-}
-
-struct OrderedSet<V, S = RandomState> {
-    set: OrderedMap<V, (), S>,
-}
-
-impl<V: Clone + Hash + Eq, S: BuildHasher> OrderedSet<V, S> {
-    fn with_capacity_and_hasher(capacity: usize, hasher: S) -> Self {
-        Self {
-            set: OrderedMap::<V, (), S>::with_capacity_and_hasher(capacity, hasher),
-        }
-    }
-
-    fn insert(&mut self, value: V) {
-        self.set.insert(value, ())
-    }
-
-    fn get_ordered(&self) -> Vec<V> {
-        self.set
-            .get_ordered()
-            .iter()
-            .map(|(v, _)| v)
-            .cloned()
-            .collect()
     }
 }
 
@@ -968,11 +900,7 @@ impl Plan {
             for gr_expr in old_gr_cols {
                 unique_grouping_exprs.insert(GroupingExpression::new(*gr_expr, self));
             }
-            let grouping_exprs: Vec<NodeId> = unique_grouping_exprs
-                .get_ordered()
-                .iter()
-                .map(|e| e.id)
-                .collect();
+            let grouping_exprs: Vec<NodeId> = unique_grouping_exprs.iter().map(|e| e.id).collect();
             grouping_expr.extend(grouping_exprs.iter());
             self.set_grouping_cols(upper, grouping_exprs)?;
 
@@ -1292,16 +1220,14 @@ impl Plan {
             unique_grouping_exprs_for_local_stage_full.len(),
             RepeatableState,
         );
-        for (gr_expr, name) in unique_grouping_exprs_for_local_stage_full.get_ordered() {
+        for (gr_expr, name) in unique_grouping_exprs_for_local_stage_full.iter() {
             unique_grouping_exprs_for_local_stage.insert(gr_expr.id, name.clone())
         }
 
         let mut alias_to_pos: HashMap<Rc<String>, usize> = HashMap::new();
         // add grouping expressions to local projection
-        for (pos, (gr_expr, local_alias)) in unique_grouping_exprs_for_local_stage
-            .get_ordered()
-            .iter()
-            .enumerate()
+        for (pos, (gr_expr, local_alias)) in
+            unique_grouping_exprs_for_local_stage.iter().enumerate()
         {
             let new_alias = self.nodes.add_alias(local_alias, *gr_expr)?;
             output_cols.push(new_alias);
@@ -1841,7 +1767,7 @@ impl Plan {
                 let child_id = self.get_relational_from_reference_node(*expr_id)?;
                 let mut context = self.context_mut();
                 if let Some(shard_positions) =
-                    context.get_shard_columns_positions(*child_id, self)?
+                    context.get_shard_columns_positions(child_id, self)?
                 {
                     if shard_positions[0] == Some(*position)
                         || shard_positions[1] == Some(*position)

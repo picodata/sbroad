@@ -12,7 +12,6 @@
 use core::fmt::Debug;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::{Deserialize, Deserializer};
-use smol_str::{SmolStr, ToSmolStr};
 use std::collections::HashMap;
 use tarantool::tlua::{self, LuaRead};
 use tarantool::tuple::Encode;

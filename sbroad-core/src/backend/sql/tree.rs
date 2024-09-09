@@ -10,9 +10,9 @@ use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::Relational;
 use crate::ir::node::{
     Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Except, ExprInParentheses, GroupBy,
-    Having, Intersect, Join, Limit, Motion, Node, NodeId, OrderBy, Projection, Reference, Row,
-    ScanCte, ScanRelation, ScanSubQuery, Selection, StableFunction, Trim, UnaryExpr, Union,
-    UnionAll, Values, ValuesRow,
+    Having, Intersect, Join, Limit, Motion, Node, NodeId, OrderBy, Projection, Reference,
+    ReferenceAsteriskSource, Row, ScanCte, ScanRelation, ScanSubQuery, Selection, StableFunction,
+    Trim, UnaryExpr, Union, UnionAll, Values, ValuesRow,
 };
 use crate::ir::operator::{Bool, OrderByElement, OrderByEntity, OrderByType, Unary};
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
@@ -624,7 +624,7 @@ impl<'p> SyntaxPlan<'p> {
             .get_node(plan_id)
             .expect("Plan node expected for popping.");
 
-        if let Node::Relational(Relational::Motion { children, .. }) = requested_plan_node {
+        if let Node::Relational(Relational::Motion(Motion { children, .. })) = requested_plan_node {
             let motion_child_id = children.first();
             let motion_to_fix_id = if let Some(motion_child_id) = motion_child_id {
                 let motion_child_node = self
@@ -649,9 +649,9 @@ impl<'p> SyntaxPlan<'p> {
                 .get_ir_plan()
                 .get_relation_node(motion_to_fix_id)
                 .expect("Plan node expected for popping.");
-            if let Relational::Motion {
+            if let Relational::Motion(Motion {
                 policy, program, ..
-            } = motion_to_fix_node
+            }) = motion_to_fix_node
             {
                 let mut should_cover_with_parentheses = true;
 
@@ -876,11 +876,11 @@ impl<'p> SyntaxPlan<'p> {
         let mut syntax_gr_cols = Vec::with_capacity(plan_gr_cols.len());
         // Reuse the same vector to avoid extra allocations
         // (replace plan node ids with syntax node ids).
-        for col_id in &mut sn_gr_cols {
-            *col_id = self.pop_from_stack(*col_id, id);
+        for col_id in &plan_gr_cols {
+            syntax_gr_cols.push(self.pop_from_stack(*col_id, id));
         }
         let child_sn_id = self.pop_from_stack(child_plan_id, id);
-        let mut sn_children = Vec::with_capacity(sn_gr_cols.len() * 2 - 1);
+        let mut sn_children = Vec::with_capacity(syntax_gr_cols.len() * 2 - 1);
         // The columns are in reverse order, so we need to reverse them back.
         if let Some((first, others)) = syntax_gr_cols.split_first() {
             for id in others.iter().rev() {
@@ -1175,7 +1175,7 @@ impl<'p> SyntaxPlan<'p> {
         let mut syntax_children = Vec::with_capacity(plan_children.len());
 
         for child_id in &plan_children {
-            syntax_children.push(self.pop_from_stack(*child_id));
+            syntax_children.push(self.pop_from_stack(*child_id, id));
         }
 
         // Consume the output from the stack.
@@ -1414,7 +1414,7 @@ impl<'p> SyntaxPlan<'p> {
                         .get_expression_node(*child_id)
                         .expect("row child is expression");
                     if matches!(expr, Expression::Reference(_)) {
-                        let referred_id = *plan
+                        let referred_id = plan
                             .get_relational_from_reference_node(*child_id)
                             .expect("referred id");
                         self.pop_from_stack(referred_id, id);
@@ -1455,7 +1455,7 @@ impl<'p> SyntaxPlan<'p> {
                         .get_expression_node(*child_id)
                         .expect("row child is expression");
                     if matches!(expr, Expression::Reference(_)) {
-                        let referred_id = *plan
+                        let referred_id = plan
                             .get_relational_from_reference_node(*child_id)
                             .expect("referred id");
                         sq_sn_id = Some(self.pop_from_stack(referred_id, id));
@@ -1514,14 +1514,14 @@ impl<'p> SyntaxPlan<'p> {
                 };
 
                 let mut nodes_to_add = Vec::new();
-                if let Expression::Reference {
+                if let Expression::Reference(Reference {
                     asterisk_source:
                         Some(ReferenceAsteriskSource {
                             relation_name,
                             asterisk_id,
                         }),
                     ..
-                } = expr_node
+                }) = expr_node
                 {
                     // If we reference ScanNode, we don't want to transform asterisks
                     // in order not to select "bucket_id". That's why we save them as a
@@ -1583,23 +1583,24 @@ impl<'p> SyntaxPlan<'p> {
             let sn_node = self.nodes.get_sn(sn_id);
             let sn_plan_node_pair = self.get_plan_node(&sn_node.data)?;
 
-            let nodes_to_add = if let Some((Node::Expression(node_expr), sn_plan_node_id)) =
-                sn_plan_node_pair
-            {
-                match node_expr {
-                    Expression::Alias { child, .. } => handle_reference(sn_id, need_comma, *child),
-                    _ => handle_reference(sn_id, need_comma, sn_plan_node_id),
-                }
-            } else {
-                // As it's not ad Alias under Projection output, we don't have to
-                // dead with its machinery flags.
-                let mut nodes_to_add = Vec::new();
-                nodes_to_add.push(NodeToAdd::SnId(sn_id));
-                if need_comma {
-                    nodes_to_add.push(NodeToAdd::Comma)
-                }
-                nodes_to_add
-            };
+            let nodes_to_add =
+                if let Some((Node::Expression(node_expr), sn_plan_node_id)) = sn_plan_node_pair {
+                    match node_expr {
+                        Expression::Alias(Alias { child, .. }) => {
+                            handle_reference(sn_id, need_comma, *child)
+                        }
+                        _ => handle_reference(sn_id, need_comma, sn_plan_node_id),
+                    }
+                } else {
+                    // As it's not ad Alias under Projection output, we don't have to
+                    // dead with its machinery flags.
+                    let mut nodes_to_add = Vec::new();
+                    nodes_to_add.push(NodeToAdd::SnId(sn_id));
+                    if need_comma {
+                        nodes_to_add.push(NodeToAdd::Comma)
+                    }
+                    nodes_to_add
+                };
 
             for node in nodes_to_add {
                 match node {
@@ -1748,7 +1749,7 @@ impl<'p> SyntaxPlan<'p> {
     ///
     /// # Errors
     /// - syntax node wraps an invalid plan node
-    pub fn get_plan_node(&self, data: &SyntaxData) -> Result<Option<(&Node, NodeId)>, SbroadError> {
+    pub fn get_plan_node(&self, data: &SyntaxData) -> Result<Option<(Node, NodeId)>, SbroadError> {
         if let SyntaxData::PlanId(id) = data {
             Ok(Some((self.plan.get_ir_plan().get_node(*id)?, *id)))
         } else {
@@ -1761,7 +1762,7 @@ impl<'p> SyntaxPlan<'p> {
     /// # Errors
     /// - plan node is invalid
     /// - syntax tree node doesn't have a plan node
-    pub fn plan_node_or_err(&self, data: &SyntaxData) -> Result<(&Node, NodeId), SbroadError> {
+    pub fn plan_node_or_err(&self, data: &SyntaxData) -> Result<(Node, NodeId), SbroadError> {
         self.get_plan_node(data)?.ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::SyntaxPlan,

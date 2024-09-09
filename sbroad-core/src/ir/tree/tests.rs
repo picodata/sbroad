@@ -223,7 +223,7 @@ fn subtree_dfs_post() {
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
-    let a_ref = plan.nodes.next_id(ArenaType::Arena64);
+    let a_ref = plan.nodes.next_id(ArenaType::Arena96);
     let a = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let const1 = plan.add_const(Value::from(1_i64));
     let eq_op = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();

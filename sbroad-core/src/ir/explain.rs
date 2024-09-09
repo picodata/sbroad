@@ -199,7 +199,7 @@ impl ColExpr {
                 Expression::Reference(Reference { position, .. }) => {
                     let mut col_name = String::new();
 
-                    let rel_id: NodeId = *plan.get_relational_from_reference_node(id)?;
+                    let rel_id: NodeId = plan.get_relational_from_reference_node(id)?;
 
                     if let Some(name) = plan.scan_name(rel_id, *position)? {
                         col_name.push('"');
@@ -729,7 +729,7 @@ impl Row {
 
             match &current_node {
                 Expression::Reference { .. } => {
-                    let rel_id: NodeId = *plan.get_relational_from_reference_node(expr_id)?;
+                    let rel_id: NodeId = plan.get_relational_from_reference_node(expr_id)?;
 
                     let rel_node = plan.get_relation_node(rel_id)?;
                     if plan.is_additional_child(rel_id)? {
