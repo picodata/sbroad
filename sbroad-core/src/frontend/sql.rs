@@ -70,7 +70,7 @@ use tarantool::space::SpaceEngineType;
 
 // DDL timeout in seconds (1 day).
 const DEFAULT_TIMEOUT_F64: f64 = 24.0 * 60.0 * 60.0;
-const DEFAULT_AUTH_METHOD: &str = "chap-sha1";
+const DEFAULT_AUTH_METHOD: &str = "md5";
 
 fn get_default_timeout() -> Decimal {
     Decimal::from_str(&format!("{DEFAULT_TIMEOUT_F64}")).expect("default timeout casting failed")
