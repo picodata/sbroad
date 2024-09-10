@@ -126,6 +126,11 @@ where
         if plan.is_empty() {
             let metadata = coordinator.metadata().lock();
             plan = C::ParseTree::transform_into_plan(sql, &*metadata)?;
+            // Empty query.
+            if plan.is_empty() {
+                return Ok(Query::empty(coordinator));
+            }
+
             if coordinator.provides_versions() {
                 let mut table_version_map =
                     TableVersionMap::with_capacity(plan.relations.tables.len());
@@ -157,6 +162,15 @@ where
             bucket_map: HashMap::new(),
         };
         Ok(query)
+    }
+
+    fn empty(coordinator: &'a C) -> Self {
+        Self {
+            is_explain: false,
+            exec_plan: Plan::empty().into(),
+            coordinator,
+            bucket_map: Default::default(),
+        }
     }
 
     /// Get the execution plan of the query.
@@ -325,6 +339,11 @@ where
     /// - Plan is invalid
     pub fn is_acl(&self) -> Result<bool, SbroadError> {
         self.exec_plan.get_ir_plan().is_acl()
+    }
+
+    /// Checks that query is an empty query.
+    pub fn is_empty(&self) -> bool {
+        self.exec_plan.get_ir_plan().is_empty()
     }
 }
 

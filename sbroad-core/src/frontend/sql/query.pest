@@ -1,4 +1,4 @@
-Command = _{ SOI ~ (Query | ExplainQuery | Block | DDL | ACL) ~ EOF }
+Command = _{ SOI ~ (Query | ExplainQuery | Block | DDL | ACL | EmptyQuery) ~ EOF }
 
 // Helper rule to denote we have to update plan relations from metadata
 // (with Table which name corresponds to current node).
@@ -260,6 +260,8 @@ Identifier = @{ DelimitedIdentifier | RegularIdentifier  }
                         | ^"values" | ^"varchar" | ^"when" | ^"where" | ^"with"
                         | ^"limit"
                         }
+
+EmptyQuery = { WHITESPACE* }
 
 Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
     ExprInfixOp = _{ Between | ArithInfixOp | CmpInfixOp | ConcatInfixOp | And | Or }

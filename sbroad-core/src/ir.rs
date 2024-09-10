@@ -854,7 +854,12 @@ impl Plan {
     /// Constructor for an empty plan structure.
     #[must_use]
     pub fn new() -> Self {
-        Plan {
+        Self::empty()
+    }
+
+    /// Construct an empty plan.
+    pub fn empty() -> Self {
+        Self {
             nodes: Nodes {
                 arena32: Vec::new(),
                 arena64: Vec::new(),

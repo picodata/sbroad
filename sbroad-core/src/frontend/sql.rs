@@ -2638,6 +2638,10 @@ impl AbstractSyntaxTree {
         }
     }
 
+    fn is_empty(&self) -> bool {
+        self == &Self::empty()
+    }
+
     /// Constructor.
     /// Builds a tree (nodes are in postorder reverse).
     /// Builds abstract syntax tree (AST) from SQL query.
@@ -2663,6 +2667,12 @@ impl AbstractSyntaxTree {
         let top_pair = command_pair
             .next()
             .expect("Query expected as a first parsing tree child.");
+
+        if let Rule::EmptyQuery = top_pair.as_rule() {
+            *self = Self::empty();
+            return Ok(());
+        }
+
         let top = StackParseNode::new(top_pair, None);
 
         let mut stack: Vec<StackParseNode> = vec![top];
@@ -3848,6 +3858,11 @@ impl Ast for AbstractSyntaxTree {
         let mut pos_to_ast_id: SelectChildPairTranslation = HashMap::new();
         let mut ast = AbstractSyntaxTree::empty();
         ast.fill(query, &mut ast_id_to_pairs_map, &mut pos_to_ast_id)?;
+        // Empty query.
+        if ast.is_empty() {
+            return Ok(Plan::empty());
+        }
+
         ast.resolve_metadata(metadata, &mut ast_id_to_pairs_map, &mut pos_to_ast_id)
     }
 }

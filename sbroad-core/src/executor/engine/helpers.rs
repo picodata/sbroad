@@ -826,6 +826,18 @@ fn has_zero_limit_clause(plan: &ExecutionPlan) -> Result<bool, SbroadError> {
     Ok(false)
 }
 
+fn empty_query_response() -> Result<Box<dyn Any>, SbroadError> {
+    let res = ConsumerResult { row_count: 0 };
+    match Tuple::new(&[res]) {
+        Ok(t) => Ok(Box::new(t)),
+        Err(e) => Err(SbroadError::FailedTo(
+            Action::Create,
+            Some(Entity::Tuple),
+            format_smolstr!("{e}"),
+        )),
+    }
+}
+
 /// A helper function to dispatch the execution plan from the router to the storages.
 ///
 /// # Errors
@@ -841,6 +853,11 @@ pub fn dispatch_impl(
         Option::from("dispatch"),
         &format!("dispatching plan: {plan:?}")
     );
+
+    if plan.get_ir_plan().is_empty() {
+        return empty_query_response();
+    }
+
     let sub_plan = plan.take_subtree(top_id)?;
 
     let tier = {
