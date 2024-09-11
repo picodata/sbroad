@@ -1,24 +1,25 @@
 use ahash::AHashSet;
-use rmp::encode::write_array_len;
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
 use std::any::Any;
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::{Display, Formatter};
+use std::io::Write;
 use std::rc::Rc;
 use std::vec;
+use tarantool::tuple::TupleBuilder;
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::{TupleBuilderCommand, TupleBuilderPattern};
-use crate::executor::protocol::{Binary, EncodedRows, EncodedTables};
+use crate::executor::protocol::{msgpack_header_for_data, Binary, EncodedRows, EncodedTables};
 use crate::executor::{bucket::Buckets, Vshard};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::node::NodeId;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::{ColumnPosition, MotionKey, Target};
 use crate::ir::value::{EncodedValue, LuaValue, MsgPackValue, Value};
-use crate::utils::{ByteCounter, SliceWriter};
+use crate::utils::{write_u32_array_len, ByteCounter};
 
 use super::ir::ExecutionPlan;
 use super::result::{ExecutorTuple, MetadataColumn, ProducerResult};
@@ -659,13 +660,12 @@ impl<'t> TupleIterator<'t> {
     }
 }
 
-fn write_vtable_as_msgpack(vtable: &VirtualTable, buf: &mut [u8]) {
-    let mut stream = SliceWriter::new(buf);
+fn write_vtable_as_msgpack(vtable: &VirtualTable, stream: &mut impl Write) {
     let array_len =
         u32::try_from(vtable.get_tuples().len()).expect("expected u32 tuples in virtual table");
-    write_array_len(&mut stream, array_len).expect("failed to write array length");
+    write_u32_array_len(stream, array_len).expect("failed to write array len");
 
-    let mut ser = Serializer::new(&mut stream);
+    let mut ser = Serializer::new(stream);
     let mut tuple_iter = TupleIterator::new(vtable);
 
     while let Some(tuple) = tuple_iter.next() {
@@ -698,11 +698,18 @@ impl ExecutionPlan {
 
         for (id, vtable) in vtables {
             let marking = vtable_marking(vtable);
-            // Array length marker (1 byte) + array length (up to 4 bytes) + tuples.
-            let capacity = 5 + marking.iter().sum::<usize>();
-            let mut buf = vec![0; capacity];
-            write_vtable_as_msgpack(vtable, &mut buf);
-            let binary_table = Binary::from(buf);
+            // Array marker (1 byte) + array length (4 bytes) + tuples.
+            let data_len = 5 + marking.iter().sum::<usize>();
+            assert!(data_len <= u32::MAX as usize);
+            let msgpack_header = msgpack_header_for_data(data_len as u32);
+            let mut builder = TupleBuilder::rust_allocated();
+            builder.reserve(data_len + msgpack_header.len());
+            builder.append(&msgpack_header);
+            write_vtable_as_msgpack(vtable, &mut builder);
+            let Ok(tuple) = builder.into_tuple() else {
+                unreachable!("failed to build binary table")
+            };
+            let binary_table = Binary::from(tuple);
             encoded_tables.insert(*id, EncodedRows::new(marking, binary_table));
         }
         encoded_tables

@@ -1,9 +1,11 @@
 use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hash, RandomState};
-use std::io::{Error, Result, Write};
+use std::io::{Result, Write};
 use std::ops::DerefMut;
 
+use rmp::encode::RmpWrite;
+use rmp::Marker;
 use tarantool::fiber::mutex::MutexGuard as TMutexGuard;
 use tarantool::fiber::Mutex as TMutex;
 
@@ -58,41 +60,12 @@ impl Write for ByteCounter {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct SliceWriter<'b> {
-    buf: &'b mut [u8],
-    pos: usize,
-}
-
-impl SliceWriter<'_> {
-    #[must_use]
-    pub fn new(buf: &mut [u8]) -> SliceWriter {
-        SliceWriter { buf, pos: 0 }
-    }
-}
-
-impl<'b> Write for SliceWriter<'b> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        let len = buf.len();
-        if len > self.buf.len() - self.pos {
-            return Err(Error::new(
-                std::io::ErrorKind::WriteZero,
-                format!(
-                    "no space left in buffer (position = {}, length = {}, requested = {})",
-                    self.pos,
-                    self.buf.len(),
-                    len
-                ),
-            ));
-        }
-        self.buf[self.pos..self.pos + len].copy_from_slice(buf);
-        self.pos += len;
-        Ok(len)
-    }
-
-    fn flush(&mut self) -> Result<()> {
-        Ok(())
-    }
+pub fn write_u32_array_len<W: Write>(stream: &mut W, len: u32) -> Result<()> {
+    stream.write_bytes(&[Marker::Array32.to_u8()])?;
+    let mut buf = [0u8; 4];
+    buf.copy_from_slice(&len.to_be_bytes());
+    stream.write_bytes(&buf)?;
+    Ok(())
 }
 
 pub struct OrderedMap<K, V, S = RandomState> {

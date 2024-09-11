@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
 use std::collections::HashMap;
 use tarantool::tlua::{self, AsLua, Push, PushGuard, PushInto, PushOne, PushOneInto, Void};
-use tarantool::tuple::{Tuple, TupleBuffer};
+use tarantool::tuple::{Tuple, TupleBuilder};
 
 use crate::backend::sql::tree::OrderedSyntaxNodes;
 use crate::debug;
@@ -48,16 +48,9 @@ where
         return Err(msg);
     }
 
-    let mut msgpack_header = [0_u8; 6];
-    // array of len 1
-    msgpack_header[0] = b'\x91';
-    // string with 32bit length
-    msgpack_header[1] = b'\xdb';
-    // 32bit length of string
-    msgpack_header[2..].copy_from_slice(&(bincode_size as u32).to_be_bytes());
-
+    let msgpack_header = msgpack_header_for_data(bincode_size as u32);
     let capacity = msgpack_header.len() + bincode_size as usize;
-    let mut builder = tarantool::tuple::TupleBuilder::rust_allocated();
+    let mut builder = TupleBuilder::rust_allocated();
     builder.reserve(capacity);
     builder.append(&msgpack_header);
 
@@ -86,17 +79,22 @@ where
     Ok(tuple)
 }
 
-pub fn rust_allocated_tuple_from_bytes(data: &[u8]) -> Tuple {
+pub fn msgpack_header_for_data(data_len: u32) -> [u8; 6] {
     let mut msgpack_header = [0_u8; 6];
     // array of len 1
     msgpack_header[0] = b'\x91';
     // string with 32bit length
     msgpack_header[1] = b'\xdb';
     // 32bit length of string
-    msgpack_header[2..].copy_from_slice(&(data.len() as u32).to_be_bytes());
+    msgpack_header[2..].copy_from_slice(&data_len.to_be_bytes());
+    msgpack_header
+}
 
+pub fn rust_allocated_tuple_from_bytes(data: &[u8]) -> Tuple {
+    assert!(data.len() <= u32::MAX as usize);
+    let msgpack_header = msgpack_header_for_data(data.len() as u32);
     let capacity = msgpack_header.len() + data.len();
-    let mut builder = tarantool::tuple::TupleBuilder::rust_allocated();
+    let mut builder = TupleBuilder::rust_allocated();
     builder.reserve(capacity);
     builder.append(&msgpack_header);
 
@@ -240,13 +238,10 @@ impl<'e> IntoIterator for &'e EncodedRows {
     type IntoIter = EncodedRowsIter<'e>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let capacity = *self.marking.iter().max().unwrap_or(&0);
         EncodedRowsIter {
             stream: Bytes::from(self.encoded.0.data()),
             marking: &self.marking,
             position: 0,
-            // Allocate buffer for encoded row.
-            buf: Vec::with_capacity(capacity),
         }
     }
 }
@@ -258,8 +253,6 @@ pub struct EncodedRowsIter<'e> {
     marking: &'e [usize],
     /// Current stream position.
     position: usize,
-    /// Buffer for encoded tuple.
-    buf: Vec<u8>,
 }
 
 impl<'e> Iterator for EncodedRowsIter<'e> {
@@ -280,22 +273,17 @@ impl<'e> Iterator for EncodedRowsIter<'e> {
         let Some(row_len) = self.marking.get(cur_pos) else {
             return None;
         };
-        // We take a preallocated buffer, clear it (preserving allocated rust memory) and
-        // fill it with encoded tuple (copying from stream). Then we create a tuple from
-        // this buffer (i.e. allocate tarantool memory and copy from buffer) and return
-        // rust memory back to the buffer vector. As a result we make only one tarantool
-        // memory allocation per tuple and two copies of encoded tuple bytes.
 
-        // TODO: refactor this code when we switch to rust-allocated tuples.
-        self.buf.clear();
-        let mut tmp = Vec::new();
-        std::mem::swap(&mut self.buf, &mut tmp);
-        tmp.resize(*row_len, 0);
-        self.stream.read_exact_buf(&mut tmp).expect("encoded tuple");
-        let tbuf = TupleBuffer::try_from_vec(tmp).expect("tuple buffer");
-        let tuple = Tuple::from(&tbuf);
-        // Return back previously allocated buffer.
-        self.buf = Vec::from(tbuf);
+        assert!(*row_len <= u32::MAX as usize);
+        let mut builder = TupleBuilder::rust_allocated();
+        builder.reserve(*row_len);
+        for _ in 0..*row_len {
+            let byte = self.stream.read_u8().expect("encoded tuple");
+            builder.append(&[byte]);
+        }
+        let tuple = builder
+            .into_tuple()
+            .expect("failed to create rust-allocated tuple");
         Some(tuple)
     }
 }
