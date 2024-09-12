@@ -1635,7 +1635,7 @@ impl Plan {
         for (id, _) in self.nodes.arena224.iter().enumerate() {
             let parent_id = NodeId {
                 offset: u32::try_from(id).unwrap(),
-                arena_type: ArenaType::Arena224,
+                arena_type: ArenaType::Arena232,
             };
 
             if !matches!(self.get_node(parent_id)?, Node::Relational(_)) {

@@ -45,7 +45,7 @@ pub enum ArenaType {
     Arena64,
     Arena96,
     Arena136,
-    Arena224,
+    Arena232,
 }
 
 impl Display for ArenaType {
@@ -63,7 +63,7 @@ impl Display for ArenaType {
             ArenaType::Arena136 => {
                 write!(f, "136")
             }
-            ArenaType::Arena224 => {
+            ArenaType::Arena232 => {
                 write!(f, "224")
             }
         }
@@ -743,6 +743,7 @@ impl From<ValuesRow> for NodeAligned {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct DropRole {
     pub name: SmolStr,
+    pub if_exists: bool,
     pub timeout: Decimal,
 }
 
@@ -755,6 +756,7 @@ impl From<DropRole> for NodeAligned {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct DropUser {
     pub name: SmolStr,
+    pub if_exists: bool,
     pub timeout: Decimal,
 }
 
@@ -767,6 +769,7 @@ impl From<DropUser> for NodeAligned {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct CreateRole {
     pub name: SmolStr,
+    pub if_not_exists: bool,
     pub timeout: Decimal,
 }
 
@@ -780,6 +783,7 @@ impl From<CreateRole> for NodeAligned {
 pub struct CreateUser {
     pub name: SmolStr,
     pub password: SmolStr,
+    pub if_not_exists: bool,
     pub auth_method: SmolStr,
     pub timeout: Decimal,
 }
@@ -838,6 +842,7 @@ pub struct CreateTable {
     pub sharding_key: Option<Vec<SmolStr>>,
     /// Vinyl is supported only for sharded tables.
     pub engine_type: SpaceEngineType,
+    pub if_not_exists: bool,
     pub timeout: Decimal,
     /// Shows which tier the sharded table belongs to.
     /// Field has value, only if it was specified in [ON TIER] part of CREATE TABLE statement.
@@ -849,13 +854,14 @@ pub struct CreateTable {
 
 impl From<CreateTable> for NodeAligned {
     fn from(value: CreateTable) -> Self {
-        Self::Node224(Node224::CreateTable(value))
+        Self::Node232(Node232::CreateTable(value))
     }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct DropTable {
     pub name: SmolStr,
+    pub if_exists: bool,
     pub timeout: Decimal,
 }
 
@@ -870,6 +876,7 @@ pub struct CreateProc {
     pub name: SmolStr,
     pub params: Vec<ParamDef>,
     pub body: SmolStr,
+    pub if_not_exists: bool,
     pub language: Language,
     pub timeout: Decimal,
 }
@@ -884,6 +891,7 @@ impl From<CreateProc> for NodeAligned {
 pub struct DropProc {
     pub name: SmolStr,
     pub params: Option<Vec<ParamDef>>,
+    pub if_exists: bool,
     pub timeout: Decimal,
 }
 
@@ -913,6 +921,7 @@ pub struct CreateIndex {
     pub table_name: SmolStr,
     pub columns: Vec<SmolStr>,
     pub unique: bool,
+    pub if_not_exists: bool,
     pub index_type: IndexType,
     pub bloom_fpr: Option<Decimal>,
     pub page_size: Option<u32>,
@@ -927,13 +936,14 @@ pub struct CreateIndex {
 
 impl From<CreateIndex> for NodeAligned {
     fn from(value: CreateIndex) -> Self {
-        Self::Node224(Node224::CreateIndex(value))
+        Self::Node232(Node232::CreateIndex(value))
     }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct DropIndex {
     pub name: SmolStr,
+    pub if_exists: bool,
     pub timeout: Decimal,
 }
 
@@ -1225,7 +1235,7 @@ impl Node136 {
 
 #[allow(clippy::module_name_repetitions, clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub enum Node224 {
+pub enum Node232 {
     Invalid(Invalid),
     CreateTable(CreateTable),
     CreateIndex(CreateIndex),
@@ -1233,21 +1243,21 @@ pub enum Node224 {
     RemoveServiceFromTier(RemoveServiceFromTier),
 }
 
-impl Node224 {
+impl Node232 {
     #[must_use]
     pub fn into_owned(self) -> NodeOwned {
         match self {
-            Node224::CreateTable(create_table) => {
+            Node232::CreateTable(create_table) => {
                 NodeOwned::Ddl(DdlOwned::CreateTable(create_table))
             }
-            Node224::CreateIndex(create_index) => {
+            Node232::CreateIndex(create_index) => {
                 NodeOwned::Ddl(DdlOwned::CreateIndex(create_index))
             }
-            Node224::Invalid(inv) => NodeOwned::Invalid(inv),
-            Node224::AppendServiceToTier(append) => {
+            Node232::Invalid(inv) => NodeOwned::Invalid(inv),
+            Node232::AppendServiceToTier(append) => {
                 NodeOwned::Plugin(PluginOwned::AppendServiceToTier(append))
             }
-            Node224::RemoveServiceFromTier(remove) => {
+            Node232::RemoveServiceFromTier(remove) => {
                 NodeOwned::Plugin(PluginOwned::RemoveServiceFromTier(remove))
             }
         }
@@ -1261,7 +1271,7 @@ pub enum NodeAligned {
     Node64(Node64),
     Node96(Node96),
     Node136(Node136),
-    Node224(Node224),
+    Node232(Node232),
 }
 
 impl From<Node32> for NodeAligned {
@@ -1288,9 +1298,9 @@ impl From<Node136> for NodeAligned {
     }
 }
 
-impl From<Node224> for NodeAligned {
-    fn from(value: Node224) -> Self {
-        Self::Node224(value)
+impl From<Node232> for NodeAligned {
+    fn from(value: Node232) -> Self {
+        Self::Node232(value)
     }
 }
 // parameter to avoid multiple enums

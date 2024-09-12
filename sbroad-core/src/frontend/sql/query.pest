@@ -8,12 +8,13 @@ Table     = @{ Identifier }
 ScanTable = { Table }
 ScanCteOrTable = @{ Table }
 
+IfExists = { ^"if" ~ ^"exists" }
+IfNotExists = { ^"if" ~ ^"not" ~ ^"exists" }
+
 Plugin = _{ CreatePlugin | DropPlugin | AlterPlugin }
     CreatePlugin = { ^"create" ~ ^"plugin" ~ IfNotExists? ~ Identifier ~ PluginVersion ~ TimeoutOption? }
         PluginVersion = @{ Unsigned ~ "." ~ Unsigned ~ "." ~ Unsigned }
-        IfNotExists = { ^"if" ~ ^"not" ~ ^"exists" }
     DropPlugin = { ^"drop" ~ ^"plugin" ~ IfExists? ~ Identifier ~ PluginVersion ~ WithData? ~ TimeoutOption? }
-        IfExists = { ^"if" ~ ^"exists" }
         WithData = { ^"with" ~ ^"data" }
     AlterPlugin = { ^"alter" ~ ^"plugin" ~ Identifier ~ AlterVariant }
         AlterVariant = _{ EnablePlugin | DisablePlugin | MigrateTo | AddServiceToTier | RemoveServiceFromTier | ChangeConfig }
@@ -30,7 +31,7 @@ Plugin = _{ CreatePlugin | DropPlugin | AlterPlugin }
 
 ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivilege | RevokePrivilege }
     CreateUser = {
-        ^"create" ~ ^"user" ~ Identifier ~ (^"with")? ~ ^"password" ~ SingleQuotedString ~
+        ^"create" ~ ^"user" ~ IfNotExists? ~ Identifier ~ (^"with")? ~ ^"password" ~ SingleQuotedString ~
         AuthMethod? ~ TimeoutOption?
     }
     AlterUser = {
@@ -45,9 +46,9 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
             ChapSha1 = { ^"chap-sha1" }
             Md5 = { ^"md5" }
             Ldap = { ^"ldap" }
-    DropUser = { ^"drop" ~ ^"user" ~ Identifier ~ TimeoutOption? }
-    CreateRole = { ^"create" ~ ^"role" ~ Identifier ~ TimeoutOption? }
-    DropRole = { ^"drop" ~ ^"role" ~ Identifier ~ TimeoutOption? }
+    DropUser = { ^"drop" ~ ^"user" ~ IfExists? ~ Identifier ~ TimeoutOption? }
+    CreateRole = { ^"create" ~ ^"role" ~ IfNotExists? ~ Identifier ~ TimeoutOption? }
+    DropRole = { ^"drop" ~ ^"role" ~ IfExists? ~ Identifier ~ TimeoutOption? }
     GrantPrivilege = { ^"grant" ~ PrivBlock ~ ^"to" ~ Identifier ~ TimeoutOption? }
     RevokePrivilege = { ^"revoke" ~ PrivBlock ~ ^"from" ~ Identifier ~ TimeoutOption? }
         PrivBlock = _{ PrivBlockPrivilege | PrivBlockRolePass }
@@ -78,7 +79,7 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
 DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
          | CreateProc | DropProc | RenameProc | SetParam | SetTransaction | AlterSystem }
     CreateTable = {
-        ^"create" ~ ^"table" ~ NewTable ~
+        ^"create" ~ ^"table" ~ IfNotExists? ~ NewTable ~
         "(" ~ Columns ~ ("," ~ PrimaryKey)? ~ ")" ~
         Engine? ~ Distribution? ~ TimeoutOption?
     }
@@ -95,10 +96,10 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
         Global = { ^"globally" }
         Sharding = { ^"by" ~ "(" ~ Identifier ~ ("," ~ Identifier)* ~ ")" ~ Tier? }
         Tier = { ^"in" ~ ^"tier" ~ Identifier }
-    DropTable = { ^"drop" ~ ^"table" ~ Table ~ TimeoutOption? }
+    DropTable = { ^"drop" ~ ^"table" ~ IfExists? ~ Table ~ TimeoutOption? }
 
     CreateProc = {
-        ^"create" ~ ^"procedure" ~ Identifier
+        ^"create" ~ ^"procedure" ~ IfNotExists? ~ Identifier
         ~ ProcParams ~ (^"language" ~ ProcLanguage)?
         ~ ((^"as" ~ "$$" ~ ProcBody ~ "$$") | (^"begin" ~ "atomic" ~ ProcBody ~ "end"))
         ~ TimeoutOption?
@@ -108,7 +109,7 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
             SQL = { ^"sql" }
         ProcBody = { (Insert | Update | Delete) }
 
-    DropProc = { ^"drop" ~ ^"procedure" ~ ProcWithOptionalParams ~ TimeoutOption? }
+    DropProc = { ^"drop" ~ ^"procedure" ~ IfExists? ~ ProcWithOptionalParams ~ TimeoutOption? }
         ProcWithOptionalParams = { Identifier ~ ProcParams? }
 
     RenameProc = { ^"alter" ~ ^"procedure" ~ OldProc ~ ProcParams? ~ ^"rename" ~ ^"to" ~ NewProc ~ TimeoutOption? }
@@ -116,7 +117,7 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
         NewProc = @{ Identifier }
 
     CreateIndex = {
-        ^"create" ~ Unique? ~ ^"index" ~ Identifier ~ ^"on" ~ Table
+        ^"create" ~ Unique? ~ ^"index" ~ IfNotExists? ~ Identifier ~ ^"on" ~ Table
         ~ IndexType? ~ "(" ~ Parts ~ ")" ~ IndexOptions? ~ TimeoutOption?
     }
     Unique = { ^"unique" }
@@ -140,7 +141,7 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
             Manhattan = { ^"manhattan" }
         Hint = { ^"hint" ~ "=" ~ (True | False) }
 
-    DropIndex = { ^"drop" ~ ^"index" ~ Identifier ~ TimeoutOption? }
+    DropIndex = { ^"drop" ~ ^"index" ~ IfExists? ~ Identifier ~ TimeoutOption? }
 
     SetParam = { ^"set" ~ SetScope? ~ ConfParam  }
         SetScope = { ScopeSession | ScopeLocal }

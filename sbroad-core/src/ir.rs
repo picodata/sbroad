@@ -33,7 +33,7 @@ use crate::ir::helpers::RepeatableState;
 use crate::ir::node::plugin::{MutPlugin, Plugin};
 use crate::ir::node::{
     Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, ExprInParentheses,
-    GroupBy, Having, Insert, Limit, Motion, MutNode, Node, Node136, Node224, Node32, Node64,
+    GroupBy, Having, Insert, Limit, Motion, MutNode, Node, Node136, Node232, Node32, Node64,
     Node96, NodeId, NodeOwned, OrderBy, Projection, Reference, Row, ScanRelation, Selection,
     StableFunction, Trim, UnaryExpr, Values,
 };
@@ -79,7 +79,7 @@ pub struct Nodes {
     arena64: Vec<Node64>,
     arena96: Vec<Node96>,
     arena136: Vec<Node136>,
-    arena224: Vec<Node224>,
+    arena224: Vec<Node232>,
 }
 
 impl Nodes {
@@ -179,17 +179,17 @@ impl Nodes {
                         Node::Plugin(Plugin::ChangeConfig(change_config))
                     }
                 }),
-            ArenaType::Arena224 => self
+            ArenaType::Arena232 => self
                 .arena224
                 .get(id.offset as usize)
                 .map(|node| match node {
-                    Node224::CreateIndex(create_index) => Node::Ddl(Ddl::CreateIndex(create_index)),
-                    Node224::CreateTable(create_table) => Node::Ddl(Ddl::CreateTable(create_table)),
-                    Node224::Invalid(inv) => Node::Invalid(inv),
-                    Node224::AppendServiceToTier(append) => {
+                    Node232::CreateIndex(create_index) => Node::Ddl(Ddl::CreateIndex(create_index)),
+                    Node232::CreateTable(create_table) => Node::Ddl(Ddl::CreateTable(create_table)),
+                    Node232::Invalid(inv) => Node::Invalid(inv),
+                    Node232::AppendServiceToTier(append) => {
                         Node::Plugin(Plugin::AppendServiceToTier(append))
                     }
-                    Node224::RemoveServiceFromTier(remove) => {
+                    Node232::RemoveServiceFromTier(remove) => {
                         Node::Plugin(Plugin::RemoveServiceFromTier(remove))
                     }
                 }),
@@ -341,21 +341,21 @@ impl Nodes {
                         }
                     })
             }
-            ArenaType::Arena224 => {
+            ArenaType::Arena232 => {
                 self.arena224
                     .get_mut(id.offset as usize)
                     .map(|node| match node {
-                        Node224::CreateIndex(create_index) => {
+                        Node232::CreateIndex(create_index) => {
                             MutNode::Ddl(MutDdl::CreateIndex(create_index))
                         }
-                        Node224::Invalid(inv) => MutNode::Invalid(inv),
-                        Node224::CreateTable(create_table) => {
+                        Node232::Invalid(inv) => MutNode::Invalid(inv),
+                        Node232::CreateTable(create_table) => {
                             MutNode::Ddl(MutDdl::CreateTable(create_table))
                         }
-                        Node224::AppendServiceToTier(append) => {
+                        Node232::AppendServiceToTier(append) => {
                             MutNode::Plugin(MutPlugin::AppendServiceToTier(append))
                         }
-                        Node224::RemoveServiceFromTier(remove) => {
+                        Node232::RemoveServiceFromTier(remove) => {
                             MutNode::Plugin(MutPlugin::RemoveServiceFromTier(remove))
                         }
                     })
@@ -384,9 +384,9 @@ impl Nodes {
                 offset: u32::try_from(self.arena136.len()).unwrap(),
                 arena_type: ArenaType::Arena136,
             },
-            ArenaType::Arena224 => NodeId {
+            ArenaType::Arena232 => NodeId {
                 offset: u32::try_from(self.arena224.len()).unwrap(),
-                arena_type: ArenaType::Arena224,
+                arena_type: ArenaType::Arena232,
             },
         }
     }
@@ -425,7 +425,7 @@ impl Nodes {
         self.arena136.iter()
     }
 
-    pub fn iter224(&self) -> Iter<'_, Node224> {
+    pub fn iter224(&self) -> Iter<'_, Node232> {
         self.arena224.iter()
     }
 
@@ -477,10 +477,10 @@ impl Nodes {
 
                 new_node_id
             }
-            NodeAligned::Node224(node224) => {
+            NodeAligned::Node232(node224) => {
                 let new_node_id = NodeId {
                     offset: u32::try_from(self.arena224.len()).unwrap(),
-                    arena_type: ArenaType::Arena224,
+                    arena_type: ArenaType::Arena232,
                 };
 
                 self.arena224.push(node224);
@@ -881,13 +881,13 @@ impl Plan {
                 let node136 = std::mem::replace(node136, stub);
                 node136.into_owned()
             }
-            ArenaType::Arena224 => {
+            ArenaType::Arena232 => {
                 let node224 = self
                     .nodes
                     .arena224
                     .get_mut(usize::try_from(dst_id.offset).unwrap())
                     .unwrap();
-                let stub = Node224::Invalid(Invalid {});
+                let stub = Node232::Invalid(Invalid {});
                 let node224 = std::mem::replace(node224, stub);
                 node224.into_owned()
             }

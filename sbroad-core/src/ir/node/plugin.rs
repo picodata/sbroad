@@ -1,5 +1,5 @@
 use crate::errors::{Entity, SbroadError};
-use crate::ir::node::{Node136, Node224, Node96, NodeAligned};
+use crate::ir::node::{Node136, Node232, Node96, NodeAligned};
 use crate::ir::{Node, NodeId, Plan};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
@@ -116,7 +116,7 @@ pub struct AppendServiceToTier {
 
 impl From<AppendServiceToTier> for NodeAligned {
     fn from(value: AppendServiceToTier) -> Self {
-        Self::Node224(Node224::AppendServiceToTier(value))
+        Self::Node232(Node232::AppendServiceToTier(value))
     }
 }
 
@@ -131,7 +131,7 @@ pub struct RemoveServiceFromTier {
 
 impl From<RemoveServiceFromTier> for NodeAligned {
     fn from(value: RemoveServiceFromTier) -> Self {
-        Self::Node224(Node224::RemoveServiceFromTier(value))
+        Self::Node232(Node232::RemoveServiceFromTier(value))
     }
 }
 
@@ -419,7 +419,7 @@ mod test {
             },
             TestCase {
                 sql: r#"ALTER PLUGIN "abc" 0.1.0 ADD SERVICE "svc1" TO TIER "tier1" option(timeout=1)"#,
-                arena_type: ArenaType::Arena224,
+                arena_type: ArenaType::Arena232,
                 expected: PluginOwned::AppendServiceToTier(AppendServiceToTier {
                     service_name: SmolStr::from("svc1"),
                     plugin_name: SmolStr::from("abc"),
@@ -430,7 +430,7 @@ mod test {
             },
             TestCase {
                 sql: r#"ALTER PLUGIN "abc" 0.1.0 REMOVE SERVICE "svc1" FROM TIER "tier1" option(timeout=11)"#,
-                arena_type: ArenaType::Arena224,
+                arena_type: ArenaType::Arena232,
                 expected: PluginOwned::RemoveServiceFromTier(RemoveServiceFromTier {
                     service_name: SmolStr::from("svc1"),
                     plugin_name: SmolStr::from("abc"),

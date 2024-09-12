@@ -72,6 +72,9 @@ use tarantool::space::SpaceEngineType;
 const DEFAULT_TIMEOUT_F64: f64 = 24.0 * 60.0 * 60.0;
 const DEFAULT_AUTH_METHOD: &str = "md5";
 
+const DEFAULT_IF_EXISTS: bool = false;
+const DEFAULT_IF_NOT_EXISTS: bool = false;
+
 fn get_default_timeout() -> Decimal {
     Decimal::from_str(&format!("{DEFAULT_TIMEOUT_F64}")).expect("default timeout casting failed")
 }
@@ -259,19 +262,20 @@ fn parse_create_proc(
     ast: &AbstractSyntaxTree,
     node: &ParseNode,
 ) -> Result<CreateProc, SbroadError> {
-    let proc_name_id = node.children.first().expect("Expected to get Proc name");
-    let proc_name = parse_identifier(ast, *proc_name_id)?;
-
-    let proc_params_id = node.children.get(1).expect("Expedcted to get Proc params");
-    let proc_params = ast.nodes.get_node(*proc_params_id)?;
-    let params = parse_proc_params(ast, proc_params)?;
-
+    let mut name = None;
+    let mut params = None;
     let language = Language::SQL;
     let mut body = SmolStr::default();
+    let mut if_not_exists = DEFAULT_IF_NOT_EXISTS;
     let mut timeout = get_default_timeout();
-    for child_id in node.children.iter().skip(2) {
+    for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
+            Rule::Identifier => name = Some(parse_identifier(ast, *child_id)?),
+            Rule::ProcParams => {
+                let proc_params = ast.nodes.get_node(*child_id)?;
+                params = Some(parse_proc_params(ast, proc_params)?);
+            }
             Rule::ProcLanguage => {
                 // We don't need to parse language node, because we support only SQL.
             }
@@ -282,17 +286,21 @@ fn parse_create_proc(
                     .expect("procedure body must not be empty")
                     .clone();
             }
+            Rule::IfNotExists => if_not_exists = true,
             Rule::Timeout => {
                 timeout = get_timeout(ast, *child_id)?;
             }
             _ => unreachable!("Unexpected node: {child_node:?}"),
         }
     }
+    let name = name.expect("name expected as a child");
+    let params = params.expect("params expected as a child");
     let create_proc = CreateProc {
-        name: proc_name,
+        name,
         params,
         language,
         body,
+        if_not_exists,
         timeout,
     };
     Ok(create_proc)
@@ -405,22 +413,29 @@ fn parse_proc_with_optional_params(
 }
 
 fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropProc, SbroadError> {
-    let proc_with_optional_params_id = node
-        .children
-        .first()
-        .expect("Expected to see ProcWithOptionalParams");
-    let proc_with_optional_params = ast.nodes.get_node(*proc_with_optional_params_id)?;
-    let (name, params) = parse_proc_with_optional_params(ast, proc_with_optional_params)?;
+    let mut name = None;
+    let mut params = None;
+    let mut timeout = get_default_timeout();
+    let mut if_exists = DEFAULT_IF_EXISTS;
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Rule::ProcWithOptionalParams => {
+                let (proc_name, proc_params) = parse_proc_with_optional_params(ast, child_node)?;
+                name = Some(proc_name);
+                params = proc_params;
+            }
+            Rule::TimeoutOption => timeout = get_timeout(ast, *child_id)?,
+            Rule::IfExists => if_exists = true,
+            child_node => panic!("unexpected node {child_node:?}"),
+        }
+    }
 
-    let timeout = if let Some(timeout_id) = node.children.get(1) {
-        get_timeout(ast, *timeout_id)?
-    } else {
-        get_default_timeout()
-    };
-
+    let name = name.expect("drop proc wihtout proc name");
     Ok(DropProc {
         name,
         params,
+        if_exists,
         timeout,
     })
 }
@@ -444,6 +459,7 @@ fn parse_create_index(
     let mut dimension = None;
     let mut distance = None;
     let mut hint = None;
+    let mut if_not_exists = DEFAULT_IF_NOT_EXISTS;
     let mut timeout = get_default_timeout();
 
     let first_child = |node: &ParseNode| -> &ParseNode {
@@ -483,6 +499,7 @@ fn parse_create_index(
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
             Rule::Unique => unique = true,
+            Rule::IfNotExists => if_not_exists = true,
             Rule::Identifier => name = parse_identifier(ast, *child_id)?,
             Rule::Table => table_name = parse_identifier(ast, *child_id)?,
             Rule::IndexType => {
@@ -550,6 +567,7 @@ fn parse_create_index(
         table_name,
         columns,
         unique,
+        if_not_exists,
         index_type,
         bloom_fpr,
         page_size,
@@ -568,15 +586,21 @@ fn parse_drop_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropIn
     assert_eq!(node.rule, Rule::DropIndex);
     let mut name = SmolStr::default();
     let mut timeout = get_default_timeout();
+    let mut if_exists = DEFAULT_IF_EXISTS;
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
             Rule::Identifier => name = parse_identifier(ast, *child_id)?,
             Rule::Timeout => timeout = get_timeout(ast, *child_id)?,
+            Rule::IfExists => if_exists = true,
             _ => panic!("Unexpected drop index node: {child_node:?}"),
         }
     }
-    Ok(DropIndex { name, timeout })
+    Ok(DropIndex {
+        name,
+        if_exists,
+        timeout,
+    })
 }
 
 #[allow(clippy::too_many_lines)]
@@ -600,6 +624,7 @@ fn parse_create_table(
     let mut timeout = get_default_timeout();
     let mut tier = None;
     let mut is_global = false;
+    let mut if_not_exists = DEFAULT_IF_NOT_EXISTS;
 
     let nullable_primary_key_column_error = Err(SbroadError::Invalid(
         Entity::Column,
@@ -615,6 +640,7 @@ fn parse_create_table(
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
+            Rule::IfNotExists => if_not_exists = true,
             Rule::NewTable => {
                 table_name = parse_identifier(ast, *child_id)?;
             }
@@ -858,34 +884,63 @@ fn parse_create_table(
     if shard_key.is_empty() && !is_global {
         shard_key = pk_keys.clone();
     }
-    let create_sharded_table = if shard_key.is_empty() {
+
+    let sharding_key = if !shard_key.is_empty() {
+        Some(shard_key)
+    } else {
         if engine_type != SpaceEngineType::Memtx {
             return Err(SbroadError::Unsupported(
                 Entity::Query,
                 Some("global spaces can use only memtx engine".into()),
             ));
-        }
-        CreateTable {
-            name: table_name,
-            format: columns,
-            primary_key: pk_keys,
-            sharding_key: None,
-            engine_type,
-            timeout,
-            tier,
-        }
-    } else {
-        CreateTable {
-            name: table_name,
-            format: columns,
-            primary_key: pk_keys,
-            sharding_key: Some(shard_key),
-            engine_type,
-            timeout,
-            tier,
-        }
+        };
+        None
     };
-    Ok(create_sharded_table)
+
+    Ok(CreateTable {
+        name: table_name,
+        format: columns,
+        primary_key: pk_keys,
+        sharding_key,
+        engine_type,
+        if_not_exists,
+        timeout,
+        tier,
+    })
+}
+
+fn parse_drop_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<DropTable, SbroadError> {
+    let mut table_name = SmolStr::default();
+    let mut timeout = get_default_timeout();
+    let mut if_exists = DEFAULT_IF_EXISTS;
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Rule::Table => {
+                table_name = parse_identifier(ast, *child_id)?;
+            }
+            Rule::IfExists => {
+                if_exists = true;
+            }
+            Rule::Timeout => {
+                timeout = get_timeout(ast, *child_id)?;
+            }
+            _ => {
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some(format_smolstr!(
+                        "AST drop table node {:?} contains unexpected children",
+                        child_node,
+                    )),
+                ));
+            }
+        }
+    }
+    Ok(DropTable {
+        name: table_name,
+        if_exists,
+        timeout,
+    })
 }
 
 fn parse_set_param(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<SetParam, SbroadError> {
@@ -3567,6 +3622,10 @@ impl AbstractSyntaxTree {
         let mut col_idx: usize = 0;
         let mut worker = ExpressionsWorker::new(metadata, sq_pair_to_ast_ids);
         let mut ctes = CTEs::new();
+        // This flag disables resolving of table names for DROP TABLE queries,
+        // as it can be used with tables that are not presented in metadata.
+        // Unresolved table names are handled in picodata depending in IF EXISTS options.
+        let resolve_table_names = self.nodes.get_node(top)?.rule != Rule::DropTable;
 
         for level_node in dft_post.iter(top) {
             let id = level_node.1;
@@ -3611,7 +3670,7 @@ impl AbstractSyntaxTree {
                 Rule::Cte => {
                     parse_cte(self, id, &mut map, &mut ctes, &mut plan)?;
                 }
-                Rule::Table => {
+                Rule::Table if resolve_table_names => {
                     // The thing is we don't want to normalize name.
                     // Should we fix `parse_identifier` or `table` logic?
                     let table_name = parse_identifier(self, id)?;
@@ -4194,50 +4253,37 @@ impl AbstractSyntaxTree {
                     map.add(id, plan_id);
                 }
                 Rule::DropRole => {
-                    let role_name_id = node
-                        .children
-                        .first()
-                        .expect("RoleName expected under DropRole node");
-                    let role_name = parse_identifier(self, *role_name_id)?;
-
+                    let mut name = None;
                     let mut timeout = get_default_timeout();
-                    if let Some(timeout_child_id) = node.children.get(1) {
-                        timeout = get_timeout(self, *timeout_child_id)?;
-                    }
-                    let drop_role = DropRole {
-                        name: role_name,
-                        timeout,
-                    };
-                    let plan_id = plan.nodes.push(drop_role.into());
-                    map.add(id, plan_id);
-                }
-                Rule::DropTable => {
-                    let mut table_name = SmolStr::default();
-                    let mut timeout = get_default_timeout();
+                    let mut if_exists = DEFAULT_IF_EXISTS;
                     for child_id in &node.children {
                         let child_node = self.nodes.get_node(*child_id)?;
                         match child_node.rule {
-                            Rule::Table => {
-                                table_name = parse_identifier(self, *child_id)?;
-                            }
-                            Rule::Timeout => {
-                                timeout = get_timeout(self, *child_id)?;
-                            }
+                            Rule::Identifier => name = Some(parse_identifier(self, *child_id)?),
+                            Rule::IfExists => if_exists = true,
+                            Rule::Timeout => timeout = get_timeout(self, *child_id)?,
                             _ => {
                                 return Err(SbroadError::Invalid(
                                     Entity::Node,
                                     Some(format_smolstr!(
-                                        "AST drop table node {:?} contains unexpected children",
-                                        child_node,
+                                        "ACL node contains unexpected child: {child_node:?}",
                                     )),
                                 ));
                             }
                         }
                     }
-                    let drop_table = DropTable {
-                        name: table_name,
+                    let name = name.expect("RoleName expected under DropRole node");
+                    let drop_role = DropRole {
+                        name,
+                        if_exists,
                         timeout,
                     };
+
+                    let plan_id = plan.nodes.push(drop_role.into());
+                    map.add(id, plan_id);
+                }
+                Rule::DropTable => {
+                    let drop_table = parse_drop_table(self, node)?;
                     let plan_id = plan.nodes.push(drop_table.into());
                     map.add(id, plan_id);
                 }
@@ -4323,28 +4369,19 @@ impl AbstractSyntaxTree {
                     map.add(id, plan_id);
                 }
                 Rule::CreateUser => {
-                    let mut iter = node.children.iter();
-                    let user_name_node_id = iter.next().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::ParseNode,
-                            Some(SmolStr::from("RoleName expected as a first child")),
-                        )
-                    })?;
-                    let user_name = parse_identifier(self, *user_name_node_id)?;
-
-                    let pwd_node_id = iter.next().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::ParseNode,
-                            Some(SmolStr::from("Password expected as a second child")),
-                        )
-                    })?;
-                    let password = parse_string_literal(self, *pwd_node_id)?;
-
+                    let mut name = None;
+                    let mut password = None;
+                    let mut if_not_exists = DEFAULT_IF_NOT_EXISTS;
                     let mut timeout = get_default_timeout();
                     let mut auth_method = get_default_auth_method();
-                    for child_id in iter {
+                    for child_id in &node.children {
                         let child_node = self.nodes.get_node(*child_id)?;
                         match child_node.rule {
+                            Rule::Identifier => name = Some(parse_identifier(self, *child_id)?),
+                            Rule::SingleQuotedString => {
+                                password = Some(parse_string_literal(self, *child_id)?);
+                            }
+                            Rule::IfNotExists => if_not_exists = true,
                             Rule::Timeout => {
                                 timeout = get_timeout(self, *child_id)?;
                             }
@@ -4369,48 +4406,76 @@ impl AbstractSyntaxTree {
                         }
                     }
 
+                    let name = name.expect("username expected as a child");
+                    let password = password.expect("password expected as a child");
                     let create_user = CreateUser {
-                        name: user_name,
+                        name,
                         password,
+                        if_not_exists,
                         auth_method,
                         timeout,
                     };
+
                     let plan_id = plan.nodes.push(create_user.into());
                     map.add(id, plan_id);
                 }
                 Rule::DropUser => {
-                    let user_name_id = node
-                        .children
-                        .first()
-                        .expect("RoleName expected under DropUser node");
-                    let user_name = parse_identifier(self, *user_name_id)?;
-
+                    let mut name = None;
                     let mut timeout = get_default_timeout();
-                    if let Some(timeout_child_id) = node.children.get(1) {
-                        timeout = get_timeout(self, *timeout_child_id)?;
+                    let mut if_exists = DEFAULT_IF_EXISTS;
+                    for child_id in &node.children {
+                        let child_node = self.nodes.get_node(*child_id)?;
+                        match child_node.rule {
+                            Rule::Identifier => name = Some(parse_identifier(self, *child_id)?),
+                            Rule::IfExists => if_exists = true,
+                            Rule::Timeout => timeout = get_timeout(self, *child_id)?,
+                            _ => {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Node,
+                                    Some(format_smolstr!(
+                                        "ACL node contains unexpected child: {child_node:?}",
+                                    )),
+                                ));
+                            }
+                        }
                     }
+                    let name = name.expect("RoleName expected under DropUser node");
                     let drop_user = DropUser {
-                        name: user_name,
+                        name,
+                        if_exists,
                         timeout,
                     };
                     let plan_id = plan.nodes.push(drop_user.into());
                     map.add(id, plan_id);
                 }
                 Rule::CreateRole => {
-                    let role_name_id = node
-                        .children
-                        .first()
-                        .expect("RoleName expected under CreateRole node");
-                    let role_name = parse_identifier(self, *role_name_id)?;
-
+                    let mut name = None;
+                    let mut if_not_exists = DEFAULT_IF_NOT_EXISTS;
                     let mut timeout = get_default_timeout();
-                    if let Some(timeout_child_id) = node.children.get(1) {
-                        timeout = get_timeout(self, *timeout_child_id)?;
+                    for child_id in &node.children {
+                        let child_node = self.nodes.get_node(*child_id)?;
+                        match child_node.rule {
+                            Rule::Identifier => name = Some(parse_identifier(self, *child_id)?),
+                            Rule::IfNotExists => if_not_exists = true,
+                            Rule::Timeout => timeout = get_timeout(self, *child_id)?,
+                            _ => {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Node,
+                                    Some(format_smolstr!(
+                                        "ACL node contains unexpected child: {child_node:?}",
+                                    )),
+                                ));
+                            }
+                        }
                     }
+
+                    let name = name.expect("RoleName expected under CreateRole node");
                     let create_role = CreateRole {
-                        name: role_name,
+                        name,
+                        if_not_exists,
                         timeout,
                     };
+
                     let plan_id = plan.nodes.push(create_role.into());
                     map.add(id, plan_id);
                 }

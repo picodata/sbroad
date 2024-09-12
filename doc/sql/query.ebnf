@@ -129,7 +129,7 @@ alter_system ::= 'ALTER' 'SYSTEM'
                   ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 alter_procedure ::= 'ALTER' 'PROCEDURE' procedure ('(' type (',' type)* ')')?
                      'RENAME' 'TO' procedure ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' index 'ON' table
+create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' ('IF' 'NOT' 'EXISTS')? index 'ON' table
                  ('USING' ('TREE' | 'HASH' | 'RTREE' | 'BITSET'))?
                  '(' column (',' column)* ')' ('WITH' '('
                      (
@@ -156,13 +156,13 @@ create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' index 'ON' table
                          )
                      )*
                  ')')? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-create_procedure ::= 'CREATE' 'PROCEDURE' procedure '(' type (',' type)* ')'
+create_procedure ::= 'CREATE' 'PROCEDURE' ('IF' 'NOT' 'EXISTS')? procedure '(' type (',' type)* ')'
                      ('LANGUAGE' 'SQL')? (
                          ('AS' '$$' (insert | update | delete) '$$')
                          | ('BEGIN' 'ATOMIC' (insert | update | delete) 'END')
                      ) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-create_role    ::= 'CREATE' 'ROLE' role
-create_table   ::= 'CREATE' 'TABLE' table
+create_role    ::= 'CREATE' 'ROLE' ('IF' 'NOT' 'EXISTS')? role
+create_table   ::= 'CREATE' 'TABLE' ('IF' 'NOT' 'EXISTS')? table
                    '('
                        column type ('NOT'? 'NULL')? ('PRIMARY' 'KEY')? (',' column type ('NOT'? 'NULL')? ('PRIMARY' 'KEY')?)*
                        (',' 'PRIMARY' 'KEY' '(' column (',' column)* ')')?
@@ -170,7 +170,7 @@ create_table   ::= 'CREATE' 'TABLE' table
                    ('USING' ('MEMTX' | 'VINYL'))?
                    (('DISTRIBUTED' (('BY' '(' column (',' column)* ')' ('IN' 'TIER' tier)?) | 'GLOBALLY'))?)?
                    ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-create_user    ::= 'CREATE' 'USER' user 'WITH'? 'PASSWORD' "'" password "'"
+create_user    ::= 'CREATE' 'USER' ('IF' 'NOT' 'EXISTS')? user 'WITH'? 'PASSWORD' "'" password "'"
                    ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))?
 alter_user     ::= 'ALTER' 'USER' user
                    'WITH'? (
@@ -179,11 +179,11 @@ alter_user     ::= 'ALTER' 'USER' user
                        | 'PASSWORD' "'" password "'" ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))?
                        | 'RENAME' 'TO' user
                    )
-drop_index     ::= 'DROP' 'INDEX' index ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-drop_procedure ::= 'DROP' 'PROCEDURE' procedure ('(' type (',' type)* ')')? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-drop_table     ::= 'DROP' 'TABLE' table ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-drop_role      ::= 'DROP' 'ROLE' role
-drop_user      ::= 'DROP' 'USER' user
+drop_index     ::= 'DROP' 'INDEX' ('IF' 'EXISTS')? index ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_procedure ::= 'DROP' 'PROCEDURE' ('IF' 'EXISTS')? procedure ('(' type (',' type)* ')')? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_table     ::= 'DROP' 'TABLE' ('IF' 'EXISTS')? table ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_role      ::= 'DROP' 'ROLE' ('IF' 'EXISTS')? role
+drop_user      ::= 'DROP' 'USER' ('IF' 'EXISTS')? user
 create_plugin  ::= 'CREATE' 'PLUGIN' ('IF' 'NOT' 'EXISTS')? plugin version
                     ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 drop_plugin    ::= 'DROP' 'PLUGIN' ('IF' 'EXISTS')? plugin version ('WITH' 'DATA')?
