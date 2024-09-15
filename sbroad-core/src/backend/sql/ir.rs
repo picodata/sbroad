@@ -8,6 +8,7 @@ use crate::ir::node::{
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::traversal::{LevelNode, PostOrderWithFilter};
+use ahash::AHashSet;
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
 use smol_str::format_smolstr;
@@ -165,7 +166,15 @@ impl ExecutionPlan {
     pub fn to_params(&self) -> Result<Vec<Value>, SbroadError> {
         let plan = self.get_ir_plan();
         let capacity = plan.nodes.len();
-        let filter = |id: NodeId| -> bool { matches!(plan.get_node(id), Ok(Node::Parameter(_))) };
+        let mut was: AHashSet<NodeId> = AHashSet::with_capacity(plan.constants.len());
+        let filter = |id: NodeId| -> bool {
+            if matches!(plan.get_node(id), Ok(Node::Parameter(_))) && !was.contains(&id) {
+                was.insert(id);
+                true
+            } else {
+                false
+            }
+        };
         let mut tree = PostOrderWithFilter::with_capacity(
             |node| plan.flashback_subtree_iter(node),
             capacity,

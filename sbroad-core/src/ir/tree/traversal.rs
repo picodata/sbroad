@@ -49,7 +49,7 @@ where
     }
 }
 
-pub type FilterFn<'filter, T> = Box<dyn Fn(T) -> bool + 'filter>;
+pub type FilterFn<'filter, T> = Box<dyn FnMut(T) -> bool + 'filter>;
 
 pub struct PostOrderWithFilter<'filter, F, I, T>
 where
