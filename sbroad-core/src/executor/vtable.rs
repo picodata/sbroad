@@ -12,7 +12,7 @@ use tarantool::tuple::TupleBuilder;
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::{TupleBuilderCommand, TupleBuilderPattern};
-use crate::executor::protocol::{msgpack_header_for_data, Binary, EncodedRows, EncodedTables};
+use crate::executor::protocol::{Binary, EncodedRows, EncodedTables};
 use crate::executor::{bucket::Buckets, Vshard};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::node::NodeId;
@@ -701,10 +701,8 @@ impl ExecutionPlan {
             // Array marker (1 byte) + array length (4 bytes) + tuples.
             let data_len = 5 + marking.iter().sum::<usize>();
             assert!(data_len <= u32::MAX as usize);
-            let msgpack_header = msgpack_header_for_data(data_len as u32);
             let mut builder = TupleBuilder::rust_allocated();
-            builder.reserve(data_len + msgpack_header.len());
-            builder.append(&msgpack_header);
+            builder.reserve(data_len);
             write_vtable_as_msgpack(vtable, &mut builder);
             let Ok(tuple) = builder.into_tuple() else {
                 unreachable!("failed to build binary table")

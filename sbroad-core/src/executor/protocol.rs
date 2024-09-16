@@ -1,5 +1,5 @@
 use opentelemetry::Context;
-use rmp::decode::{read_array_len, read_str_len, Bytes, RmpRead};
+use rmp::decode::{read_array_len, Bytes, RmpRead};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
 use std::collections::HashMap;
@@ -79,7 +79,7 @@ where
     Ok(tuple)
 }
 
-pub fn msgpack_header_for_data(data_len: u32) -> [u8; 6] {
+fn msgpack_header_for_data(data_len: u32) -> [u8; 6] {
     let mut msgpack_header = [0_u8; 6];
     // array of len 1
     msgpack_header[0] = b'\x91';
@@ -262,11 +262,6 @@ impl<'e> Iterator for EncodedRowsIter<'e> {
         let cur_pos = self.position;
         self.position += 1;
         if cur_pos == 0 {
-            // Array of one element wrapping a string (binary) with an array of encoded tuples.
-            let wrapper_array_len = read_array_len(&mut self.stream).expect("wrapping array");
-            assert_eq!(wrapper_array_len, 1);
-            let str_len = read_str_len(&mut self.stream).expect("string length");
-            assert_eq!(str_len as usize, self.stream.remaining_slice().len());
             let array_len = read_array_len(&mut self.stream).expect("encoded rows length");
             assert_eq!(array_len as usize, self.marking.len());
         }
