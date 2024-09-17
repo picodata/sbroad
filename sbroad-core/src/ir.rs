@@ -7,7 +7,7 @@ use node::block::{Block, MutBlock};
 use node::ddl::{Ddl, MutDdl};
 use node::expression::{Expression, MutExpression};
 use node::relational::{MutRelational, Relational};
-use node::{Invalid, NodeAligned, Parameter};
+use node::{Invalid, NodeAligned};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::cell::{RefCell, RefMut};
@@ -105,6 +105,7 @@ impl Nodes {
             }),
             ArenaType::Arena64 => self.arena64.get(id.offset as usize).map(|node| match node {
                 Node64::Case(case) => Node::Expression(Expression::Case(case)),
+                Node64::Invalid(invalid) => Node::Invalid(invalid),
                 Node64::Constant(constant) => Node::Expression(Expression::Constant(constant)),
                 Node64::CreateRole(create_role) => Node::Acl(Acl::CreateRole(create_role)),
                 Node64::Delete(delete) => Node::Relational(Relational::Delete(delete)),
@@ -228,6 +229,7 @@ impl Nodes {
                 .get_mut(id.offset as usize)
                 .map(|node| match node {
                     Node64::Case(case) => MutNode::Expression(MutExpression::Case(case)),
+                    Node64::Invalid(invalid) => MutNode::Invalid(invalid),
                     Node64::Constant(constant) => {
                         MutNode::Expression(MutExpression::Constant(constant))
                     }
@@ -845,7 +847,7 @@ impl Plan {
                     .arena64
                     .get_mut(usize::try_from(dst_id.offset).unwrap())
                     .unwrap();
-                let stub = Node64::Parameter(Parameter { param_type: None });
+                let stub = Node64::Invalid(Invalid {});
                 let node64 = std::mem::replace(node64, stub);
                 node64.into_owned()
             }

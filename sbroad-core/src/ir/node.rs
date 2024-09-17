@@ -1063,6 +1063,7 @@ pub enum Node64 {
     GroupBy(GroupBy),
     SetParam(SetParam),
     SetTransaction(SetTransaction),
+    Invalid(Invalid),
 }
 
 impl Node64 {
@@ -1070,6 +1071,7 @@ impl Node64 {
     pub fn into_owned(self) -> NodeOwned {
         match self {
             Node64::Case(case) => NodeOwned::Expression(ExprOwned::Case(case)),
+            Node64::Invalid(invalid) => NodeOwned::Invalid(invalid),
             Node64::Constant(constant) => NodeOwned::Expression(ExprOwned::Constant(constant)),
             Node64::CreateRole(create_role) => NodeOwned::Acl(AclOwned::CreateRole(create_role)),
             Node64::Delete(delete) => NodeOwned::Relational(RelOwned::Delete(delete)),
@@ -1214,6 +1216,7 @@ impl Node224 {
 }
 
 #[allow(clippy::module_name_repetitions)]
+#[derive(Debug)]
 pub enum NodeAligned {
     Node32(Node32),
     Node64(Node64),
@@ -1279,7 +1282,7 @@ pub enum MutNode<'nodes> {
 
 impl Node<'_> {
     #[must_use]
-    pub fn get_common_node(self) -> NodeOwned {
+    pub fn into_owned(self) -> NodeOwned {
         match self {
             Node::Expression(expr) => NodeOwned::Expression(expr.get_expr_owned()),
             Node::Relational(rel) => NodeOwned::Relational(rel.get_rel_owned()),
