@@ -441,6 +441,30 @@ impl ExecutionPlan {
             }
         }
 
+        // TODO: See note in `add_local_projection` function about SubQueries
+        //       to understand why we don't want to replace SubQueries with stubs sometimes.
+        //       The reason is that several relational nodes may point to it as a child.
+        let sqs = nodes
+            .iter()
+            .map(|LevelNode(_, id)| *id)
+            .filter(|id| {
+                matches!(
+                    plan.get_node(*id),
+                    Ok(Node::Relational(Relational::ScanSubQuery(_)))
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut sq_ids: AHashSet<NodeId> = AHashSet::new();
+        for sq_id in sqs {
+            let mut sq_subtree = PostOrder::with_capacity(
+                |node| plan.exec_plan_subtree_iter(node),
+                plan.nodes.len(),
+            );
+            for LevelNode(_, id) in sq_subtree.iter(sq_id) {
+                sq_ids.insert(id);
+            }
+        }
+
         let mut subtree_map = SubtreeMap::with_capacity(nodes.len());
         let vtables_capacity = self.get_vtables().map_or_else(|| 1, HashMap::len);
         // Map of { plan node_id -> virtual table }.
@@ -465,8 +489,9 @@ impl ExecutionPlan {
             let mut_plan = self.get_mut_ir_plan();
 
             // Replace the node with some invalid value.
-            let mut node: NodeOwned = if cte_ids.contains(&node_id) {
-                mut_plan.get_node(node_id)?.get_common_node()
+            let node = mut_plan.get_node(node_id)?;
+            let mut node: NodeOwned = if cte_ids.contains(&node_id) || sq_ids.contains(&node_id) {
+                node.into_owned()
             } else {
                 mut_plan.replace_with_stub(node_id)
             };

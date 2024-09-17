@@ -1084,6 +1084,14 @@ impl Plan {
             if matches!(rel_node, Relational::ScanSubQuery { .. })
                 && self.is_additional_child(ref_rel_node_id)?
             {
+                // Note: For queries like `select sum((VALUES (1))) from t` it may be a problem
+                //       that we don't make a copy of a SubQuery node, but just copy its id so that
+                //       several Relational node consider it to be a child.
+                //       It may be a problem on a `take_subtree` call for the query above:
+                //       * `take_subtree` will replace SQ with Invalid while traversing Local(Map)
+                //         stage
+                //       * Later Final(Reduce) stage won't see the SubQuery.
+                // TODO: Solution would be to use `SubtreeCloner::clone`?
                 children.push(ref_rel_node_id);
             }
         }
