@@ -1445,6 +1445,34 @@ fn subtree_hash2() {
     );
 }
 
+#[test]
+fn check_parentheses() {
+    let query = r#"SELECT "id" from "test_space" WHERE "sysFrom" = ((1) < (3)) + 2"#;
+
+    let mut rt = RouterRuntimeMock::new();
+    let mut query = Query::new(&mut rt, query, vec![]).unwrap();
+    let plan = query.get_exec_plan().get_ir_plan();
+    let top_id = plan.get_top().unwrap();
+
+    let expected = PatternWithParams::new(
+        format!(
+            "{}",
+            r#"SELECT "test_space"."id" FROM "test_space" WHERE ("test_space"."sysFrom") = ((?) < (?)) + (?)"#,
+        ),
+        vec![Value::from(1_u64), Value::from(3_u64), Value::from(2_u64)],
+    );
+
+    assert_eq!(
+        expected,
+        get_sql_from_execution_plan(
+            query.get_mut_exec_plan(),
+            top_id,
+            Snapshot::Oldest,
+            TEMPLATE
+        )
+    );
+}
+
 /* FIXME: https://git.picodata.io/picodata/picodata/sbroad/-/issues/583
 #[test]
 fn subtree_hash3() {

@@ -241,6 +241,24 @@ impl Plan {
         Ok(result)
     }
 
+    /// Unwrap expression from ExprInParentheses.
+    ///
+    /// # Errors
+    /// - Failed to find node with given id in plan.
+    pub fn unwrap_expr(&self, id: NodeId) -> Result<Expression<'_>, SbroadError> {
+        let mut bool_id = id;
+
+        loop {
+            let node = self.get_expression_node(bool_id)?;
+            if let Expression::ExprInParentheses(ExprInParentheses { child }) = node {
+                bool_id = *child;
+                continue;
+            }
+
+            break Ok(node);
+        }
+    }
+
     /// Convert an expression tree of trivalent nodes to a disjunctive normal form (DNF).
     ///
     /// # Errors

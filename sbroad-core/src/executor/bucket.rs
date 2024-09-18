@@ -99,7 +99,7 @@ where
         let mut buckets: Vec<Buckets> = vec![];
         let ir_plan = self.exec_plan.get_ir_plan();
         let tier = self.exec_plan.get_ir_plan().tier.as_ref();
-        let expr = ir_plan.get_expression_node(expr_id)?;
+        let expr = ir_plan.unwrap_expr(expr_id)?;
 
         // Try to collect buckets from expression of type `sharding_key = value`
         if let Expression::Bool(BoolExpr {
@@ -111,12 +111,12 @@ where
         {
             let pairs = vec![(*left, *right), (*right, *left)];
             for (left_id, right_id) in pairs {
-                let left_expr = ir_plan.get_expression_node(left_id)?;
+                let left_expr = ir_plan.unwrap_expr(left_id)?;
                 if !matches!(left_expr, Expression::Row(_)) {
                     continue;
                 }
 
-                let right_expr = ir_plan.get_expression_node(right_id)?;
+                let right_expr = ir_plan.unwrap_expr(right_id)?;
                 let right_columns = if let Expression::Row(Row { list, .. }) = right_expr {
                     list.clone()
                 } else {
@@ -517,6 +517,7 @@ where
                             "current node should have exactly one child".to_smolstr(),
                         )
                     })?;
+
                     let child_rel = self.exec_plan.get_ir_plan().get_relation_node(*child_id)?;
                     let child_buckets = self
                         .bucket_map
@@ -531,6 +532,7 @@ where
                         .clone();
                     let output_id = *output;
                     let filter_id = *filter;
+
                     let filter_buckets = self.get_expression_tree_buckets(filter_id, children)?;
                     self.bucket_map
                         .insert(output_id, child_buckets.conjuct(&filter_buckets)?);

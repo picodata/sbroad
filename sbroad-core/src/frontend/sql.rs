@@ -1853,27 +1853,7 @@ impl ParseExpression {
             }
             ParseExpression::Parentheses { child } => {
                 let child_plan_id = child.populate_plan(plan, worker)?;
-
-                let child_expr = plan.get_node(child_plan_id)?;
-                if let Node::Expression(Expression::Bool(BoolExpr { op, .. })) = child_expr {
-                    // We don't want simple infix comparisons to be covered with parentheses
-                    // as soon as it breaks logic of conflicts resolving which currently
-                    // work adequately only with ROWs.
-                    //
-                    // TODO: 1. Applied logic works good until we met expressions like `(1 < 2) + 3`
-                    //          that will be transformed into `1 < 2 + 3` local sql
-                    //          having the semantics of `1 < (2 + 3)` that is wrong.
-                    //          We have to fix it later.
-                    //       2. Move it to `parse_expr` stage and not here.
-                    //       3. Find deepest parentheses child and not just first. The
-                    //          same thing for Parentheses -> Row transformation under In operator)
-                    match op {
-                        Bool::And | Bool::Or => plan.add_covered_with_parentheses(child_plan_id),
-                        _ => child_plan_id,
-                    }
-                } else {
-                    plan.add_covered_with_parentheses(child_plan_id)
-                }
+                plan.add_covered_with_parentheses(child_plan_id)
             }
             ParseExpression::Cast { cast_type, child } => {
                 let child_plan_id = child.populate_plan(plan, worker)?;
