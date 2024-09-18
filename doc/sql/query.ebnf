@@ -25,6 +25,7 @@ expression  ::= ('NOT'* (
                     | cast
                     | current_date
                     | like
+                    | ilike
                     | substr
                     | to_char
                     | to_date
@@ -53,7 +54,8 @@ case        ::= 'CASE' expression?
                 ('WHEN' expression 'THEN' expression)+
                 ('ELSE' expression)? 'END'
 cast        ::= 'CAST' '(' expression 'AS' type ')' | expression '::' type
-like        ::= expression 'LIKE' expression ('ESCAPE' expression)?
+like        ::= (expression 'LIKE' expression ('ESCAPE' expression)?)
+ilike        ::= (expression 'ILIKE' expression ('ESCAPE' expression)?)
 to_char     ::= 'TO_CHAR' '(' expression ',' format ')'
 to_date     ::= 'TO_DATE' '(' expression ',' format ')'
 trim        ::= 'TRIM' '('

@@ -3931,6 +3931,8 @@ mod cte;
 #[cfg(test)]
 mod ddl;
 #[cfg(test)]
+mod funcs;
+#[cfg(test)]
 mod global;
 #[cfg(test)]
 mod insert;

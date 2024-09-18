@@ -285,7 +285,7 @@ EmptyQuery = { WHITESPACE* }
 
 Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
     ExprInfixOp = _{ Like | Escape | Between | ArithInfixOp | CmpInfixOp | ConcatInfixOp | And | Or }
-        Like = { ^"like" }
+        Like = { ^"like" | ^"ilike" }
         Escape = { ^"escape" }
         Between       = { NotFlag? ~ ^"between" }
         And           = { ^"and" }

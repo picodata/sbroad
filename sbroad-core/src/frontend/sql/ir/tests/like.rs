@@ -145,3 +145,25 @@ vtable_max_rows = 5000
 
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
+
+#[test]
+fn ilike_explain() {
+    let input = r#"select a ilike a escape 'x' from t1 group by a ilike a escape 'x'"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("column_332"::boolean -> "col_1")
+    group by ("column_332"::boolean) output: ("column_332"::boolean -> "column_332")
+        motion [policy: segment([ref("column_332")])]
+            projection (ROW(lower(("t1"."a"::string))::string) LIKE ROW(lower(("t1"."a"::string))::string) ESCAPE ROW('x'::string) -> "column_332")
+                group by (ROW(lower(("t1"."a"::string))::string) LIKE ROW(lower(("t1"."a"::string))::string) ESCAPE ROW('x'::string)) output: ("t1"."a"::string -> "a", "t1"."bucket_id"::unsigned -> "bucket_id", "t1"."b"::integer -> "b")
+                    scan "t1"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}

@@ -743,6 +743,9 @@ g.test_like_works = function ()
         and (select name from testing_space) like (select name from testing_space)
         and '_' like '\_'
         and '%' like '\%'
+        and 'aBa' ilike 'aba'
+        and 'B' || 'b' ilike 'b' || 'B'
+        and '_' ilike '\_' escape '\'
     ]] })
 
     t.assert_equals(err, nil)

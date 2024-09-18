@@ -1687,6 +1687,7 @@ enum ParseExpression {
         left: Box<ParseExpression>,
         right: Box<ParseExpression>,
         escape: Option<Box<ParseExpression>>,
+        is_ilike: bool,
     },
     Row {
         children: Vec<ParseExpression>,
@@ -1924,12 +1925,13 @@ impl ParseExpression {
                 left,
                 right,
                 escape,
+                is_ilike,
             } => {
-                let plan_left_id = left.populate_plan(plan, worker)?;
-                let left_covered_with_row = plan.row(plan_left_id)?;
+                let mut plan_left_id = left.populate_plan(plan, worker)?;
+                let mut left_covered_with_row = plan.row(plan_left_id)?;
 
-                let plan_right_id = right.populate_plan(plan, worker)?;
-                let right_covered_with_row = plan.row(plan_right_id)?;
+                let mut plan_right_id = right.populate_plan(plan, worker)?;
+                let mut right_covered_with_row = plan.row(plan_right_id)?;
 
                 let escape_covered_with_row = if let Some(escape) = escape {
                     let plan_escape_id = escape.populate_plan(plan, worker)?;
@@ -1937,6 +1939,15 @@ impl ParseExpression {
                 } else {
                     None
                 };
+                if *is_ilike {
+                    let lower_func = worker.metadata.function("lower")?;
+                    plan_left_id =
+                        plan.add_stable_function(lower_func, vec![plan_left_id], None)?;
+                    left_covered_with_row = plan.row(plan_left_id)?;
+                    plan_right_id =
+                        plan.add_stable_function(lower_func, vec![plan_right_id], None)?;
+                    right_covered_with_row = plan.row(plan_right_id)?;
+                }
                 plan.add_like(
                     left_covered_with_row,
                     right_covered_with_row,
@@ -2657,10 +2668,12 @@ where
                 Rule::And => ParseExpressionInfixOperator::InfixBool(Bool::And),
                 Rule::Or => ParseExpressionInfixOperator::InfixBool(Bool::Or),
                 Rule::Like => {
+                    let is_ilike = op.as_str().contains("ilike");
                     return Ok(ParseExpression::Like {
                         left: Box::new(lhs),
                         right: Box::new(rhs),
-                        escape: None
+                        escape: None,
+                        is_ilike
                     })
                 },
                 Rule::Between => {
