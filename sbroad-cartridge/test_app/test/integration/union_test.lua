@@ -103,6 +103,39 @@ union_queries.after_all(function()
     helper.stop_test_cluster()
 end)
 
+
+union_queries.after_test('test_union_under_insert', function()
+    local storage1 = cluster:server("storage-1-1").net_box
+    storage1:call("box.execute", { [[TRUNCATE TABLE t]] })
+    local storage2 = cluster:server("storage-2-1").net_box
+    storage2:call("box.execute", { [[TRUNCATE TABLE t]] })
+end)
+
+union_queries.test_union_under_insert = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        insert into t
+        select id, a from arithmetic_space
+        union
+        select id, a from arithmetic_space
+        union
+        select id, a from arithmetic_space
+]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count=4})
+
+    r, err = api:call("sbroad.execute", { [[
+        insert into t
+        select * from (values (100, 200))
+        union
+        select * from (values (100, 200), (200, 100))
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count=2})
+end
+
+
 union_queries.test_union_removes_duplicates = function()
     local api = cluster:server("api-1").net_box
 

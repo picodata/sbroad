@@ -113,3 +113,63 @@ vtable_max_rows = 5000
 
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
+
+#[test]
+fn union_under_insert() {
+    let input = r#"
+    insert into t2
+    select e, f, 1, 1 from t2
+    union
+    select f, e, 2, 2 from t2
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"insert "t2" on conflict: fail
+    motion [policy: segment([ref("e"), ref("f")])]
+        union
+            projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", 1::unsigned -> "col_1", 1::unsigned -> "col_2")
+                scan "t2"
+            projection ("t2"."f"::unsigned -> "f", "t2"."e"::unsigned -> "e", 2::unsigned -> "col_1", 2::unsigned -> "col_2")
+                scan "t2"
+execution options:
+vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn union_under_insert1() {
+    let input = r#"
+    insert into "TBL"
+    select * from (values (1, 1))
+    union 
+    select * from (values (2, 2))
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"insert "TBL" on conflict: fail
+    motion [policy: segment([ref("COLUMN_1"), ref("COLUMN_2")])]
+        union
+            projection ("COLUMN_1"::unsigned -> "COLUMN_1", "COLUMN_2"::unsigned -> "COLUMN_2")
+                scan
+                    values
+                        value row (data=ROW(1::unsigned, 1::unsigned))
+            projection ("COLUMN_3"::unsigned -> "COLUMN_3", "COLUMN_4"::unsigned -> "COLUMN_4")
+                scan
+                    values
+                        value row (data=ROW(2::unsigned, 2::unsigned))
+execution options:
+vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}

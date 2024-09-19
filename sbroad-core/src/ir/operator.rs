@@ -26,7 +26,7 @@ use crate::errors::{Action, Entity, SbroadError};
 
 use super::expression::{ColumnPositionMap, ExpressionId};
 use super::node::expression::{Expression, MutExpression};
-use super::node::relational::Relational;
+use super::node::relational::{MutRelational, Relational};
 use super::node::{ArenaType, Limit, Node, NodeAligned};
 use super::transformation::redistribution::{MotionPolicy, Program};
 use super::tree::traversal::{LevelNode, PostOrderWithFilter, EXPR_CAPACITY};
@@ -924,6 +924,19 @@ impl Plan {
             Relational::ScanCte(ScanCte { alias, .. }) => Some(alias.clone()),
             _ => None,
         };
+
+        // If child is a motion, we can squash multiple motions into one
+        let mut_child_node = self.get_mut_relation_node(child_id)?;
+        if let MutRelational::Motion(Motion {
+            policy: new_policy,
+            program: new_program,
+            ..
+        }) = mut_child_node
+        {
+            *new_policy = policy.clone();
+            new_program.0.extend_from_slice(&program.0);
+            return Ok(child_id);
+        }
 
         let output = self.add_row_for_output(child_id, &[], true, None)?;
         match policy {
