@@ -11,8 +11,8 @@ use crate::ir::node::relational::Relational;
 use crate::ir::node::{
     Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Except, ExprInParentheses, GroupBy,
     Having, Intersect, Join, Like, Limit, Motion, Node, NodeId, OrderBy, Projection, Reference,
-    ReferenceAsteriskSource, Row, ScanCte, ScanRelation, ScanSubQuery, Selection, StableFunction,
-    Trim, UnaryExpr, Union, UnionAll, Values, ValuesRow,
+    ReferenceAsteriskSource, Row, ScanCte, ScanRelation, ScanSubQuery, SelectWithoutScan,
+    Selection, StableFunction, Trim, UnaryExpr, Union, UnionAll, Values, ValuesRow,
 };
 use crate::ir::operator::{Bool, OrderByElement, OrderByEntity, OrderByType, Unary};
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
@@ -796,6 +796,7 @@ impl<'p> SyntaxPlan<'p> {
                 | Relational::UnionAll { .. }
                 | Relational::Intersect { .. } => self.add_set_rel(id),
                 Relational::ScanRelation { .. } => self.add_scan_relation(id),
+                Relational::SelectWithoutScan { .. } => self.add_select_without_scan(id),
                 Relational::Motion { .. } => self.add_motion(id),
                 Relational::ValuesRow { .. } => self.add_values_row(id),
                 Relational::Values { .. } => self.add_values(id),
@@ -1081,6 +1082,47 @@ impl<'p> SyntaxPlan<'p> {
         let child_sn_id = self.pop_from_stack(child_plan_id, id);
 
         let sn = SyntaxNode::new_pointer(id, Some(child_sn_id), children);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_select_without_scan(&mut self, id: NodeId) {
+        let (_, proj) = self.prologue_rel(id);
+        let Relational::SelectWithoutScan(SelectWithoutScan {
+            children, output, ..
+        }) = proj
+        else {
+            panic!("Expected SelectWithoutScan node");
+        };
+        let output = *output;
+
+        // We can't hold onto children, because
+        // we mutate self, so use indices
+        for child_idx in (0..children.len()).rev() {
+            let sq_id = self
+                .plan
+                .get_ir_plan()
+                .get_relational_child(id, child_idx)
+                .expect("node can't change between iters");
+            // Pop sq from the stack and do nothing with them.
+            // We've already handled them as a part of the `output`.
+            self.pop_from_stack(sq_id, id);
+        }
+
+        let row_sn_id = self.pop_from_stack(output, id);
+        let row_sn = self.nodes.get_mut_sn(row_sn_id);
+        let col_len = row_sn.right.len();
+        let mut children = Vec::with_capacity(col_len - 1);
+        // Remove the open and close parentheses.
+        for (pos, id) in row_sn.right.iter().enumerate() {
+            if pos == 0 {
+                continue;
+            }
+            if pos == col_len - 1 {
+                break;
+            }
+            children.push(*id);
+        }
+        let sn = SyntaxNode::new_pointer(id, None, children);
         self.nodes.push_sn_plan(sn);
     }
 

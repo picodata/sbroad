@@ -3248,6 +3248,182 @@ impl AbstractSyntaxTree {
         Ok(())
     }
 
+    fn parse_projection<M: Metadata>(
+        &self,
+        plan: &mut Plan,
+        node_id: usize,
+        map: &mut Translation,
+        pairs_map: &mut ParsingPairsMap,
+        worker: &mut ExpressionsWorker<M>,
+    ) -> Result<(), SbroadError> {
+        let node = self.nodes.get_node(node_id)?;
+        let (rel_child_id, other_children) = node
+            .children
+            .split_first()
+            .expect("More than one child expected under Projection");
+        let mut is_distinct: bool = false;
+        let mut ast_columns_ids = other_children;
+        let first_col_ast_id = other_children
+            .first()
+            .expect("At least one child expected under Projection");
+        if let Rule::Distinct = self.nodes.get_node(*first_col_ast_id)?.rule {
+            is_distinct = true;
+            (_, ast_columns_ids) = other_children
+                .split_first()
+                .expect("Projection must have some columns children");
+        }
+
+        let plan_rel_child_id = map.get(*rel_child_id)?;
+        let mut proj_columns: Vec<NodeId> = Vec::with_capacity(ast_columns_ids.len());
+
+        let mut unnamed_col_pos = 0;
+        // Unique identifier for each "*" met under projection. Uniqueness is local
+        // for each projection. Used to distinguish the source of asterisk projections
+        // like `select *, * from t`, where there are several of them.
+        let mut asterisk_id = 0;
+        for ast_column_id in ast_columns_ids {
+            let ast_column = self.nodes.get_node(*ast_column_id)?;
+            match ast_column.rule {
+                Rule::Column => {
+                    let expr_ast_id = ast_column
+                        .children
+                        .first()
+                        .expect("Column has no children.");
+                    let expr_pair = pairs_map.remove_pair(*expr_ast_id);
+                    let expr_plan_node_id =
+                        parse_expr(Pairs::single(expr_pair), &[plan_rel_child_id], worker, plan)?;
+
+                    let alias_name = if let Some(alias_ast_node_id) = ast_column.children.get(1) {
+                        parse_normalized_identifier(self, *alias_ast_node_id)?
+                    } else {
+                        // We don't use `get_expression_node` here, because we may encounter a `Parameter`.
+                        if let Node::Expression(Expression::Reference(_)) =
+                            plan.get_node(expr_plan_node_id)?
+                        {
+                            let (col_name, _) = worker
+                                .reference_to_name_map
+                                .get(&expr_plan_node_id)
+                                .expect("reference must be in a map");
+                            col_name.clone()
+                        } else {
+                            unnamed_col_pos += 1;
+                            get_unnamed_column_alias(unnamed_col_pos)
+                        }
+                    };
+
+                    let plan_alias_id = plan.nodes.add_alias(&alias_name, expr_plan_node_id)?;
+                    proj_columns.push(plan_alias_id);
+                }
+                Rule::Asterisk => {
+                    let table_name_id = ast_column.children.first();
+                    let plan_asterisk_id = if let Some(table_name_id) = table_name_id {
+                        let table_name = parse_normalized_identifier(self, *table_name_id)?;
+
+                        let col_name_pos_map = ColumnPositionMap::new(plan, plan_rel_child_id)?;
+                        let filtered_col_ids = col_name_pos_map.get_by_scan_name(&table_name)?;
+                        plan.add_row_by_indices(
+                            plan_rel_child_id,
+                            filtered_col_ids,
+                            false,
+                            Some(ReferenceAsteriskSource::new(Some(table_name), asterisk_id)),
+                        )?
+                    } else {
+                        plan.add_row_for_output(
+                            plan_rel_child_id,
+                            &[],
+                            false,
+                            Some(ReferenceAsteriskSource::new(None, asterisk_id)),
+                        )?
+                    };
+
+                    let row_list = plan.get_row_list(plan_asterisk_id)?;
+                    for row_id in row_list {
+                        proj_columns.push(*row_id);
+                    }
+                    asterisk_id += 1;
+                }
+                _ => {
+                    return Err(SbroadError::Invalid(
+                                    Entity::Type,
+                                    Some(format_smolstr!(
+                                        "expected a Column, Asterisk, ArithmeticExprAlias in projection, got {:?}.",
+                                        ast_column.rule
+                                    )),
+                                ));
+                }
+            }
+        }
+
+        let projection_id =
+            plan.add_proj_internal(plan_rel_child_id, &proj_columns, is_distinct)?;
+        plan.fix_subquery_rows(worker, projection_id)?;
+        map.add(node_id, projection_id);
+        Ok(())
+    }
+
+    fn parse_select_without_scan<M: Metadata>(
+        &self,
+        plan: &mut Plan,
+        node_id: usize,
+        map: &mut Translation,
+        pairs_map: &mut ParsingPairsMap,
+        worker: &mut ExpressionsWorker<M>,
+    ) -> Result<(), SbroadError> {
+        let node = self.nodes.get_node(node_id)?;
+        let ast_columns_ids = &node.children;
+        let mut proj_columns: Vec<NodeId> = Vec::with_capacity(ast_columns_ids.len());
+
+        let mut unnamed_col_pos = 0;
+        for ast_column_id in ast_columns_ids {
+            let ast_column = self.nodes.get_node(*ast_column_id)?;
+            match ast_column.rule {
+                Rule::Column => {
+                    let expr_ast_id = ast_column
+                        .children
+                        .first()
+                        .expect("Column has no children.");
+                    let expr_pair = pairs_map.remove_pair(*expr_ast_id);
+                    let expr_plan_node_id =
+                        parse_expr(Pairs::single(expr_pair), &[], worker, plan)?;
+                    let alias_name = if let Some(alias_ast_node_id) = ast_column.children.get(1) {
+                        parse_normalized_identifier(self, *alias_ast_node_id)?
+                    } else {
+                        // We don't use `get_expression_node` here, because we may encounter a `Parameter`.
+                        if let Node::Expression(Expression::Reference(_)) =
+                            plan.get_node(expr_plan_node_id)?
+                        {
+                            let (col_name, _) = worker
+                                .reference_to_name_map
+                                .get(&expr_plan_node_id)
+                                .expect("reference must be in a map");
+                            col_name.clone()
+                        } else {
+                            unnamed_col_pos += 1;
+                            get_unnamed_column_alias(unnamed_col_pos)
+                        }
+                    };
+
+                    let plan_alias_id = plan.nodes.add_alias(&alias_name, expr_plan_node_id)?;
+                    proj_columns.push(plan_alias_id);
+                }
+                _ => {
+                    return Err(SbroadError::Invalid(
+                        Entity::Type,
+                        Some(format_smolstr!(
+                            "expected a Column in SelectWithoutScan, got {:?}.",
+                            ast_column.rule
+                        )),
+                    ));
+                }
+            }
+        }
+
+        let projection_id = plan.add_select_without_scan(&proj_columns)?;
+        plan.fix_subquery_rows(worker, projection_id)?;
+        map.add(node_id, projection_id);
+        Ok(())
+    }
+
     fn parse_order_by<M: Metadata>(
         &self,
         plan: &mut Plan,
@@ -3595,119 +3771,26 @@ impl AbstractSyntaxTree {
                     parse_select_full(self, id, &mut map, &mut plan)?;
                 }
                 Rule::Projection => {
-                    let (rel_child_id, other_children) = node
-                        .children
-                        .split_first()
-                        .expect("More than one child expected under Projection");
-                    let mut is_distinct: bool = false;
-                    let mut ast_columns_ids = other_children;
-                    let first_col_ast_id = other_children
-                        .first()
-                        .expect("At least one child expected under Projection");
-                    if let Rule::Distinct = self.nodes.get_node(*first_col_ast_id)?.rule {
-                        is_distinct = true;
-                        (_, ast_columns_ids) = other_children
-                            .split_first()
-                            .expect("Projection must have some columns children");
+                    let is_without_scan = {
+                        let child_node = self.nodes.get_node(node.first_child())?;
+                        // Check that child is not relational, distinct and asterisk
+                        // variants are handled in `parser_select_without_scan`
+                        matches!(
+                            child_node.rule,
+                            Rule::Column | Rule::Asterisk | Rule::Distinct
+                        )
+                    };
+                    if is_without_scan {
+                        self.parse_select_without_scan(
+                            &mut plan,
+                            id,
+                            &mut map,
+                            pairs_map,
+                            &mut worker,
+                        )?;
+                    } else {
+                        self.parse_projection(&mut plan, id, &mut map, pairs_map, &mut worker)?;
                     }
-
-                    let plan_rel_child_id = map.get(*rel_child_id)?;
-                    let mut proj_columns: Vec<NodeId> = Vec::with_capacity(ast_columns_ids.len());
-
-                    let mut unnamed_col_pos = 0;
-                    // Unique identifier for each "*" met under projection. Uniqueness is local
-                    // for each projection. Used to distinguish the source of asterisk projections
-                    // like `select *, * from t`, where there are several of them.
-                    let mut asterisk_id = 0;
-                    for ast_column_id in ast_columns_ids {
-                        let ast_column = self.nodes.get_node(*ast_column_id)?;
-                        match ast_column.rule {
-                            Rule::Column => {
-                                let expr_ast_id = ast_column
-                                    .children
-                                    .first()
-                                    .expect("Column has no children.");
-                                let expr_pair = pairs_map.remove_pair(*expr_ast_id);
-                                let expr_plan_node_id = parse_expr(
-                                    Pairs::single(expr_pair),
-                                    &[plan_rel_child_id],
-                                    &mut worker,
-                                    &mut plan,
-                                )?;
-
-                                let alias_name =
-                                    if let Some(alias_ast_node_id) = ast_column.children.get(1) {
-                                        parse_normalized_identifier(self, *alias_ast_node_id)?
-                                    } else {
-                                        // We don't use `get_expression_node` here, because we may encounter a `Parameter`.
-                                        if let Node::Expression(Expression::Reference(_)) =
-                                            plan.get_node(expr_plan_node_id)?
-                                        {
-                                            let (col_name, _) = worker
-                                                .reference_to_name_map
-                                                .get(&expr_plan_node_id)
-                                                .expect("reference must be in a map");
-                                            col_name.clone()
-                                        } else {
-                                            unnamed_col_pos += 1;
-                                            get_unnamed_column_alias(unnamed_col_pos)
-                                        }
-                                    };
-
-                                let plan_alias_id =
-                                    plan.nodes.add_alias(&alias_name, expr_plan_node_id)?;
-                                proj_columns.push(plan_alias_id);
-                            }
-                            Rule::Asterisk => {
-                                let table_name_id = ast_column.children.first();
-                                let plan_asterisk_id = if let Some(table_name_id) = table_name_id {
-                                    let table_name =
-                                        parse_normalized_identifier(self, *table_name_id)?;
-
-                                    let col_name_pos_map =
-                                        ColumnPositionMap::new(&plan, plan_rel_child_id)?;
-                                    let filtered_col_ids =
-                                        col_name_pos_map.get_by_scan_name(&table_name)?;
-                                    plan.add_row_by_indices(
-                                        plan_rel_child_id,
-                                        filtered_col_ids,
-                                        false,
-                                        Some(ReferenceAsteriskSource::new(
-                                            Some(table_name),
-                                            asterisk_id,
-                                        )),
-                                    )?
-                                } else {
-                                    plan.add_row_for_output(
-                                        plan_rel_child_id,
-                                        &[],
-                                        false,
-                                        Some(ReferenceAsteriskSource::new(None, asterisk_id)),
-                                    )?
-                                };
-
-                                let row_list = plan.get_row_list(plan_asterisk_id)?;
-                                for row_id in row_list {
-                                    proj_columns.push(*row_id);
-                                }
-                                asterisk_id += 1;
-                            }
-                            _ => {
-                                return Err(SbroadError::Invalid(
-                                    Entity::Type,
-                                    Some(format_smolstr!(
-                                        "expected a Column, Asterisk, ArithmeticExprAlias in projection, got {:?}.",
-                                        ast_column.rule
-                                    )),
-                                ));
-                            }
-                        }
-                    }
-
-                    let projection_id =
-                        plan.add_proj_internal(plan_rel_child_id, &proj_columns, is_distinct)?;
-                    plan.fix_subquery_rows(&mut worker, projection_id)?;
-                    map.add(id, projection_id);
                 }
                 Rule::Values => {
                     let mut plan_value_row_ids: Vec<NodeId> =

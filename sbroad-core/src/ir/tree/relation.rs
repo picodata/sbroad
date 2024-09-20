@@ -75,6 +75,7 @@ fn relational_next<'nodes>(iter: &mut impl RelationalTreeIterator<'nodes>) -> Op
                 | Relational::Projection { .. }
                 | Relational::ScanSubQuery { .. }
                 | Relational::Selection { .. }
+                | Relational::SelectWithoutScan { .. }
                 | Relational::Having { .. }
                 | Relational::GroupBy { .. }
                 | Relational::OrderBy { .. }

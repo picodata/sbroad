@@ -1152,6 +1152,13 @@ impl FullExplain {
                     let p = Projection::new(ir, *output, &sq_ref_map)?;
                     Some(ExplainNode::Projection(p))
                 }
+                Relational::SelectWithoutScan(node::SelectWithoutScan {
+                    output, children, ..
+                }) => {
+                    let sq_ref_map = get_sq_ref_map(children, 0);
+                    let p = Projection::new(ir, *output, &sq_ref_map)?;
+                    Some(ExplainNode::Projection(p))
+                }
                 Relational::ScanRelation(ScanRelation {
                     relation, alias, ..
                 }) => {

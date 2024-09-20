@@ -6,8 +6,8 @@ use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::Relational;
 use crate::ir::node::{
     Delete, Except, GroupBy, Having, Insert, Intersect, Join, Limit, Motion, NodeId, OrderBy,
-    Projection, Row, ScanCte, ScanRelation, ScanSubQuery, Selection, StableFunction, Union,
-    UnionAll, Update, Values, ValuesRow,
+    Projection, Row, ScanCte, ScanRelation, ScanSubQuery, SelectWithoutScan, Selection,
+    StableFunction, Union, UnionAll, Update, Values, ValuesRow,
 };
 use crate::ir::operator::{OrderByElement, OrderByEntity};
 use crate::ir::{Node, Nodes, Plan};
@@ -417,6 +417,9 @@ fn subtree_next<'plan>(
                     output, children, ..
                 })
                 | Relational::Update(Update {
+                    output, children, ..
+                })
+                | Relational::SelectWithoutScan(SelectWithoutScan {
                     output, children, ..
                 })
                 | Relational::Projection(Projection {

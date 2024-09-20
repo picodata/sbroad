@@ -203,11 +203,11 @@ Query = { (SelectFull | Values | Insert | Update | Delete) ~ DqlOption? }
             ~ "(" ~ (SelectStatement | Values) ~ ")" }
     CteColumn = @{ Identifier }
     Select = {
-        ^"select" ~ Projection ~ ^"from" ~ Scan ~
+        ^"select" ~ Projection ~ (^"from" ~ Scan ~
         Join* ~ WhereClause? ~
         (^"group" ~ ^"by" ~ GroupBy)? ~
         (^"having" ~ Having)? ~
-        (^"order" ~ ^"by" ~ OrderBy)?
+        (^"order" ~ ^"by" ~ OrderBy)?)?
     }
     Projection = { Distinct? ~ ProjectionElement ~ ("," ~ ProjectionElement)* }
         ProjectionElement = _{ Asterisk | Column }

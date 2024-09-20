@@ -77,3 +77,18 @@ fn projection2_oldest() {
     );
     check_sql_with_snapshot(query, vec![], expected, Snapshot::Oldest);
 }
+
+#[test]
+fn select_without_scan() {
+    let query = r#"SELECT 1 as foo, (values (1)), (select a from global_t)"#;
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {} {}",
+            r#"SELECT ? as "foo","#,
+            r#"(VALUES (?)) as "col_1","#,
+            r#"(SELECT "global_t"."a" FROM "global_t") as "col_2""#,
+        ),
+        vec![Value::from(1_u64), Value::from(1_u64)],
+    );
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Oldest);
+}

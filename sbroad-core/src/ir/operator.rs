@@ -27,7 +27,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use super::expression::{ColumnPositionMap, ExpressionId};
 use super::node::expression::{Expression, MutExpression};
 use super::node::relational::{MutRelational, Relational};
-use super::node::{ArenaType, Limit, Node, NodeAligned};
+use super::node::{ArenaType, Limit, Node, NodeAligned, SelectWithoutScan};
 use super::transformation::redistribution::{MotionPolicy, Program};
 use super::tree::traversal::{LevelNode, PostOrderWithFilter, EXPR_CAPACITY};
 use crate::ir::distribution::{Distribution, Key, KeySet};
@@ -1028,6 +1028,23 @@ impl Plan {
         Ok(proj_id)
     }
 
+    /// Adds projection node (use a list of expressions instead of alias names).
+    ///
+    /// # Errors
+    /// - child node is not relational
+    /// - child output tuple is invalid
+    /// - columns are not aliases or have duplicate names
+    pub fn add_select_without_scan(&mut self, columns: &[NodeId]) -> Result<NodeId, SbroadError> {
+        let output = self.nodes.add_row(columns.to_vec(), None);
+        let sel = SelectWithoutScan {
+            children: vec![],
+            output,
+        };
+
+        let sel_id = self.add_relational(sel.into())?;
+        Ok(sel_id)
+    }
+
     /// Adds `Select` node.
     ///
     /// # Errors
@@ -1511,7 +1528,7 @@ impl Plan {
             | Relational::Projection { .. }
             | Relational::GroupBy { .. }
             | Relational::OrderBy { .. } => 1,
-            Relational::ValuesRow { .. } => 0,
+            Relational::ValuesRow { .. } | Relational::SelectWithoutScan { .. } => 0,
             _ => return Ok(None),
         };
         Ok(Some(len))
@@ -1696,6 +1713,7 @@ impl Plan {
                 alias, relation, ..
             }) => Ok(alias.as_deref().or(Some(relation.as_str()))),
             Relational::Projection { .. }
+            | Relational::SelectWithoutScan { .. }
             | Relational::GroupBy { .. }
             | Relational::OrderBy { .. }
             | Relational::Intersect { .. }
@@ -1830,6 +1848,7 @@ impl Plan {
             | Relational::Projection(Projection { children, .. })
             | Relational::ScanSubQuery(ScanSubQuery { children, .. })
             | Relational::Selection(Selection { children, .. })
+            | Relational::SelectWithoutScan(SelectWithoutScan { children, .. })
             | Relational::ValuesRow(ValuesRow { children, .. })
             | Relational::Values(Values { children, .. }) => Children::Many(children),
             Relational::ScanRelation(_) => Children::None,

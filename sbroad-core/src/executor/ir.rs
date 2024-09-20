@@ -305,6 +305,7 @@ impl ExecutionPlan {
             | Relational::Projection { .. }
             | Relational::ScanRelation { .. }
             | Relational::Selection { .. }
+            | Relational::SelectWithoutScan { .. }
             | Relational::Union { .. }
             | Relational::UnionAll { .. }
             | Relational::Update { .. }
@@ -637,6 +638,7 @@ impl ExecutionPlan {
                         RelOwned::Except { .. }
                         | RelOwned::Intersect { .. }
                         | RelOwned::Projection { .. }
+                        | RelOwned::SelectWithoutScan { .. }
                         | RelOwned::ScanSubQuery { .. }
                         | RelOwned::ScanCte { .. }
                         | RelOwned::Union { .. }
@@ -734,7 +736,8 @@ impl ExecutionPlan {
                             | RelOwned::Except(_)
                             | RelOwned::Values(_)
                             | RelOwned::Intersect(_)
-                            | RelOwned::Limit(_) => ArenaType::Arena32,
+                            | RelOwned::Limit(_)
+                            | RelOwned::SelectWithoutScan(_) => ArenaType::Arena32,
                             RelOwned::ScanCte(_)
                             | RelOwned::Selection(_)
                             | RelOwned::Having(_)

@@ -8,8 +8,8 @@ use crate::{
 
 use super::{
     Delete, Except, GroupBy, Having, Insert, Intersect, Join, Limit, Motion, NodeAligned, NodeId,
-    OrderBy, Projection, ScanCte, ScanRelation, ScanSubQuery, Selection, Union, UnionAll, Update,
-    Values, ValuesRow,
+    OrderBy, Projection, ScanCte, ScanRelation, ScanSubQuery, SelectWithoutScan, Selection, Union,
+    UnionAll, Update, Values, ValuesRow,
 };
 
 #[allow(clippy::module_name_repetitions)]
@@ -28,6 +28,7 @@ pub enum RelOwned {
     ScanRelation(ScanRelation),
     ScanSubQuery(ScanSubQuery),
     Selection(Selection),
+    SelectWithoutScan(SelectWithoutScan),
     GroupBy(GroupBy),
     Having(Having),
     OrderBy(OrderBy),
@@ -55,6 +56,7 @@ impl From<RelOwned> for NodeAligned {
             RelOwned::ScanRelation(scan_rel) => scan_rel.into(),
             RelOwned::ScanSubQuery(scan_squery) => scan_squery.into(),
             RelOwned::Selection(selection) => selection.into(),
+            RelOwned::SelectWithoutScan(select) => select.into(),
             RelOwned::Union(un) => un.into(),
             RelOwned::UnionAll(union_all) => union_all.into(),
             RelOwned::Update(update) => update.into(),
@@ -100,6 +102,10 @@ impl RelOwned {
                 ..
             })
             | RelOwned::Selection(Selection {
+                children: ref mut old,
+                ..
+            })
+            | RelOwned::SelectWithoutScan(SelectWithoutScan {
                 children: ref mut old,
                 ..
             })
@@ -177,6 +183,7 @@ impl RelOwned {
             | RelOwned::Projection(Projection { children, .. })
             | RelOwned::ScanSubQuery(ScanSubQuery { children, .. })
             | RelOwned::Selection(Selection { children, .. })
+            | RelOwned::SelectWithoutScan(SelectWithoutScan { children, .. })
             | RelOwned::ValuesRow(ValuesRow { children, .. })
             | RelOwned::Values(Values { children, .. }) => Children::Many(children),
             RelOwned::ScanRelation(_) => Children::None,
@@ -241,6 +248,9 @@ impl RelOwned {
             | RelOwned::Selection(Selection {
                 ref mut children, ..
             })
+            | RelOwned::SelectWithoutScan(SelectWithoutScan {
+                ref mut children, ..
+            })
             | RelOwned::ValuesRow(ValuesRow {
                 ref mut children, ..
             })
@@ -271,6 +281,7 @@ impl RelOwned {
             | RelOwned::ScanRelation(ScanRelation { output, .. })
             | RelOwned::ScanSubQuery(ScanSubQuery { output, .. })
             | RelOwned::Selection(Selection { output, .. })
+            | RelOwned::SelectWithoutScan(SelectWithoutScan { output, .. })
             | RelOwned::Union(Union { output, .. })
             | RelOwned::UnionAll(UnionAll { output, .. })
             | RelOwned::Values(Values { output, .. })
@@ -299,6 +310,7 @@ pub enum Relational<'a> {
     ScanRelation(&'a ScanRelation),
     ScanSubQuery(&'a ScanSubQuery),
     Selection(&'a Selection),
+    SelectWithoutScan(&'a SelectWithoutScan),
     GroupBy(&'a GroupBy),
     Having(&'a Having),
     OrderBy(&'a OrderBy),
@@ -324,6 +336,7 @@ pub enum MutRelational<'a> {
     ScanRelation(&'a mut ScanRelation),
     ScanSubQuery(&'a mut ScanSubQuery),
     Selection(&'a mut Selection),
+    SelectWithoutScan(&'a mut SelectWithoutScan),
     GroupBy(&'a mut GroupBy),
     Having(&'a mut Having),
     OrderBy(&'a mut OrderBy),
@@ -354,6 +367,7 @@ impl MutRelational<'_> {
             | MutRelational::ScanRelation(ScanRelation { output, .. })
             | MutRelational::ScanSubQuery(ScanSubQuery { output, .. })
             | MutRelational::Selection(Selection { output, .. })
+            | MutRelational::SelectWithoutScan(SelectWithoutScan { output, .. })
             | MutRelational::Union(Union { output, .. })
             | MutRelational::UnionAll(UnionAll { output, .. })
             | MutRelational::Values(Values { output, .. })
@@ -405,6 +419,9 @@ impl MutRelational<'_> {
             | MutRelational::Selection(Selection {
                 ref mut children, ..
             })
+            | MutRelational::SelectWithoutScan(SelectWithoutScan {
+                ref mut children, ..
+            })
             | MutRelational::ValuesRow(ValuesRow {
                 ref mut children, ..
             })
@@ -450,6 +467,10 @@ impl MutRelational<'_> {
                 ..
             })
             | MutRelational::Selection(Selection {
+                children: ref mut old,
+                ..
+            })
+            | MutRelational::SelectWithoutScan(SelectWithoutScan {
                 children: ref mut old,
                 ..
             })
@@ -518,6 +539,7 @@ impl MutRelational<'_> {
             | MutRelational::Having(Having { children, .. })
             | MutRelational::OrderBy(OrderBy { children, .. })
             | MutRelational::Update(Update { children, .. })
+            | MutRelational::SelectWithoutScan(SelectWithoutScan { children, .. })
             | MutRelational::ValuesRow(ValuesRow { children, .. }) => children.push(sq_id),
             _ => panic!("Unable to add SubQuery child to {self:?}."),
         }
@@ -572,6 +594,7 @@ impl Relational<'_> {
             | Relational::ScanRelation(ScanRelation { output, .. })
             | Relational::ScanSubQuery(ScanSubQuery { output, .. })
             | Relational::Selection(Selection { output, .. })
+            | Relational::SelectWithoutScan(SelectWithoutScan { output, .. })
             | Relational::Union(Union { output, .. })
             | Relational::UnionAll(UnionAll { output, .. })
             | Relational::Values(Values { output, .. })
@@ -601,6 +624,7 @@ impl Relational<'_> {
             | Relational::Projection(Projection { children, .. })
             | Relational::ScanSubQuery(ScanSubQuery { children, .. })
             | Relational::Selection(Selection { children, .. })
+            | Relational::SelectWithoutScan(SelectWithoutScan { children, .. })
             | Relational::ValuesRow(ValuesRow { children, .. })
             | Relational::Values(Values { children, .. }) => Children::Many(children),
             Relational::ScanRelation(_) => Children::None,
@@ -658,6 +682,7 @@ impl Relational<'_> {
             Relational::ScanRelation { .. } => "Scan",
             Relational::ScanSubQuery { .. } => "Subquery",
             Relational::Selection { .. } => "Selection",
+            Relational::SelectWithoutScan { .. } => "SelectWithoutScan",
             Relational::GroupBy { .. } => "GroupBy",
             Relational::OrderBy { .. } => "OrderBy",
             Relational::Having { .. } => "Having",
@@ -686,6 +711,7 @@ impl Relational<'_> {
             Relational::ScanRelation(scan_rel) => RelOwned::ScanRelation((*scan_rel).clone()),
             Relational::ScanSubQuery(ssubquery) => RelOwned::ScanSubQuery((*ssubquery).clone()),
             Relational::Selection(sel) => RelOwned::Selection((*sel).clone()),
+            Relational::SelectWithoutScan(sel) => RelOwned::SelectWithoutScan((*sel).clone()),
             Relational::Union(un) => RelOwned::Union((*un).clone()),
             Relational::UnionAll(union_all) => RelOwned::UnionAll((*union_all).clone()),
             Relational::Update(upd) => RelOwned::Update((*upd).clone()),

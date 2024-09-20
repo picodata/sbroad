@@ -13,7 +13,8 @@ use crate::ir::node::{
     Alias, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, Delete, Except,
     ExprInParentheses, GroupBy, Having, Insert, Intersect, Join, Like, Limit, Motion, Node,
     NodeAligned, NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation, ScanSubQuery,
-    Selection, StableFunction, Trim, UnaryExpr, Union, UnionAll, Update, Values, ValuesRow,
+    SelectWithoutScan, Selection, StableFunction, Trim, UnaryExpr, Union, UnionAll, Update, Values,
+    ValuesRow,
 };
 use crate::ir::operator::{OrderByElement, OrderByEntity};
 use crate::ir::transformation::redistribution::MotionOpcode;
@@ -385,6 +386,10 @@ impl SubtreeCloner {
             RelOwned::Values(Values {
                 output: _,
                 children: _,
+            })
+            | RelOwned::SelectWithoutScan(SelectWithoutScan {
+                children: _,
+                output: _,
             })
             | RelOwned::Projection(Projection {
                 children: _,

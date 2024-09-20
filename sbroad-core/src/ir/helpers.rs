@@ -18,7 +18,7 @@ use std::hash::BuildHasher;
 
 use super::node::expression::Expression;
 use super::node::relational::Relational;
-use super::node::{Like, Limit};
+use super::node::{Like, Limit, SelectWithoutScan};
 
 /// Helper macros to build a hash map or set
 /// from the list of arguments.
@@ -267,6 +267,9 @@ impl Plan {
                         writeln_with_tabulation(buf, tabulation_number + 1, "Condition:")?;
                         self.formatted_arena_node(buf, tabulation_number + 2, *condition)?;
                     }
+                    Relational::SelectWithoutScan(_) => {
+                        writeln!(buf, "SelectWithoutScan")?;
+                    }
                     Relational::Projection(_) => {
                         writeln!(buf, "Projection")?;
                     }
@@ -386,6 +389,7 @@ impl Plan {
                     | Relational::Intersect(_)
                     | Relational::ScanSubQuery(_)
                     | Relational::Selection(_)
+                    | Relational::SelectWithoutScan(_)
                     | Relational::Values(_)
                     | Relational::OrderBy(_)
                     | Relational::Limit(_)
@@ -431,6 +435,7 @@ impl Plan {
                     | Relational::GroupBy(GroupBy { output, .. })
                     | Relational::OrderBy(OrderBy { output, .. })
                     | Relational::Selection(Selection { output, .. })
+                    | Relational::SelectWithoutScan(SelectWithoutScan { output, .. })
                     | Relational::Having(Having { output, .. })
                     | Relational::Values(Values { output, .. })
                     | Relational::Motion(Motion { output, .. })

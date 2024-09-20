@@ -757,3 +757,69 @@ g.test_like_works = function ()
     })
 end
 
+g.test_select_without_scan = function ()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        select 1 as foo, 2 + 3 as bar
+    ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "foo", type = "unsigned"},
+            {name = "bar", type = "unsigned"},
+        },
+        rows = { {1, 5} },
+    })
+
+    r, err = api:call("sbroad.execute", { [[
+        select (select id from t where id = 1), (select count(*) from t) as bar,
+        (values (30))
+    ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "col_1", type = "integer"},
+            {name = "bar", type = "integer"},
+            {name = "col_2", type = "unsigned"},
+        },
+        rows = { {1, 2, 30} },
+    })
+
+    r, err = api:call("sbroad.execute", { [[
+        select id, (select 3 as b) from testing_space
+        where id in (select 1) and name in (select '123')
+    ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "col_1", type = "unsigned"},
+        },
+        rows = { {1, 3} },
+    })
+
+    r, err = api:call("sbroad.execute", { [[
+        select 1, 2
+    ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "col_1", type = "unsigned"},
+            {name = "col_2", type = "unsigned"},
+        },
+        rows = { {1, 2} },
+    })
+
+    local _
+    _, err = api:call("sbroad.execute", { [[
+        select (values (100, 500)) as bar
+    ]] })
+    t.assert_str_contains(tostring(err), "invalid expression: SubQuery expected to have 1 rows output, but got 2.")
+
+end
+

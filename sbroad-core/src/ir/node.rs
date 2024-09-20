@@ -584,6 +584,20 @@ impl From<Projection> for NodeAligned {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct SelectWithoutScan {
+    /// Additional subquery children
+    pub children: Vec<NodeId>,
+    /// Outputs tuple node index in the plan node arena.
+    pub output: NodeId,
+}
+
+impl From<SelectWithoutScan> for NodeAligned {
+    fn from(value: SelectWithoutScan) -> Self {
+        Self::Node32(Node32::SelectWithoutScan(value))
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ScanRelation {
     // Scan name.
     pub alias: Option<SmolStr>,
@@ -1027,6 +1041,7 @@ pub enum Node32 {
     Alias(Alias),
     Except(Except),
     Intersect(Intersect),
+    SelectWithoutScan(SelectWithoutScan),
     UnionAll(UnionAll),
     Values(Values),
 }
@@ -1049,6 +1064,9 @@ impl Node32 {
             }
             Node32::Intersect(intersect) => NodeOwned::Relational(RelOwned::Intersect(intersect)),
             Node32::Invalid(inv) => NodeOwned::Invalid(inv),
+            Node32::SelectWithoutScan(select) => {
+                NodeOwned::Relational(RelOwned::SelectWithoutScan(select))
+            }
             Node32::Trim(trim) => NodeOwned::Expression(ExprOwned::Trim(trim)),
             Node32::Unary(unary) => NodeOwned::Expression(ExprOwned::Unary(unary)),
             Node32::Union(un) => NodeOwned::Relational(RelOwned::Union(un)),

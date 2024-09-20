@@ -17,8 +17,8 @@ use crate::ir::operator::{Bool, JoinKind, OrderByEntity, Unary, UpdateStrategy};
 
 use crate::ir::node::{
     BoolExpr, Except, GroupBy, Having, Intersect, Join, Limit, NodeId, OrderBy, Projection,
-    Reference, ScanCte, ScanRelation, ScanSubQuery, Selection, UnaryExpr, Union, UnionAll, Update,
-    Values, ValuesRow,
+    Reference, ScanCte, ScanRelation, ScanSubQuery, SelectWithoutScan, Selection, UnaryExpr, Union,
+    UnionAll, Update, Values, ValuesRow,
 };
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
 use crate::ir::tree::traversal::{
@@ -2391,6 +2391,13 @@ impl Plan {
                         // from child.
                         self.set_projection_distribution(id)?;
                     }
+                }
+                RelOwned::SelectWithoutScan(SelectWithoutScan { output, .. }) => {
+                    let strategy = self.resolve_sub_query_conflicts(id, output)?;
+                    let fixed_subquery_ids = strategy.get_rel_ids();
+                    self.create_motion_nodes(strategy)?;
+                    self.fix_additional_subqueries(id, &fixed_subquery_ids)?;
+                    self.set_dist(output, Distribution::Global)?;
                 }
                 RelOwned::Join(Join {
                     output,

@@ -100,6 +100,9 @@ impl Nodes {
                 Node32::Intersect(intersect) => Node::Relational(Relational::Intersect(intersect)),
                 Node32::Invalid(inv) => Node::Invalid(inv),
                 Node32::Limit(limit) => Node::Relational(Relational::Limit(limit)),
+                Node32::SelectWithoutScan(select) => {
+                    Node::Relational(Relational::SelectWithoutScan(select))
+                }
                 Node32::Trim(trim) => Node::Expression(Expression::Trim(trim)),
                 Node32::Unary(unary) => Node::Expression(Expression::Unary(unary)),
                 Node32::Union(un) => Node::Relational(Relational::Union(un)),
@@ -225,6 +228,9 @@ impl Nodes {
                     Node32::Union(un) => MutNode::Relational(MutRelational::Union(un)),
                     Node32::UnionAll(union_all) => {
                         MutNode::Relational(MutRelational::UnionAll(union_all))
+                    }
+                    Node32::SelectWithoutScan(select) => {
+                        MutNode::Relational(MutRelational::SelectWithoutScan(select))
                     }
                     Node32::Values(values) => MutNode::Relational(MutRelational::Values(values)),
                 }),
@@ -1093,6 +1099,7 @@ impl Plan {
             }
             Relational::ScanRelation { .. }
             | Relational::Projection { .. }
+            | Relational::SelectWithoutScan { .. }
             | Relational::ScanCte { .. }
             | Relational::GroupBy { .. }
             | Relational::Motion { .. }

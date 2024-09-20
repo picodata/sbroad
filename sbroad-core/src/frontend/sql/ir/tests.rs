@@ -3948,6 +3948,118 @@ vtable_max_rows = 5000
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
+#[test]
+fn front_select_without_scan() {
+    let input = r#"select 1"#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (1::unsigned -> "col_1")
+execution options:
+vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_select_without_scan_2() {
+    let input = r#"select (values (1)), (select count(*) from t2)"#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (ROW($1) -> "col_1", ROW($0) -> "col_2")
+subquery $0:
+motion [policy: full]
+        scan
+            projection (sum(("count_796"::integer))::decimal -> "col_1")
+                motion [policy: full]
+                    projection (count((*::integer))::integer -> "count_796")
+                        scan "t2"
+subquery $1:
+scan
+        values
+            value row (data=ROW(1::unsigned))
+execution options:
+vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_select_without_scan_3() {
+    let input = r#"select *"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let err = AbstractSyntaxTree::transform_into_plan(input, metadata).unwrap_err();
+
+    dbg!(&err);
+    assert_eq!(
+        "invalid type: expected a Column in SelectWithoutScan, got Asterisk.",
+        err.to_string()
+    );
+}
+
+#[test]
+fn front_select_without_scan_4() {
+    let input = r#"select distinct 1"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let err = AbstractSyntaxTree::transform_into_plan(input, metadata).unwrap_err();
+
+    dbg!(&err);
+    assert_eq!(
+        "invalid type: expected a Column in SelectWithoutScan, got Distinct.",
+        err.to_string()
+    );
+}
+
+#[test]
+fn front_select_without_scan_5() {
+    let input = r#"select (?, ?) in (select e, f from t2) as foo"#;
+    let plan = sql_to_optimized_ir(input, vec![Value::Unsigned(1), Value::Unsigned(1)]);
+
+    let expected_explain = String::from(
+        r#"projection (ROW(1::unsigned, 1::unsigned) in ROW($0, $0) -> "foo")
+subquery $0:
+motion [policy: full]
+        scan
+            projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f")
+                scan "t2"
+execution options:
+vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_select_without_scan_6() {
+    let input = r#"select (select 1) from t2 where f in (select 3 as foo)"#;
+    let plan = sql_to_optimized_ir(input, vec![Value::Unsigned(1), Value::Unsigned(1)]);
+
+    let expected_explain = String::from(
+        r#"projection (ROW($1) -> "col_1")
+    selection ROW("t2"."f"::unsigned) in ROW($0)
+        scan "t2"
+subquery $0:
+scan
+            projection (3::unsigned -> "foo")
+subquery $1:
+scan
+        projection (1::unsigned -> "col_1")
+execution options:
+vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
 #[cfg(test)]
 mod cte;
 #[cfg(test)]

@@ -12,8 +12,8 @@ use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::Relational;
 use crate::ir::node::{
     BoolExpr, Delete, Except, GroupBy, Having, Insert, Intersect, Join, Limit, Motion, Node,
-    NodeId, OrderBy, Projection, Row, ScanCte, ScanRelation, ScanSubQuery, Selection, Union,
-    UnionAll, Update, Values, ValuesRow,
+    NodeId, OrderBy, Projection, Row, ScanCte, ScanRelation, ScanSubQuery, SelectWithoutScan,
+    Selection, Union, UnionAll, Update, Values, ValuesRow,
 };
 use crate::ir::operator::{Bool, JoinKind};
 use crate::ir::transformation::redistribution::MotionPolicy;
@@ -594,6 +594,9 @@ where
                     // At the moment values rows are located on the coordinator,
                     // so there are no buckets to execute on.
                     self.bucket_map.insert(*output, Buckets::new_empty());
+                }
+                Relational::SelectWithoutScan(SelectWithoutScan { output, .. }) => {
+                    self.bucket_map.insert(*output, Buckets::Any);
                 }
             }
         }

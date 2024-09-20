@@ -505,7 +505,8 @@ impl AbstractSyntaxTree {
         select_id: usize,
         children: &[usize],
     ) -> Result<(), SbroadError> {
-        // SQL grammar produces a defined order of children in select node:
+        // SQL grammar produces a defined order of children in select node,
+        // for a projection with scan:
         // 1. Projection: required
         // 2. Scan: required (bind with Projection)
         // 3. Join: optional (can be repeated multiple times)
@@ -513,6 +514,9 @@ impl AbstractSyntaxTree {
         // 5. GroupBy: optional
         // 6. Having: optional
         // 7. OrderBy: optional
+        //
+        // But for projection without scan (like `select 1`)
+        // Scan is optional, and all other nodes are not required.
         //
         // We need to reorder this sequence to the following:
         // 1. OrderBy: optional
@@ -551,8 +555,6 @@ impl AbstractSyntaxTree {
         // Projection and Scan are required. If they are not present, there is an error
         // in the SQL grammar.
         let proj_id = proj_id.expect("Projection node is required in select node");
-        let scan_id = scan_id.expect("Scan node is required in select node");
-        let mut child_id = scan_id;
 
         // The order of the nodes in the chain is partially reversed.
         // Original nodes from grammar:
@@ -579,6 +581,12 @@ impl AbstractSyntaxTree {
         while let Some(join_id) = join_ids.pop() {
             chain.push(join_id);
         }
+
+        let Some(mut child_id) = scan_id else {
+            self.nodes.set_children(select_id, vec![proj_id])?;
+            return Ok(());
+        };
+
         while let Some(id) = chain.pop() {
             self.nodes.push_front_child(id, child_id)?;
             child_id = id;
