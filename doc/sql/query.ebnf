@@ -1,14 +1,13 @@
 statement   ::= explain | ddl | dml | dql | acl | call
 explain     ::= 'EXPLAIN' (dml | dql)
-dql         ::= (query | values)
+dql         ::= (with? select | values)
                 ('OPTION' '('
                     (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned)
                     (',' (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned))*
                 ')')?
-query       ::= ('WITH'
+with        ::= 'WITH'
                 cte ('(' column (',' column)* ')')? 'AS' '(' (select | values) ')'
                 (',' cte ('(' column (',' column)* ')')? 'AS' '(' (select | values) ')')*
-                )? select
 select      ::= 'SELECT' 'DISTINCT'? projection (',' projection)* 'FROM' scan
                 (( 'INNER' | 'LEFT' 'OUTER'? )? 'JOIN' scan 'ON' expression)*
                 ('WHERE' expression)?
@@ -18,7 +17,7 @@ select      ::= 'SELECT' 'DISTINCT'? projection (',' projection)* 'FROM' scan
                 (('UNION' 'ALL'? | 'EXCEPT' 'DISTINCT'?) select)?
                 ('LIMIT' (unsigned | 'ALL' | 'NULL'))?
 projection  ::= (table '.')? '*' | expression (('AS')? name)? | aggregate
-scan        ::= (table | '(' (query | values) ')') ('AS'? name)?
+scan        ::= (table | '(' dql ')') ('AS'? name)?
 expression  ::= ('NOT'* (
                     (table '.')? column
                     | literal
@@ -30,8 +29,8 @@ expression  ::= ('NOT'* (
                     | to_char
                     | to_date
                     | trim
-                    | 'NOT'? 'EXISTS' '(' (query | values) ')'
-                    | '(' (query | values) ')'
+                    | 'NOT'? 'EXISTS' '(' dql ')'
+                    | '(' dql ')'
                     | '(' expression (',' expression)* ')'
                 ) ('IS' 'NOT'? 'NULL')?)
                 | expression
@@ -77,7 +76,7 @@ dml         ::= (call | delete | insert | update)
                 ')')?
 call        ::= 'CALL' procedure '(' (literal (',' literal)*)? ')'
 delete      ::= 'DELETE' 'FROM' table ('WHERE' expression)?
-insert      ::= 'INSERT' 'INTO' table ('(' column (',' column)* ')')? (query | values)
+insert      ::= 'INSERT' 'INTO' table ('(' column (',' column)* ')')? dql
                 ('ON' 'CONFLICT' 'DO' ('NOTHING' | 'REPLACE' | 'FAIL'))?
 update      ::= 'UPDATE' table 'SET'
                 column '=' expression (',' column '=' expression)*
