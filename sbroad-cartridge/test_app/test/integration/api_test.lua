@@ -213,9 +213,9 @@ g.test_query_errored = function()
 
     -- check err when params lenght is less then amount of sign `?`
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" where "id" = ?]], {} })
-    t.assert_equals(
+    t.assert_str_contains(
         tostring(err),
-        "Sbroad Error: build query: invalid node: parameter node does not refer to an expression"
+        "Expected at least 1 values for parameters. Got 0"
     )
 end
 

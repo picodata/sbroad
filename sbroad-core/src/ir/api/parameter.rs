@@ -1,4 +1,4 @@
-use crate::errors::SbroadError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::node::block::{Block, MutBlock};
 use crate::ir::node::expression::{Expression, MutExpression};
 use crate::ir::node::relational::{MutRelational, Relational};
@@ -7,7 +7,7 @@ use crate::ir::node::{
     MutNode, Node64, NodeId, Parameter, Procedure, Row, Selection, StableFunction, Trim, UnaryExpr,
     ValuesRow,
 };
-use crate::ir::tree::traversal::{LevelNode, PostOrder};
+use crate::ir::tree::traversal::{LevelNode, PostOrder, PostOrderWithFilter};
 use crate::ir::value::Value;
 use crate::ir::{ArenaType, Node, OptionParamValue, Plan, ValueIdx};
 use crate::otm::child_span;
@@ -687,8 +687,32 @@ impl Plan {
     #[allow(clippy::too_many_lines)]
     #[otm_child_span("plan.bind")]
     pub fn bind_params(&mut self, values: Vec<Value>) -> Result<(), SbroadError> {
-        // Nothing to do here.
         if values.is_empty() {
+            // Check there are no parameters in the plan,
+            // we must fail early here, rather than on
+            // later pipeline stages.
+            let mut param_count: usize = 0;
+            let filter = Box::new(|x: NodeId| -> bool {
+                if let Ok(Node::Parameter(_)) = self.get_node(x) {
+                    param_count += 1;
+                }
+                false
+            });
+            let mut dfs =
+                PostOrderWithFilter::with_capacity(|x| self.subtree_iter(x, false), 0, filter);
+            dfs.populate_nodes(self.get_top()?);
+            drop(dfs);
+
+            if param_count > 0 {
+                return Err(SbroadError::Invalid(
+                    Entity::Query,
+                    Some(format_smolstr!(
+                        "Expected at least {param_count} values for parameters. Got 0"
+                    )),
+                ));
+            }
+
+            // Nothing to do here.
             return Ok(());
         }
 
