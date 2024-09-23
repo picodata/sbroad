@@ -3790,7 +3790,30 @@ fn front_mock_set_param_transaction() {
     }
 }
 
-// TODO: add test for create table in tier syntax
+#[test]
+fn front_create_table_with_tier_syntax() {
+    let query = r#"CREATE TABLE warehouse (
+        id INTEGER PRIMARY KEY,
+        type TEXT NOT NULL)
+        USING memtx
+        DISTRIBUTED BY (id)
+        IN TIER "default";"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let plan = AbstractSyntaxTree::transform_into_plan(query, metadata);
+    assert!(plan.is_ok());
+
+    let query = r#"CREATE TABLE warehouse (
+        id INTEGER PRIMARY KEY,
+        type TEXT NOT NULL)
+        USING memtx
+        DISTRIBUTED BY (id)
+        IN TIER;"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let plan = AbstractSyntaxTree::transform_into_plan(query, metadata);
+    assert!(plan.is_err());
+}
 
 #[test]
 fn front_alter_system_check_parses_ok() {
