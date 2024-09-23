@@ -2079,7 +2079,7 @@ impl ParseExpression {
 
                 let op_plan_id = match op {
                     ParseExpressionInfixOperator::Concat => {
-                        plan.add_concat(left_row_id, right_row_id)?
+                        plan.add_concat(left_row_id, right_row_id)
                     }
                     ParseExpressionInfixOperator::InfixArithmetic(arith) => {
                         plan.add_arithmetic_to_plan(left_row_id, arith.clone(), right_row_id)?

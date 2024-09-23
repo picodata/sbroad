@@ -4060,6 +4060,24 @@ vtable_max_rows = 5000
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
+#[test]
+fn front_sql_check_concat_with_parameters() {
+    let input = r#"values (? || ?)"#;
+
+    let plan = sql_to_optimized_ir(input, vec![Value::from("a"), Value::from("b")]);
+
+    let expected_explain = String::from(
+        r#"values
+    value row (data=ROW(ROW('a'::string) || ROW('b'::string)))
+execution options:
+vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
 #[cfg(test)]
 mod cte;
 #[cfg(test)]
