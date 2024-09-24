@@ -350,6 +350,17 @@ mod test {
                 }),
             },
             TestCase {
+                sql: r#"DROP PLUGIN "abc" 1.1.1"#,
+                arena_type: ArenaType::Arena96,
+                expected: PluginOwned::Drop(DropPlugin {
+                    name: SmolStr::from("abc"),
+                    version: SmolStr::from("1.1.1"),
+                    if_exists: false,
+                    with_data: false,
+                    timeout: Decimal::from(10),
+                }),
+            },
+            TestCase {
                 sql: r#"DROP PLUGIN "abc" 1.1.1 option(timeout=1)"#,
                 arena_type: ArenaType::Arena96,
                 expected: PluginOwned::Drop(DropPlugin {

@@ -2883,37 +2883,55 @@ fn parse_drop_plugin(
     node: &ParseNode,
 ) -> Result<DropPlugin, SbroadError> {
     let mut if_exists = false;
-    let first_node_idx = node.first_child();
-    let plugin_name_child_idx = if let Rule::IfExists = ast.nodes.get_node(first_node_idx)?.rule {
-        if_exists = true;
-        1
-    } else {
-        0
-    };
-
-    let plugin_name_idx = node.child_n(plugin_name_child_idx);
-
-    let name = parse_identifier(ast, plugin_name_idx)?;
-    let version_idx = node.child_n(plugin_name_child_idx + 1);
-    let version = parse_identifier(ast, version_idx)?;
-
     let mut with_data = false;
-    let next_node_idx = node.child_n(plugin_name_child_idx + 2);
-    let next_child_n = if let Rule::WithData = ast.nodes.get_node(next_node_idx)?.rule {
-        with_data = true;
-        plugin_name_child_idx + 3
-    } else {
-        plugin_name_child_idx + 2
-    };
-
+    let mut name = None;
+    let mut version = None;
     let mut timeout = plugin::get_default_timeout();
-    if let Some(timeout_child_id) = node.children.get(next_child_n) {
-        timeout = get_timeout(ast, *timeout_child_id)?;
+    for child_id in &node.children {
+        let child = ast.nodes.get_node(*child_id)?;
+        match child.rule {
+            Rule::IfExists => if_exists = true,
+            Rule::WithData => with_data = true,
+            Rule::Identifier => {
+                if name.is_none() {
+                    name = Some(parse_identifier(ast, *child_id)?);
+                    continue;
+                }
+                return Err(SbroadError::Invalid(
+                    Entity::AST,
+                    Some("Plugin name is already set.".into()),
+                ));
+            }
+            Rule::PluginVersion => {
+                if version.is_none() {
+                    version = Some(parse_identifier(ast, *child_id)?);
+                    continue;
+                }
+                return Err(SbroadError::Invalid(
+                    Entity::AST,
+                    Some("Plugin version is already set.".into()),
+                ));
+            }
+            Rule::Timeout => timeout = get_timeout(ast, *child_id)?,
+            _ => {
+                return Err(SbroadError::Invalid(
+                    Entity::AST,
+                    Some(format_smolstr!(
+                        "Unexpected AST node in DROP PLUGIN: {:?}",
+                        child.rule
+                    )),
+                ))
+            }
+        }
     }
 
     Ok(DropPlugin {
-        name,
-        version,
+        name: name.ok_or_else(|| {
+            SbroadError::Invalid(Entity::AST, Some("Plugin name is not set.".into()))
+        })?,
+        version: version.ok_or_else(|| {
+            SbroadError::Invalid(Entity::AST, Some("Plugin version is not set.".into()))
+        })?,
         if_exists,
         with_data,
         timeout,
