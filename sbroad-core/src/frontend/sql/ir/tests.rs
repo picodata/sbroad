@@ -3969,6 +3969,8 @@ mod params;
 #[cfg(test)]
 mod single;
 #[cfg(test)]
+mod subtree_cloner;
+#[cfg(test)]
 mod trim;
 #[cfg(test)]
 mod union;

@@ -585,6 +585,15 @@ impl SubtreeCloner {
         let nodes = dfs.take_nodes();
         drop(dfs);
         for LevelNode(_, id) in nodes {
+            if self.old_new.contains_key(&id) {
+                // IR is a DAG and our DFS traversal does not
+                // track already visited nodes, so we may
+                // visit the same node multiple times.
+                // If we already cloned the node, no need to clone it
+                // again.
+                continue;
+            }
+
             let node = plan.get_node(id)?;
             let new_node: NodeAligned = match node {
                 Node::Relational(rel) => self.clone_relational(&rel, id)?.into(),
@@ -599,15 +608,7 @@ impl SubtreeCloner {
                 }
             };
             let new_id = plan.nodes.push(new_node);
-            let old = self.old_new.insert(id, new_id);
-            if let Some(old_new_id) = old {
-                return Err(SbroadError::Invalid(
-                    Entity::Plan,
-                    Some(format_smolstr!(
-                        "clone: node with id {id} was mapped twice: {old_new_id}, {new_id}"
-                    )),
-                ));
-            }
+            self.old_new.insert(id, new_id);
         }
 
         self.replace_backward_refs(plan)?;
