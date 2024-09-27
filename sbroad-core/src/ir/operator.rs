@@ -1371,6 +1371,30 @@ impl Plan {
     /// - No child nodes
     /// - Child node is not relational
     pub fn add_values(&mut self, value_rows: Vec<NodeId>) -> Result<NodeId, SbroadError> {
+        // Check that all rows in the values node have the same amount of columns.
+        let mut last_len = None;
+        for value_row_id in &value_rows {
+            let Relational::ValuesRow(ValuesRow { output, .. }) =
+                self.get_relation_node(*value_row_id)?
+            else {
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some("all children of a Values node must be ValuesRow".into()),
+                ));
+            };
+            let len = self.get_row_list(*output)?.len();
+            match last_len {
+                None => last_len = Some(len),
+                Some(last_len) if last_len != len => {
+                    return Err(SbroadError::Invalid(
+                        Entity::Query,
+                        Some("all values rows must have the same length".into()),
+                    ));
+                }
+                _ => {}
+            }
+        }
+
         // In case we have several `ValuesRow` under `Values`
         // (e.g. VALUES (1, "test_1"), (2, "test_2")),
         // the list of alias column names for it will look like:

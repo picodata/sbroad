@@ -4078,6 +4078,19 @@ vtable_max_rows = 5000
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
+#[test]
+fn front_different_values_row_len() {
+    let input = r#"values (1), (1,2)"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let err = AbstractSyntaxTree::transform_into_plan(input, metadata).unwrap_err();
+
+    assert_eq!(
+        "invalid query: all values rows must have the same length",
+        err.to_string()
+    );
+}
+
 #[cfg(test)]
 mod cte;
 #[cfg(test)]
