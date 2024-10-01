@@ -657,6 +657,56 @@ impl Relational<'_> {
         matches!(self, &Relational::Motion { .. })
     }
 
+    /// Checks that the node is a local motion.
+    /// Such motions are not dispatched by executor
+    #[must_use]
+    pub fn is_local_motion(&self) -> bool {
+        use crate::ir::MotionPolicy;
+
+        matches!(
+            self,
+            &Relational::Motion(Motion {
+                policy: MotionPolicy::Local | MotionPolicy::LocalSegment(_),
+                ..
+            })
+        )
+    }
+
+    #[must_use]
+    pub fn is_non_local_motion(&self) -> bool {
+        self.is_motion() && !self.is_local_motion()
+    }
+
+    /// Return true, if this node serves as a
+    /// data source node: it provides data to
+    /// upper operators and does not have children.
+    #[must_use]
+    pub fn is_data_source(&self) -> bool {
+        match self {
+            Relational::ScanRelation(_) => true,
+            Relational::SelectWithoutScan(SelectWithoutScan { children, .. })
+            | Relational::Values(Values { children, .. }) => children.is_empty(),
+            Relational::ScanCte(_)
+            | Relational::Motion(_)
+            | Relational::Except(_)
+            | Relational::Delete(_)
+            | Relational::Insert(_)
+            | Relational::Intersect(_)
+            | Relational::Update(_)
+            | Relational::Join(_)
+            | Relational::Limit(_)
+            | Relational::Projection(_)
+            | Relational::ScanSubQuery(_)
+            | Relational::Selection(_)
+            | Relational::GroupBy(_)
+            | Relational::Having(_)
+            | Relational::OrderBy(_)
+            | Relational::UnionAll(_)
+            | Relational::Union(_)
+            | Relational::ValuesRow(_) => false,
+        }
+    }
+
     /// Checks that the node is a sub-query or CTE scan.
     #[must_use]
     pub fn is_subquery_or_cte(&self) -> bool {

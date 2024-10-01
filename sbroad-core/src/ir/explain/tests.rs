@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 
 use super::*;
-use crate::ir::transformation::helpers::sql_to_optimized_ir;
+use crate::{collection, ir::transformation::helpers::sql_to_optimized_ir};
 
 #[test]
 fn simple_query_without_cond_plan() {
@@ -557,8 +557,31 @@ pub(crate) fn explain_check(sql: &str, explain: &str) {
     assert_eq!(explain, explain_tree.to_string());
 }
 
+#[test]
+fn check_buckets_repr() {
+    let bc = 3000;
+    assert_eq!("[1-3000]", buckets_repr(&Buckets::All, bc));
+    assert_eq!("any", buckets_repr(&Buckets::Any, bc));
+    assert_eq!(
+        "[1-3]",
+        buckets_repr(&Buckets::Filtered(collection!(1, 2, 3)), bc)
+    );
+    assert_eq!(
+        "[1-3]",
+        buckets_repr(&Buckets::Filtered(collection!(3, 2, 1)), bc)
+    );
+    assert_eq!(
+        "[1,10-11,21-23]",
+        buckets_repr(&Buckets::Filtered(collection!(1, 10, 11, 23, 22, 21)), bc)
+    );
+    assert_eq!("[]", buckets_repr(&Buckets::Filtered(collection!()), bc));
+}
+
 #[cfg(test)]
 mod concat;
 
 #[cfg(test)]
 mod delete;
+
+#[cfg(test)]
+mod query_explain;

@@ -120,6 +120,7 @@ g.test_motion_explain = function()
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [1-30000]"
         }
     )
 end
@@ -160,6 +161,7 @@ WHERE "t3"."name" = '123']], {} })
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = unknown"
         }
     )
 end
@@ -192,6 +194,7 @@ g.test_valid_explain = function()
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [3940]"
         }
     )
 end
@@ -214,6 +217,7 @@ g.test_explain_arithmetic_selection = function()
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [1-30000]"
         }
     )
 
@@ -230,6 +234,7 @@ g.test_explain_arithmetic_selection = function()
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [1-30000]"
         }
     )
 
@@ -269,6 +274,7 @@ WHERE "t3"."id" = 2
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [1-30000]"
         }
     )
 
@@ -308,6 +314,7 @@ WHERE "t3"."id" = 2
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [1-30000]"
         }
     )
 end
@@ -329,6 +336,7 @@ g.test_explain_arithmetic_projection = function()
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [1-30000]"
         }
     )
 
@@ -345,6 +353,7 @@ g.test_explain_arithmetic_projection = function()
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [1-30000]"
         }
     )
 
@@ -361,6 +370,7 @@ g.test_explain_arithmetic_projection = function()
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [1-30000]"
         }
     )
 
@@ -377,6 +387,7 @@ g.test_explain_arithmetic_projection = function()
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [1-30000]"
         }
     )
 
@@ -392,6 +403,7 @@ g.test_explain_arithmetic_projection = function()
             "execution options:",
             "    vdbe_max_steps = 45000",
             "    vtable_max_rows = 5000",
+            "buckets = [1-30000]"
         }
     )
 end

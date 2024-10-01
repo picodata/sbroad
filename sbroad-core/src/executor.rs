@@ -266,7 +266,7 @@ where
     ///
     /// # Errors
     /// - Failed to build explain
-    pub fn produce_explain(&self) -> Result<Box<dyn Any>, SbroadError> {
+    pub fn produce_explain(&mut self) -> Result<Box<dyn Any>, SbroadError> {
         self.coordinator.explain_format(self.to_explain()?)
     }
 
@@ -318,8 +318,8 @@ where
     ///
     /// # Errors
     /// - Failed to build explain
-    pub fn to_explain(&self) -> Result<SmolStr, SbroadError> {
-        self.exec_plan.get_ir_plan().as_explain()
+    pub fn to_explain(&mut self) -> Result<SmolStr, SbroadError> {
+        self.as_explain()
     }
 
     /// Checks that query is explain and have not to be executed
@@ -361,6 +361,11 @@ where
             .unwrap()
             .position(pos_idx)
             .unwrap()
+    }
+
+    #[must_use]
+    pub fn get_buckets(&self, output_id: NodeId) -> Option<&Buckets> {
+        self.bucket_map.get(&output_id)
     }
 
     /// Checks that query is for plugin.

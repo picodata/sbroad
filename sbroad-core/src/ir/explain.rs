@@ -7,7 +7,11 @@ use serde::Serialize;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
+use crate::executor::bucket::Buckets;
 use crate::executor::engine::helpers::to_user;
+use crate::executor::engine::Router;
+use crate::executor::Query;
+use crate::ir::explain::execution_info::BucketsInfo;
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::TrimKind;
 use crate::ir::node::{
@@ -1028,7 +1032,7 @@ impl ExplainTreePart {
     }
 }
 
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Default)]
 struct FullExplain {
     /// Main sql subtree
     main_query: ExplainTreePart,
@@ -1036,6 +1040,46 @@ struct FullExplain {
     subqueries: Vec<ExplainTreePart>,
     /// Options imposed during query execution
     exec_options: Vec<(OptionKind, Value)>,
+    /// Info related to plan execution
+    buckets_info: Option<BucketsInfo>,
+}
+
+fn buckets_repr(buckets: &Buckets, bucket_count: u64) -> String {
+    match buckets {
+        Buckets::All => format!("[1-{bucket_count}]"),
+        Buckets::Filtered(buckets_set) => 'f: {
+            if buckets_set.is_empty() {
+                break 'f "[]".into();
+            }
+
+            let mut nums: Vec<u64> = buckets_set.iter().copied().collect();
+            nums.sort_unstable();
+
+            let mut ranges = Vec::new();
+            let mut l = 0;
+            for r in 1..nums.len() {
+                if nums[r - 1] + 1 == nums[r] {
+                    continue;
+                }
+                if r - l == 1 {
+                    ranges.push(format!("{}", nums[l]));
+                } else {
+                    ranges.push(format!("{}-{}", nums[l], nums[r - 1]))
+                }
+                l = r;
+            }
+
+            let r = nums.len();
+            if r - l == 1 {
+                ranges.push(format!("{}", nums[r - 1]));
+            } else {
+                ranges.push(format!("{}-{}", nums[l], nums[r - 1]))
+            }
+
+            format!("[{}]", ranges.join(","))
+        }
+        Buckets::Any => "any".into(),
+    }
 }
 
 impl Display for FullExplain {
@@ -1052,6 +1096,22 @@ impl Display for FullExplain {
                 writeln!(s, "{:4}{} = {}", "", opt.0, opt.1)?;
             }
         }
+        if let Some(info) = &self.buckets_info {
+            match info {
+                BucketsInfo::Unknown => writeln!(s, "buckets = unknown")?,
+                BucketsInfo::Calculated(calculated) => {
+                    let repr = buckets_repr(&calculated.buckets, calculated.bucket_count);
+                    // For buckets ANY and ALL there is no sense to handle in the
+                    // output the case when bucket count is not exact.
+                    match calculated.buckets {
+                        Buckets::Any | Buckets::All => writeln!(s, "buckets = {repr}",)?,
+                        _ if calculated.is_exact => writeln!(s, "buckets = {repr}",)?,
+                        _ => writeln!(s, "buckets <= {repr}",)?,
+                    }
+                }
+            }
+        }
+
         write!(f, "{s}")
     }
 }
@@ -1275,8 +1335,8 @@ impl FullExplain {
                             MotionPolicy::LocalSegment(MotionKey { targets })
                         }
                     };
-                    let m = Motion::new(p);
 
+                    let m = Motion::new(p);
                     Some(ExplainNode::Motion(m))
                 }
                 Relational::Join(Join {
@@ -1365,12 +1425,17 @@ impl FullExplain {
                     Some(ExplainNode::Limit(*limit))
                 }
             };
+
             stack.push(current_node);
         }
         result.main_query = stack
             .pop()
             .ok_or_else(|| SbroadError::NotFound(Entity::Node, "that is explain top".into()))?;
         Ok(result)
+    }
+
+    fn add_execution_info(&mut self, info: BucketsInfo) {
+        self.buckets_info = Some(info);
     }
 }
 
@@ -1387,5 +1452,20 @@ impl Plan {
     }
 }
 
+impl<'a, C: Router> Query<'a, C> {
+    pub fn as_explain(&mut self) -> Result<SmolStr, SbroadError> {
+        let plan = self.get_exec_plan().get_ir_plan();
+        let top_id = plan.get_top()?;
+        let mut explain = FullExplain::new(plan, top_id)?;
+
+        let info = BucketsInfo::new_from_query(self)?;
+        explain.add_execution_info(info);
+
+        Ok(explain.to_smolstr())
+    }
+}
+
 #[cfg(test)]
 mod tests;
+
+mod execution_info;

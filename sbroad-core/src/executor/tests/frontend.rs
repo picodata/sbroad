@@ -76,6 +76,7 @@ fn front_explain_select_sql1() {
 execution options:
     vdbe_max_steps = 45000
     vtable_max_rows = 5000
+buckets = [1-10000]
 "#,
     );
 
@@ -96,7 +97,7 @@ fn front_explain_select_sql2() {
     let mut query = Query::new(metadata, sql, vec![]).unwrap();
 
     let expected_explain: SmolStr = format_smolstr!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         r#"union all"#,
         r#"    projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")"#,
         r#"        scan "hash_testing" -> "t""#,
@@ -105,6 +106,7 @@ fn front_explain_select_sql2() {
         r#"execution options:"#,
         r#"    vdbe_max_steps = 45000"#,
         r#"    vtable_max_rows = 5000"#,
+        r#"buckets = [1-10000]"#,
     );
 
     if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<SmolStr>() {
@@ -124,7 +126,7 @@ fn front_explain_select_sql3() {
     let mut query = Query::new(metadata, sql, vec![]).unwrap();
 
     let expected_explain: SmolStr = format_smolstr!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         r#"projection ("q1"."a"::string -> "a")"#,
         r#"    join on ROW("q1"."a"::string) = ROW("q2"."a2"::string)"#,
         r#"        scan "q1""#,
@@ -136,6 +138,7 @@ fn front_explain_select_sql3() {
         r#"execution options:"#,
         r#"    vdbe_max_steps = 45000"#,
         r#"    vtable_max_rows = 5000"#,
+        r#"buckets = [1-10000]"#,
     );
 
     if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<SmolStr>() {
@@ -155,7 +158,7 @@ fn front_explain_select_sql4() {
     let mut query = Query::new(metadata, sql, vec![]).unwrap();
 
     let expected_explain: SmolStr = format_smolstr!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         r#"projection ("q2"."a"::string -> "a")"#,
         r#"    join on ROW("q1"."a"::string) = ROW("q2"."a"::string)"#,
         r#"        scan "q1""#,
@@ -167,6 +170,7 @@ fn front_explain_select_sql4() {
         r#"execution options:"#,
         r#"    vdbe_max_steps = 45000"#,
         r#"    vtable_max_rows = 5000"#,
+        r#"buckets = [1-10000]"#,
     );
 
     if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<SmolStr>() {
