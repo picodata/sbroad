@@ -96,8 +96,8 @@ motion [policy: full]
                 projection ("t"."a"::unsigned -> "a1")
                     scan "t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -131,8 +131,8 @@ scan
             projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                 scan "t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -169,8 +169,8 @@ motion [policy: full]
                 projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                     scan "t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -195,8 +195,8 @@ scan
             projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                 scan "t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -228,8 +228,8 @@ motion [policy: full]
                 projection ("t"."a"::unsigned -> "a1", "t"."b"::unsigned -> "b1")
                     scan "t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -261,8 +261,8 @@ scan
             projection ("global_t"."a"::integer -> "a1")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -292,8 +292,8 @@ scan
             projection ("global_t"."a"::integer -> "a1")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -342,8 +342,8 @@ scan
             projection (ROW("global_t"."a"::integer) * ROW(10::unsigned) -> "col_1")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -379,8 +379,8 @@ scan
             projection ("global_t"."a"::integer -> "a1")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -414,8 +414,8 @@ fn front_sql_global_join1() {
             projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
                 scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -443,8 +443,8 @@ fn front_sql_global_join2() {
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -471,8 +471,8 @@ fn front_sql_global_join3() {
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -501,8 +501,8 @@ fn front_sql_global_join4() {
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -531,8 +531,8 @@ fn front_sql_global_join5() {
                     projection (sum(("t2"."e"::unsigned))::decimal -> "sum_896")
                         scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -559,8 +559,8 @@ fn front_sql_global_join6() {
             projection (ROW("t2"."e"::unsigned) * ROW("t2"."e"::unsigned) -> "e")
                 scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -587,8 +587,8 @@ fn front_sql_global_join7() {
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -615,8 +615,8 @@ fn front_sql_global_join8() {
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -643,8 +643,8 @@ fn front_sql_global_join9() {
             projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -676,8 +676,8 @@ motion [policy: full]
                 projection ("t2"."e"::unsigned -> "e")
                     scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -708,8 +708,8 @@ scan
             projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f")
                 scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -727,8 +727,8 @@ fn front_sql_global_aggregate1() {
         r#"projection (ROW(sum(("global_t"."a"::integer))::decimal) + ROW(avg((ROW("global_t"."b"::integer) + ROW("global_t"."b"::integer)))::decimal) -> "col_1")
     scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -746,8 +746,8 @@ fn front_sql_global_aggregate2() {
         r#"projection (ROW(sum(("global_t"."a"::integer))::decimal) + ROW(avg((ROW("global_t"."b"::integer) + ROW("global_t"."b"::integer)))::decimal) -> "col_1")
     scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -767,8 +767,8 @@ fn front_sql_global_aggregate3() {
     group by (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer)) output: ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
         scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -790,8 +790,8 @@ fn front_sql_global_aggregate4() {
         group by (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer)) output: ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
             scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -822,8 +822,8 @@ scan
                                 projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f")
                                     scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -851,8 +851,8 @@ fn front_sql_global_left_join1() {
                     projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
                         scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -882,8 +882,8 @@ fn front_sql_global_left_join2() {
                         projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
                             scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -912,8 +912,8 @@ fn front_sql_global_left_join3() {
                     projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
                         scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -944,8 +944,8 @@ fn front_sql_global_left_join4() {
                     projection (ROW("t2"."e"::unsigned) + ROW(1::unsigned) -> "e")
                         scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -963,8 +963,8 @@ fn front_order_by_from_global_node_must_not_add_motion() {
         projection ("global_t"."b"::integer -> "b", "global_t"."a"::integer -> "my_col")
             scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -1000,8 +1000,8 @@ fn front_sql_global_union_all1() {
     projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f")
         scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1027,8 +1027,8 @@ fn front_sql_global_union_all2() {
     projection ("t2"."e"::unsigned -> "e")
         scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1064,8 +1064,8 @@ fn front_sql_global_union_all3() {
         projection ("global_t"."b"::integer -> "b")
             scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1090,8 +1090,8 @@ fn front_sql_global_union_all5() {
     projection ("global_t"."b"::integer -> "b")
         scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1117,8 +1117,8 @@ fn front_sql_global_union() {
         projection ("global_t"."b"::integer -> "b")
             scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1143,8 +1143,8 @@ fn front_sql_global_union1() {
         projection ("t2"."e"::unsigned -> "e")
             scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1170,8 +1170,8 @@ fn front_sql_global_union2() {
                     projection (sum(("t2"."e"::unsigned))::decimal -> "sum_996")
                         scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1206,8 +1206,8 @@ fn front_sql_union() {
         projection ("t2"."f"::unsigned -> "f")
             scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1239,8 +1239,8 @@ fn check_plan_except_global_vs_segment() {
                 selection ROW("global_t"."a"::integer) = ROW(1::unsigned)
                     scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1269,8 +1269,8 @@ fn check_plan_except_global_vs_any() {
             projection ("global_t"."a"::integer -> "a")
                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1293,8 +1293,8 @@ fn check_plan_except_global_vs_global() {
     projection ("global_t"."b"::integer -> "b")
         scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1319,8 +1319,8 @@ fn check_plan_except_global_vs_single() {
             projection (sum(("t2"."e"::unsigned))::decimal -> "sum_996")
                 scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -1345,8 +1345,8 @@ fn check_plan_except_single_vs_global() {
     projection ("global_t"."a"::integer -> "a")
         scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -1370,8 +1370,8 @@ fn check_plan_except_segment_vs_global() {
     projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
         scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -1395,8 +1395,8 @@ fn check_plan_except_any_vs_global() {
     projection ("global_t"."b"::integer -> "b")
         scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -1444,8 +1444,8 @@ fn check_plan_except_non_trivial_global_subtree_vs_any() {
                             projection ("global_t"."b"::integer -> "B")
                                 scan "global_t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 

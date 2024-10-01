@@ -13,8 +13,8 @@ fn insert1() {
         values
             value row (data=ROW(1::integer, 'test'::string))
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -32,8 +32,8 @@ fn insert2() {
         values
             value row (data=ROW(1::unsigned, 'test'::string))
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -52,8 +52,8 @@ fn insert3() {
         projection ("test_space"."id"::unsigned -> "id", "test_space"."id"::unsigned -> "id")
             scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 

@@ -13,8 +13,8 @@ fn select() {
             projection ("test_space"."id"::unsigned -> "id")
                 scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -40,8 +40,8 @@ fn union_all() {
                 projection ("t2"."e"::unsigned -> "e")
                     scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -61,8 +61,8 @@ fn aggregate() {
                 group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                     scan "t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -86,8 +86,8 @@ fn group_by() {
                             group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                                 scan "t"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -109,8 +109,8 @@ fn single_limit() {
                         projection ("test_space"."id"::unsigned -> "id")
                             scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -148,8 +148,8 @@ fn join() {
                             projection ("t4"."c"::string -> "c", "t4"."d"::integer -> "d")
                                 scan "t4"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -165,8 +165,8 @@ fn limit_all() {
         r#"projection ("test_space"."id"::unsigned -> "id")
     scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
@@ -181,8 +181,8 @@ fn limit_null() {
         r#"projection ("test_space"."id"::unsigned -> "id")
     scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());

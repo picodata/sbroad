@@ -63,8 +63,8 @@ fn like_explain1() {
     selection ROW(ROW("t1"."a"::string) || ROW('a'::string)) LIKE ROW(ROW('a'::string) || ROW('a'::string)) ESCAPE ROW('\'::string)
         scan "t1"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -82,8 +82,8 @@ fn like_explain2() {
     selection ROW(ROW("t1"."a"::string) || ROW('a'::string)) LIKE ROW(ROW('a'::string) || ROW('a'::string)) ESCAPE ROW('x'::string)
         scan "t1"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -104,8 +104,8 @@ fn like_explain3() {
                 group by (ROW("t1"."a"::string) LIKE ROW("t1"."a"::string) ESCAPE ROW('\'::string)) output: ("t1"."a"::string -> "a", "t1"."bucket_id"::unsigned -> "bucket_id", "t1"."b"::integer -> "b")
                     scan "t1"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -138,8 +138,8 @@ motion [policy: full]
                 projection ('hi'::string -> "col_1")
                     scan "t1"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -160,8 +160,8 @@ fn ilike_explain() {
                 group by (ROW(lower(("t1"."a"::string))::string) LIKE ROW(lower(("t1"."a"::string))::string) ESCAPE ROW('x'::string)) output: ("t1"."a"::string -> "a", "t1"."bucket_id"::unsigned -> "bucket_id", "t1"."b"::integer -> "b")
                     scan "t1"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 

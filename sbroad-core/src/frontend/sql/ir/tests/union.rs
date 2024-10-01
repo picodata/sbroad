@@ -24,8 +24,8 @@ fn front_select_chaning_1() {
     projection ("t3"."a"::string -> "a")
         scan "t3"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -71,8 +71,8 @@ fn front_select_chaining_2() {
                     projection ("t3"."a"::string -> "a")
                         scan "t3"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -106,8 +106,8 @@ fn front_select_chaining_3() {
                     projection ("t2"."e"::unsigned -> "e")
                         scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -134,8 +134,8 @@ fn union_under_insert() {
             projection ("t2"."f"::unsigned -> "f", "t2"."e"::unsigned -> "e", 2::unsigned -> "col_1", 2::unsigned -> "col_2")
                 scan "t2"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -147,7 +147,7 @@ fn union_under_insert1() {
     let input = r#"
     insert into "TBL"
     select * from (values (1, 1))
-    union 
+    union
     select * from (values (2, 2))
     "#;
 
@@ -166,8 +166,8 @@ fn union_under_insert1() {
                     values
                         value row (data=ROW(2::unsigned, 2::unsigned))
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 

@@ -150,8 +150,8 @@ fn front_param_in_cast() {
         r#"projection (1::integer::int -> "col_1")
     scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -169,8 +169,8 @@ fn front_params1() {
     selection ROW("test_space"."sys_op"::unsigned) = ROW(0::integer) and ROW("test_space"."sysFrom"::unsigned) > ROW(1::integer)
         scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -189,8 +189,8 @@ fn front_params2() {
     selection ROW("test_space"."sys_op"::unsigned) = ROW(NULL::scalar) and ROW("test_space"."FIRST_NAME"::string) = ROW('hello'::string)
         scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -210,8 +210,8 @@ fn front_params3() {
     selection ROW("test_space"."sys_op"::unsigned) = ROW(NULL::scalar) and ROW("test_space"."FIRST_NAME"::string) = ROW('кириллица'::string)
         scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -234,8 +234,8 @@ fn front_params4() {
     selection ROW("test_space"."FIRST_NAME"::string) = ROW('''± !@#$%^&*()_+=-\/><";:,.`~'::string)
         scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -266,8 +266,8 @@ motion [policy: segment([ref("sysFrom")])]
                     selection ROW("test_space_hist"."sys_op"::unsigned) = ROW(1::integer)
                         scan "test_space_hist"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 
@@ -307,8 +307,8 @@ motion [policy: full]
                         selection ROW("test_space"."sys_op"::unsigned) = ROW(2::integer)
                             scan "test_space"
 execution options:
-vdbe_max_steps = 45000
-vtable_max_rows = 5000
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
 "#,
     );
 

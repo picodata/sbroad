@@ -1049,7 +1049,7 @@ impl Display for FullExplain {
         if !self.exec_options.is_empty() {
             writeln!(s, "execution options:")?;
             for opt in &self.exec_options {
-                writeln!(s, "{} = {}", opt.0, opt.1)?;
+                writeln!(s, "{:4}{} = {}", "", opt.0, opt.1)?;
             }
         }
         write!(f, "{s}")
