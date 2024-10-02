@@ -8,7 +8,7 @@ dql         ::= (with? select | values)
 with        ::= 'WITH'
                 cte ('(' column (',' column)* ')')? 'AS' '(' (select | values) ')'
                 (',' cte ('(' column (',' column)* ')')? 'AS' '(' (select | values) ')')*
-                )? select
+                select
 select      ::= 'SELECT' 'DISTINCT'? projection (',' projection)* ('FROM' scan
                 (( 'INNER' | 'LEFT' 'OUTER'? )? 'JOIN' scan 'ON' expression)*
                 ('WHERE' expression)?
