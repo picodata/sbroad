@@ -591,9 +591,8 @@ where
                 }
                 Relational::Values(Values { output, .. })
                 | Relational::ValuesRow(ValuesRow { output, .. }) => {
-                    // At the moment values rows are located on the coordinator,
-                    // so there are no buckets to execute on.
-                    self.bucket_map.insert(*output, Buckets::new_empty());
+                    // We can materialize buckets on any node.
+                    self.bucket_map.insert(*output, Buckets::Any);
                 }
                 Relational::SelectWithoutScan(SelectWithoutScan { output, .. }) => {
                     self.bucket_map.insert(*output, Buckets::Any);

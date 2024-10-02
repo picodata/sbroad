@@ -48,7 +48,6 @@ use crate::{
         vtable::{calculate_vtable_unified_types, VTableTuple, VirtualTable},
     },
     ir::{
-        distribution::Distribution,
         relation::{Column, ColumnRole, Type},
         transformation::redistribution::{MotionKey, MotionPolicy},
         tree::Snapshot,
@@ -763,26 +762,20 @@ fn init_sharded_update_tuple_builder(
 pub fn empty_query_result(
     plan: &ExecutionPlan,
     return_format: DispatchReturnFormat,
-) -> Result<Option<Box<dyn Any>>, SbroadError> {
+) -> Result<Box<dyn Any>, SbroadError> {
     let query_type = plan.query_type()?;
     match query_type {
         QueryType::DML => {
             let result = ConsumerResult::default();
             let tuple = Tuple::new(&[result])
                 .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format_smolstr!("{e:?}"))))?;
-            Ok(Some(Box::new(tuple) as Box<dyn Any>))
+            Ok(Box::new(tuple) as Box<dyn Any>)
         }
         QueryType::DQL => {
             // Get metadata (column types) from the top node's output tuple.
             let ir_plan = plan.get_ir_plan();
             let top_id = ir_plan.get_top()?;
             let top_output_id = ir_plan.get_relation_node(top_id)?.output();
-            if let Distribution::Segment { .. } = ir_plan.get_distribution(top_output_id)? {
-            } else {
-                // We can have some `select values` query that should be executed on a random
-                // node rather then returning an empty result.
-                return Ok(None);
-            }
             let columns = ir_plan.get_row_list(top_output_id)?;
             let mut metadata = Vec::with_capacity(columns.len());
             for col_id in columns {
@@ -809,7 +802,7 @@ pub fn empty_query_result(
             let tuple = Tuple::new(&[result])
                 .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format_smolstr!("{e:?}"))))?;
             let res = tuple.convert(return_format)?;
-            Ok(Some(res))
+            Ok(res)
         }
     }
 }
@@ -890,9 +883,7 @@ pub fn dispatch_impl(
 
     debug!(Option::from("dispatch"), &format!("sub plan: {sub_plan:?}"));
     if has_zero_limit_clause(&sub_plan)? {
-        if let Some(result) = empty_query_result(&sub_plan, return_format.clone())? {
-            return Ok(result);
-        }
+        return empty_query_result(&sub_plan, return_format.clone());
     }
     dispatch_by_buckets(sub_plan, buckets, &tier_runtime, return_format)
 }

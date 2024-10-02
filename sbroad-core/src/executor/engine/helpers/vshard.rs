@@ -704,16 +704,9 @@ pub fn impl_exec_ir_on_buckets(
     waiting_timeout: u64,
     tier_name: Option<&SmolStr>,
 ) -> Result<Box<dyn Any>, SbroadError> {
-    let mut buckets = buckets;
-    let random_bucket = runtime.get_random_bucket();
     if let Buckets::Filtered(buckets_set) = buckets {
         if buckets_set.is_empty() {
-            match empty_query_result(&sub_plan, return_format.clone())? {
-                Some(res) => return Ok(res),
-                None => {
-                    buckets = &random_bucket;
-                }
-            }
+            return empty_query_result(&sub_plan, return_format.clone());
         }
     }
 
