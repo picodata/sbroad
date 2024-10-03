@@ -1290,7 +1290,7 @@ impl RequiredPlanInfo for QueryInfo<'_> {
     }
 
     fn vdbe_max_steps(&self) -> u64 {
-        self.required.options.execute_options.vdbe_max_steps()
+        self.required.options.vdbe_max_steps
     }
 
     fn vtable_max_rows(&self) -> u64 {
@@ -1338,7 +1338,7 @@ impl RequiredPlanInfo for EncodedQueryInfo<'_> {
     }
 
     fn vdbe_max_steps(&self) -> u64 {
-        self.required.options.execute_options.vdbe_max_steps()
+        self.required.options.vdbe_max_steps
     }
 
     fn vtable_max_rows(&self) -> u64 {

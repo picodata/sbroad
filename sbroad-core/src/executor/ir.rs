@@ -21,7 +21,7 @@ use crate::ir::operator::{OrderByElement, OrderByEntity};
 use crate::ir::relation::SpaceEngine;
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::{LevelNode, PostOrder};
-use crate::ir::{ExecuteOptions, Plan};
+use crate::ir::Plan;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
@@ -106,11 +106,6 @@ impl ExecutionPlan {
     #[must_use]
     pub fn get_vtable_max_rows(&self) -> u64 {
         self.plan.options.vtable_max_rows
-    }
-
-    #[must_use]
-    pub fn get_execute_options(&self) -> &ExecuteOptions {
-        &self.plan.options.execute_options
     }
 
     #[allow(dead_code)]

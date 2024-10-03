@@ -1062,9 +1062,10 @@ impl FullExplain {
     pub fn new(ir: &Plan, top_id: NodeId) -> Result<Self, SbroadError> {
         let mut stack: Vec<ExplainTreePart> = Vec::new();
         let mut result = FullExplain::default();
-        result
-            .exec_options
-            .extend(ir.options.execute_options.clone().to_iter());
+        result.exec_options.push((
+            OptionKind::VdbeMaxSteps,
+            Value::Unsigned(ir.options.vdbe_max_steps),
+        ));
         result.exec_options.push((
             OptionKind::VTableMaxRows,
             Value::Unsigned(ir.options.vtable_max_rows),

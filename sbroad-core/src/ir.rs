@@ -11,13 +11,10 @@ use node::{Invalid, NodeAligned};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::cell::{RefCell, RefMut};
-use std::collections::hash_map::IntoIter;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::slice::Iter;
 use tree::traversal::LevelNode;
-
-use tarantool::tlua;
 
 use operator::Arithmetic;
 use relation::{Table, Type};
@@ -29,7 +26,6 @@ use crate::errors::Entity::Query;
 use crate::errors::{Action, Entity, SbroadError, TypeError};
 use crate::executor::engine::helpers::to_user;
 use crate::executor::engine::TableVersionMap;
-use crate::ir::helpers::RepeatableState;
 use crate::ir::node::plugin::{MutPlugin, Plugin};
 use crate::ir::node::{
     Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, ExprInParentheses,
@@ -44,7 +40,7 @@ use crate::ir::tree::traversal::{
 };
 use crate::ir::undo::TransformationLog;
 use crate::ir::value::Value;
-use crate::{collection, error, warn};
+use crate::warn;
 
 use self::node::Like;
 
@@ -609,92 +605,6 @@ impl Display for OptionKind {
     }
 }
 
-/// Options passed to `box.execute`
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Eq)]
-pub struct ExecuteOptions(HashMap<OptionKind, Value, RepeatableState>);
-
-impl ExecuteOptions {
-    #[must_use]
-    pub fn new(opts: HashMap<OptionKind, Value, RepeatableState>) -> Self {
-        ExecuteOptions(opts)
-    }
-
-    #[must_use]
-    pub fn to_iter(self) -> IntoIter<OptionKind, Value> {
-        self.0.into_iter()
-    }
-
-    pub fn insert(&mut self, kind: OptionKind, value: Value) -> Option<Value> {
-        self.0.insert(kind, value)
-    }
-
-    #[must_use]
-    pub fn vdbe_max_steps(&self) -> u64 {
-        self.0
-            .get(&OptionKind::VdbeMaxSteps)
-            .map_or(DEFAULT_VDBE_MAX_STEPS, |v| {
-                if let Value::Unsigned(steps) = v {
-                    *steps
-                } else {
-                    DEFAULT_VDBE_MAX_STEPS
-                }
-            })
-    }
-
-    #[must_use]
-    pub fn vtable_max_rows(&self) -> u64 {
-        self.0
-            .get(&OptionKind::VTableMaxRows)
-            .map_or(DEFAULT_VTABLE_MAX_ROWS, |v| {
-                if let Value::Unsigned(rows) = v {
-                    *rows
-                } else {
-                    DEFAULT_VTABLE_MAX_ROWS
-                }
-            })
-    }
-}
-
-impl<L> tlua::PushInto<L> for ExecuteOptions
-where
-    L: tlua::AsLua,
-{
-    type Err = String;
-
-    #[allow(unreachable_code)]
-    fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (Self::Err, L)> {
-        let to_push: Vec<Vec<(String, Value)>> = if self.0.is_empty() {
-            vec![]
-        } else {
-            vec![self
-                .0
-                .into_iter()
-                .map(|(kind, value)| (kind.to_string(), value))
-                .collect()]
-        };
-        match to_push.push_into_lua(lua) {
-            Ok(r) => Ok(r),
-            Err(e) => {
-                error!(
-                    Option::from("push ExecuteOptions into lua"),
-                    &format!("{:?}", e.0),
-                );
-                Err((e.0.to_string(), e.1))
-            }
-        }
-    }
-}
-
-impl Default for ExecuteOptions {
-    fn default() -> Self {
-        let exec_opts: HashMap<OptionKind, Value, RepeatableState> = collection!((
-            OptionKind::VdbeMaxSteps,
-            Value::Unsigned(DEFAULT_VDBE_MAX_STEPS)
-        ));
-        ExecuteOptions(exec_opts)
-    }
-}
-
 /// SQL options specified by user in `option(..)` clause.
 ///
 /// Note: ddl options are handled separately.
@@ -711,21 +621,21 @@ pub struct Options {
     pub vtable_max_rows: u64,
     /// Options passed to `box.execute` function on storages. Currently there is only one option
     /// `vdbe_max_steps`.
-    pub execute_options: ExecuteOptions,
+    pub vdbe_max_steps: u64,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options::new(DEFAULT_VTABLE_MAX_ROWS, ExecuteOptions::default())
+        Options::new(DEFAULT_VTABLE_MAX_ROWS, DEFAULT_VDBE_MAX_STEPS)
     }
 }
 
 impl Options {
     #[must_use]
-    pub fn new(vtable_max_rows: u64, execute_options: ExecuteOptions) -> Self {
+    pub fn new(vtable_max_rows: u64, vdbe_max_steps: u64) -> Self {
         Options {
             vtable_max_rows,
-            execute_options,
+            vdbe_max_steps,
         }
     }
 }
@@ -977,8 +887,8 @@ impl Plan {
                             &format!("Option {} does not apply for insert with values", opt.kind)
                         );
                     }
-                    if let Value::Unsigned(_) = val {
-                        self.options.execute_options.insert(opt.kind, val);
+                    if let Value::Unsigned(num) = val {
+                        self.options.vdbe_max_steps = num;
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::OptionSpec,
