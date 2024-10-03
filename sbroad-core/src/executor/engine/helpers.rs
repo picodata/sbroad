@@ -1294,7 +1294,7 @@ impl RequiredPlanInfo for QueryInfo<'_> {
     }
 
     fn vtable_max_rows(&self) -> u64 {
-        self.required.options.execute_options.vtable_max_rows()
+        self.required.options.vtable_max_rows
     }
 
     fn extract_data(&mut self) -> EncodedTables {
@@ -1342,7 +1342,7 @@ impl RequiredPlanInfo for EncodedQueryInfo<'_> {
     }
 
     fn vtable_max_rows(&self) -> u64 {
-        self.required.options.execute_options.vtable_max_rows()
+        self.required.options.vtable_max_rows
     }
 
     fn extract_data(&mut self) -> EncodedTables {

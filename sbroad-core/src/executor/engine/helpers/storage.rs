@@ -154,8 +154,7 @@ fn repack_data(
     let rows = rmpv::ext::from_value::<Vec<rmpv::Value>>(data).expect("failed to decode DQL data");
     if rows.len() as u64 > max_rows {
         return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-            "expected at most {} rows, got {}",
-            max_rows,
+            "Exceeded maximum number of rows ({max_rows}) in virtual table: {}",
             rows.len()
         )));
     }

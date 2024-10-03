@@ -137,6 +137,16 @@ option_queries.test_vtable_max_rows_on_storage = function()
     r, err = api:call("sbroad.execute", { query_str .. [[ option(vtable_max_rows = 6) ]] })
     t.assert_equals(err, nil)
     t.assert_equals(r, { row_count = 6 })
+
+    query_str = [[delete from "testing_space" ]]
+    _, err = api:call("sbroad.execute", { query_str .. [[option(vtable_max_rows = 1) ]] })
+    -- we can't test whole error message
+    -- because on different storages there will be different amount
+    t.assert_str_contains(err, [[Exceeded maximum number of rows (1) in virtual table]])
+
+    r, err = api:call("sbroad.execute", { query_str .. [[ option(vtable_max_rows = 12) ]] })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, { row_count = 12 })
 end
 
 option_queries.test_vtable_max_rows_insert_values = function()
