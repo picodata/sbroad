@@ -939,7 +939,7 @@ fn global_union_all3() {
         .set_motion_vtable(&sq_motion_id, sq_vtable.clone(), &coordinator)
         .unwrap();
 
-    let groupby_motion_id = *slices.slice(1).unwrap().position(0).unwrap();
+    let groupby_motion_id = *slices.slice(0).unwrap().position(1).unwrap();
     let groupby_motion_child = query
         .exec_plan
         .get_motion_subtree_root(groupby_motion_id)

@@ -4,7 +4,7 @@ use ahash::{AHashMap, AHashSet, RandomState};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::cmp::Ordering;
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use crate::errors::{Entity, SbroadError};
 use crate::frontend::sql::ir::SubtreeCloner;
@@ -22,7 +22,7 @@ use crate::ir::node::{
 };
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
 use crate::ir::tree::traversal::{
-    BreadthFirst, LevelNode, PostOrder, PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY,
+    LevelNode, PostOrder, PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY,
 };
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
@@ -2498,33 +2498,52 @@ impl Plan {
     /// # Errors
     /// - failed to traverse plan
     pub fn calculate_slices(&self, top_id: NodeId) -> Result<Vec<Vec<NodeId>>, SbroadError> {
-        let mut motions: Vec<Vec<NodeId>> = Vec::new();
-        let mut bft_tree = BreadthFirst::with_capacity(
-            |node| self.nodes.rel_iter(node),
-            REL_CAPACITY,
-            REL_CAPACITY,
-        );
-        let mut map: HashMap<usize, usize> = HashMap::new();
-        let mut max_level: usize = 0;
-        for LevelNode(level, id) in bft_tree.iter(top_id) {
-            if let Node::Relational(Relational::Motion(_)) = self.get_node(id)? {
-                let key: usize = match map.entry(level) {
-                    Entry::Occupied(o) => *o.into_mut(),
-                    Entry::Vacant(v) => {
-                        let old_level = max_level;
-                        v.insert(old_level);
-                        max_level += 1;
-                        old_level
-                    }
-                };
-                match motions.get_mut(key) {
-                    Some(list) => list.push(id),
-                    None => motions.push(vec![id]),
-                }
+        // Let's compute for each node the maximum number
+        // of motion nodes on the path from this node
+        // to some leaf node. For motion node this number
+        // is the slice index.
+        let mut slices: Vec<Vec<NodeId>> = Vec::new();
+        let mut dfs_tree = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
+        // When visiting new node this stack stores
+        // all the children of the current node.
+        let mut stack = Vec::new();
+        // Our plan is a DAG, we must not add the same motion twice
+        // to slices.
+        let mut visited_motions_ids = AHashSet::with_capacity(REL_CAPACITY);
+        for LevelNode(_, id) in dfs_tree.iter(top_id) {
+            let rel = self.get_relation_node(id)?;
+
+            let mut max_motions_in_path = 0;
+            for _ in 0..rel.children().len() {
+                // We can use unwrap here, because:
+                // 1. We traverse nodes in DFS, bottom up manner.
+                // So we will first iterate over node's children
+                // and add them to stack.
+                // 2. DFS uses rel iter to iterate over node's children
+                // and we know that rel iter iterates over ALL children.
+                let child_mm = stack.pop().expect("rel iter visits all children");
+                max_motions_in_path = max_motions_in_path.max(child_mm);
             }
+
+            if rel.is_motion() {
+                debug_assert!(max_motions_in_path <= slices.len());
+
+                if visited_motions_ids.insert(id) {
+                    if max_motions_in_path == slices.len() {
+                        slices.push(Vec::new())
+                    }
+                    // We can unwrap here, because max_motions_in_path
+                    // is always incremented by one and each time we
+                    // add new slice if needed.
+                    slices.get_mut(max_motions_in_path).unwrap().push(id);
+                }
+
+                max_motions_in_path += 1;
+            }
+
+            stack.push(max_motions_in_path);
         }
-        motions.reverse();
-        Ok(motions)
+        Ok(slices)
     }
 }
 
