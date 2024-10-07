@@ -335,7 +335,7 @@ where
                     output,
                     ..
                 }) => match policy {
-                    MotionPolicy::Full | MotionPolicy::Local => {
+                    MotionPolicy::Full => {
                         self.bucket_map.insert(*output, Buckets::Any);
                     }
                     MotionPolicy::Segment(_) => {
@@ -347,6 +347,21 @@ where
                             .collect::<HashSet<u64, RepeatableState>>();
                         self.bucket_map
                             .insert(*output, Buckets::new_filtered(buckets));
+                    }
+                    MotionPolicy::Local => {
+                        let child_id = ir_plan.get_relational_child(node_id, 0)?;
+                        let child_buckets = self
+                            .bucket_map
+                            .get(&ir_plan.get_relational_output(child_id)?)
+                            .ok_or_else(|| {
+                                SbroadError::FailedTo(
+                                    Action::Retrieve,
+                                    Some(Entity::Buckets),
+                                    "of the child from the bucket map.".to_smolstr(),
+                                )
+                            })?
+                            .clone();
+                        self.bucket_map.insert(*output, child_buckets);
                     }
                     MotionPolicy::LocalSegment(_) => {
                         // See `dispatch` method in `src/executor.rs` in order to understand when

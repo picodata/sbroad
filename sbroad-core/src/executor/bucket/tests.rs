@@ -1,10 +1,10 @@
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
+use crate::collection;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::engine::Vshard;
-
 use crate::executor::Query;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::value::Value;
@@ -459,4 +459,30 @@ fn global_tbl_groupby() {
     let buckets = query.bucket_discovery(top).unwrap();
 
     assert_eq!(Buckets::Any, buckets);
+}
+
+#[test]
+fn update_local() {
+    let query = r#"update t set c = 1 where (a, b) = (1, 1)"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Filtered(collection!(6691)), buckets);
+}
+
+#[test]
+fn delete_local() {
+    let query = r#"delete from t where (a, b) = (1, 1)"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Filtered(collection!(6691)), buckets);
 }
