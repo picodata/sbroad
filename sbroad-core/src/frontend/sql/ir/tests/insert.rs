@@ -48,7 +48,7 @@ fn insert3() {
 
     let expected_explain = String::from(
         r#"insert "test_space" on conflict: fail
-    motion [policy: segment([ref("id")])]
+    motion [policy: local segment([ref("id")])]
         projection ("test_space"."id"::unsigned -> "id", "test_space"."id"::unsigned -> "id")
             scan "test_space"
 execution options:

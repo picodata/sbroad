@@ -1,6 +1,7 @@
 //! Tuple distribution module.
 
 use ahash::{AHashMap, RandomState};
+use itertools::Itertools;
 use smol_str::{format_smolstr, ToSmolStr};
 use std::collections::{HashMap, HashSet};
 
@@ -329,7 +330,7 @@ type ParentColumnPosition = usize;
 /// Set of the relational nodes referred by references under the row.
 struct ReferenceInfo {
     referred_children: ReferredNodes,
-    child_column_to_parent_col: AHashMap<ChildColumnReference, ParentColumnPosition>,
+    child_column_to_parent_col: AHashMap<ChildColumnReference, Vec<ParentColumnPosition>>,
 }
 
 impl ReferenceInfo {
@@ -339,7 +340,8 @@ impl ReferenceInfo {
         parent_children: &Children<'_>,
     ) -> Result<Self, SbroadError> {
         let mut ref_nodes = ReferredNodes::new();
-        let mut ref_map: AHashMap<ChildColumnReference, ParentColumnPosition> = AHashMap::new();
+        let mut ref_map: AHashMap<ChildColumnReference, Vec<ParentColumnPosition>> =
+            AHashMap::new();
         for (parent_column_pos, id) in ir.get_row_list(row_id)?.iter().enumerate() {
             let child_id = ir.get_child_under_alias(*id)?;
             if let Expression::Reference(Reference {
@@ -362,7 +364,10 @@ impl ReferenceInfo {
                         )
                     })?;
                     ref_nodes.append(*referred_id);
-                    ref_map.insert((*referred_id, *position).into(), parent_column_pos);
+                    ref_map
+                        .entry((*referred_id, *position).into())
+                        .or_default()
+                        .push(parent_column_pos);
                 }
             }
         }
@@ -615,7 +620,7 @@ impl Plan {
     fn dist_from_child(
         &self,
         child_rel_node: NodeId,
-        child_pos_map: &AHashMap<ChildColumnReference, ParentColumnPosition>,
+        child_pos_map: &AHashMap<ChildColumnReference, Vec<ParentColumnPosition>>,
     ) -> Result<Distribution, SbroadError> {
         let rel_node = self.get_relation_node(child_rel_node)?;
         let output_expr = self.get_expression_node(rel_node.output())?;
@@ -633,18 +638,27 @@ impl Plan {
                     let mut new_keys: HashSet<Key, RepeatableState> =
                         HashSet::with_hasher(RepeatableState);
                     for key in keys.iter() {
-                        let mut new_key: Key = Key::new(Vec::with_capacity(key.positions.len()));
-                        let all_found = key.positions.iter().all(|pos| {
-                            child_pos_map
-                                .get(&(child_rel_node, *pos).into())
-                                .map_or(false, |v| {
-                                    new_key.positions.push(*v);
-                                    true
-                                })
-                        });
+                        let all_found = key
+                            .positions
+                            .iter()
+                            .all(|pos| child_pos_map.contains_key(&(child_rel_node, *pos).into()));
 
                         if all_found {
-                            new_keys.insert(new_key);
+                            let product = key
+                                .positions
+                                .iter()
+                                .map(|pos| {
+                                    child_pos_map
+                                        .get(&(child_rel_node, *pos).into())
+                                        .unwrap()
+                                        .iter()
+                                        .copied()
+                                })
+                                .multi_cartesian_product();
+
+                            for positions in product {
+                                new_keys.insert(Key::new(positions));
+                            }
                         }
                     }
 
@@ -689,7 +703,7 @@ impl Plan {
 
     fn set_two_children_node_dist(
         &mut self,
-        child_pos_map: &AHashMap<ChildColumnReference, ParentColumnPosition>,
+        child_pos_map: &AHashMap<ChildColumnReference, Vec<ParentColumnPosition>>,
         left_id: NodeId,
         right_id: NodeId,
         parent_id: NodeId,

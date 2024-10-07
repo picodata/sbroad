@@ -486,3 +486,29 @@ fn delete_local() {
 
     assert_eq!(Buckets::Filtered(collection!(6691)), buckets);
 }
+
+#[test]
+fn same_multicolumn_sk_in_eq() {
+    let query = r#"select * from t where a = 1 and b = 1 and b = 2 and a = 2"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Filtered(collection!()), buckets);
+}
+
+#[test]
+fn same_column_in_eq() {
+    let query = r#"select * from test_space where id = 1 and id = 2"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Filtered(collection!()), buckets);
+}
