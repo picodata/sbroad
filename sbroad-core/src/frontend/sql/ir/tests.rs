@@ -1,6 +1,6 @@
 use crate::errors::SbroadError;
 use crate::executor::engine::mock::RouterConfigurationMock;
-use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::frontend::sql::ast::{AbstractSyntaxTree, ParseTree, Rule};
 use crate::frontend::Ast;
 use crate::ir::node::relational::Relational;
 use crate::ir::node::NodeId;
@@ -8,6 +8,7 @@ use crate::ir::transformation::helpers::{sql_to_ir, sql_to_optimized_ir};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use crate::ir::{Plan, Positions};
+use pest::Parser;
 use pretty_assertions::assert_eq;
 use time::{format_description, OffsetDateTime, Time};
 
@@ -4089,6 +4090,51 @@ fn front_different_values_row_len() {
         "invalid query: all values rows must have the same length",
         err.to_string()
     );
+}
+
+#[test]
+fn front_sql_whitespaces_are_not_ignored() {
+    // Deletion of any WHITESPACE in those query will transform
+    // them into invalid.
+    let correct_queries = [
+        r#"create user "emir" with password 'vildanov' using md5"#,
+        r#"set value to key"#,
+        r#"set transaction isolation level read commited"#,
+        r#"grant create on user vasya to emir option(timeout=1)"#,
+        r#"alter plugin "abc" 0.1.0 remove service "svc1" from tier "tier1" option(timeout=11)"#,
+        r#"create table if not exists t(a int primary key,b int) using memtx distributed by(a,b) wait applied locally option(timeout=1)"#,
+        r#"create procedure if not exists name(int,int,varchar(1)) language sql as $$insert into t values(1,2)$$ wait applied globally"#,
+        r#"with cte1(a,b) as(select * from t),cte2 as(select * from t) select * from t join t on true group by a having b order by a union all select * from t"#,
+        r#"select cast(1 as int) or not exists (values(true)) and 1+1 and true or (a in (select * from t)) and i is not null"#,
+    ];
+
+    fn whitespace_positions(s: &str) -> Vec<usize> {
+        s.char_indices()
+            .filter_map(|(pos, c)| if c.is_whitespace() { Some(pos) } else { None })
+            .collect()
+    }
+
+    for query in correct_queries {
+        let res = ParseTree::parse(Rule::Command, &query);
+        if res.is_err() {
+            println!("Query [{query}] is invalid.")
+        }
+        assert!(res.is_ok());
+    }
+
+    for query in correct_queries {
+        let whitespaces = whitespace_positions(query);
+        for wp_idx in whitespaces {
+            let mut fixed = String::new();
+            fixed.push_str(&query[..wp_idx]);
+            fixed.push_str(&query[wp_idx + 1..]);
+            let res = ParseTree::parse(Rule::Command, &fixed);
+            if res.is_ok() {
+                println!("Query [{fixed}] is valid.")
+            }
+            assert!(res.is_err())
+        }
+    }
 }
 
 #[cfg(test)]
