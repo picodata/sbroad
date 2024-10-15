@@ -37,7 +37,7 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
         ~ SingleQuotedString ~ (W ~ AuthMethod)? ~ (W ~ TimeoutOption)?
     }
     AlterUser = ${
-        ^"alter" ~ W ~ ^"user" ~ W ~ Identifier ~ W ~ (^"with" ~ W)? ~ AlterOption ~ W ~ TimeoutOption?
+        ^"alter" ~ W ~ ^"user" ~ W ~ Identifier ~ W ~ (^"with" ~ W)? ~ AlterOption ~ (W ~ TimeoutOption)?
     }
         AlterOption = _{ AlterLogin | AlterNoLogin | AlterPassword | AlterRename }
             AlterLogin = { ^"login" }
@@ -48,11 +48,11 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
             ChapSha1 = { ^"chap-sha1" }
             Md5 = { ^"md5" }
             Ldap = { ^"ldap" }
-    DropUser = ${ ^"drop" ~ W ~ ^"user" ~ W ~ (IfExists ~ W)? ~ Identifier ~ W ~ TimeoutOption? }
-    CreateRole = ${ ^"create" ~ W ~ ^"role" ~ W ~ (IfNotExists ~ W)? ~ Identifier ~ W ~ TimeoutOption? }
-    DropRole = ${ ^"drop" ~ W ~ ^"role" ~ W ~ (IfExists ~ W)? ~ Identifier ~ W ~ TimeoutOption? }
-    GrantPrivilege = ${ ^"grant" ~ W ~ PrivBlock ~ W ~ ^"to" ~ W ~ Identifier ~ W ~ TimeoutOption? }
-    RevokePrivilege = ${ ^"revoke" ~ W ~ PrivBlock ~ W ~ ^"from" ~ W ~ Identifier ~ W ~ TimeoutOption? }
+    DropUser = ${ ^"drop" ~ W ~ ^"user" ~ W ~ (IfExists ~ W)? ~ Identifier ~ (W ~ TimeoutOption)? }
+    CreateRole = ${ ^"create" ~ W ~ ^"role" ~ W ~ (IfNotExists ~ W)? ~ Identifier ~ (W ~ TimeoutOption)? }
+    DropRole = ${ ^"drop" ~ W ~ ^"role" ~ W ~ (IfExists ~ W)? ~ Identifier ~ (W ~ TimeoutOption)? }
+    GrantPrivilege = ${ ^"grant" ~ W ~ PrivBlock ~ W ~ ^"to" ~ W ~ Identifier ~ (W ~ TimeoutOption)? }
+    RevokePrivilege = ${ ^"revoke" ~ W ~ PrivBlock ~ W ~ ^"from" ~ W ~ Identifier ~ (W ~ TimeoutOption)? }
         PrivBlock = _{ PrivBlockPrivilege | PrivBlockRolePass }
             PrivBlockPrivilege = ${Privilege ~ W ~ (PrivBlockUser | PrivBlockSpecificUser | PrivBlockRole
                                                 | PrivBlockSpecificRole | PrivBlockTable | PrivBlockSpecificTable
@@ -119,9 +119,9 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
         ProcBody = { (Insert | Update | Delete) }
 
     DropProc = ${ ^"drop" ~ W ~ ^"procedure" ~ W ~ (IfExists ~ W)? ~ ProcWithOptionalParams ~ (W ~ WaitApplied)? ~ (W ~ TimeoutOption)? }
-        ProcWithOptionalParams = ${ Identifier ~ W ~ ProcParams? }
+        ProcWithOptionalParams = ${ Identifier ~ ProcParams? }
 
-    RenameProc = ${ ^"alter" ~ W ~ ^"procedure" ~ W ~ OldProc ~ W ~ (ProcParams ~ W)? ~ ^"rename" ~ W ~ ^"to"
+    RenameProc = ${ ^"alter" ~ W ~ ^"procedure" ~ W ~ OldProc ~ (ProcParams)? ~ W ~ ^"rename" ~ W ~ ^"to"
                     ~ W ~ NewProc ~ (W ~ WaitApplied)? ~ (W ~ TimeoutOption)? }
         OldProc = @{ Identifier }
         NewProc = @{ Identifier }
@@ -132,7 +132,7 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
         (W ~ IndexOptions)? ~ (W ~ WaitApplied)? ~ (W ~ TimeoutOption)?
     }
     Unique = { ^"unique" }
-    IndexType = { ^"using" ~ (Tree | Hash | RTree | BitSet) }
+    IndexType = { ^"using" ~ W ~ (Tree | Hash | RTree | BitSet) }
         Tree = { ^"tree" }
         Hash = { ^"hash" }
         RTree = { ^"rtree" }
@@ -259,7 +259,7 @@ Query = { (SelectFull | Values | Insert | Update | Delete) ~ DqlOption? }
     TimeoutOption = _{ ^"option" ~ WO ~ "(" ~ WO ~ Timeout ~ WO ~ ")" }
     VdbeMaxSteps = { ^"vdbe_max_steps" ~ "=" ~ (Unsigned | Parameter) }
     VTableMaxRows = { ^"vtable_max_rows" ~ "=" ~ (Unsigned | Parameter) }
-    Delete = { ^"delete" ~ ^"from" ~ ScanTable ~ (^"where" ~ DeleteFilter)? }
+    Delete = ${ ^"delete" ~ W ~ ^"from" ~ W ~ ScanTable ~ (W ~ ^"where" ~ W ~ DeleteFilter)? }
     	DeleteFilter = { Expr }
 
 Identifier = @{ DelimitedIdentifier | RegularIdentifier  }
