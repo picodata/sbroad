@@ -214,7 +214,7 @@ local function multi_storage_dql(uuid_to_args, func, handler, opts, tier_name)
     -- netbox requests return box.NULL instead of nils.
 
     -- Wait for all masters to connect.
-    vrs.wait_masters_connect(replicasets)
+    vrs.wait_masters_connect(replicasets, timeout)
     timeout = deadline - fiber.clock()
 
 
