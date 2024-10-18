@@ -65,7 +65,6 @@ trim        ::= 'TRIM' '('
 substr      ::= 'SUBSTR' '(' string ',' from (',' count)? ')'
 lower       ::= 'LOWER' '(' string ')'
 upper       ::= 'UPPER' '(' string ')'
-substr      ::= 'SUBSTR' '(' string ',' from (',' count)? ')'
 values      ::= 'VALUES'
                 ('(' (expression(',' expression)*) ')')
                 (',' ('(' (expression(',' expression)*) ')'))*
