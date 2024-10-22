@@ -1550,7 +1550,7 @@ fn parse_param<M: Metadata>(
 lazy_static::lazy_static! {
     static ref PRATT_PARSER: PrattParser<Rule> = {
         use pest::pratt_parser::{Assoc::{Left, Right}, Op};
-        use Rule::{Add, And, Between, ConcatInfixOp, Divide, Eq, Escape, Gt, GtEq, In, IsNullPostfix, CastPostfix, Like, Lt, LtEq, Multiply, NotEq, Or, Subtract, UnaryNot};
+        use Rule::{Add, And, Between, ConcatInfixOp, Divide, Eq, Escape, Gt, GtEq, In, IsPostfix, CastPostfix, Like, Lt, LtEq, Multiply, NotEq, Or, Subtract, UnaryNot};
 
         // Precedence is defined lowest to highest.
         PrattParser::new()
@@ -1568,7 +1568,7 @@ lazy_static::lazy_static! {
             )
             .op(Op::infix(Add, Left) | Op::infix(Subtract, Left))
             .op(Op::infix(Multiply, Left) | Op::infix(Divide, Left) | Op::infix(ConcatInfixOp, Left))
-            .op(Op::postfix(IsNullPostfix))
+            .op(Op::postfix(IsPostfix))
             .op(Op::postfix(CastPostfix))
     };
 }
@@ -1793,9 +1793,10 @@ enum ParseExpression {
         is_not: bool,
         child: Box<ParseExpression>,
     },
-    IsNull {
+    Is {
         is_not: bool,
         child: Box<ParseExpression>,
+        value: Option<bool>,
     },
     Cast {
         cast_type: CastType,
@@ -2270,10 +2271,20 @@ impl ParseExpression {
                     op_id
                 }
             }
-            ParseExpression::IsNull { is_not, child } => {
+            ParseExpression::Is {
+                is_not,
+                child,
+                value,
+            } => {
                 let child_plan_id = child.populate_plan(plan, worker)?;
                 let child_covered_with_row = plan.row(child_plan_id)?;
-                let op_id = plan.add_unary(Unary::IsNull, child_covered_with_row)?;
+                let op_id = match value {
+                    None => plan.add_unary(Unary::IsNull, child_covered_with_row)?,
+                    Some(b) => {
+                        let right_operand = plan.add_const(Value::Boolean(*b));
+                        plan.add_bool(child_covered_with_row, Bool::Eq, right_operand)?
+                    }
+                };
                 if *is_not {
                     plan.add_unary(Unary::Not, op_id)?
                 } else {
@@ -2826,14 +2837,25 @@ where
                     let cast_type = cast_type_from_pair(ty_pair)?;
                     Ok(ParseExpression::Cast { child: Box::new(child), cast_type })
                 }
-                Rule::IsNullPostfix => {
-                    let is_not = match op.into_inner().len() {
-                        1 => true,
-                        0 => false,
-                        _ => unreachable!("IsNull must have 0 or 1 children")
+                Rule::IsPostfix => {
+                    let mut inner = op.into_inner();
+                    let (is_not, value_index) = match inner.len() {
+                        2 => (true, 1),
+                        1 => (false, 0),
+                        _ => unreachable!("Is must have 1 or 2 children")
                     };
-                    Ok(ParseExpression::IsNull { is_not, child: Box::new(child)})
-                },
+                    let value_rule = inner
+                        .nth(value_index)
+                        .expect("Value must be present under Is")
+                        .as_rule();
+                    let value = match value_rule {
+                        Rule::True => Some(true),
+                        Rule::False => Some(false),
+                        Rule::Unknown | Rule::Null => None,
+                        _ => unreachable!("Is value must be TRUE, FALSE, NULL or UNKNOWN")
+                    };
+                    Ok(ParseExpression::Is { is_not, child: Box::new(child), value })
+                }
                 rule => unreachable!("Expr::parse expected postfix operator, found {:?}", rule),
             }
         })

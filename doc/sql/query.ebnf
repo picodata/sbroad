@@ -38,7 +38,7 @@ expression  ::= ('NOT'* (
                     | 'NOT'? 'EXISTS' '(' dql ')'
                     | '(' dql ')'
                     | '(' expression (',' expression)* ')'
-                ) ('IS' 'NOT'? 'NULL')?)
+                ) ('IS' 'NOT'? ('NULL' | 'TRUE' | 'FALSE' | 'UNKNOWN'))*)
                 | expression
                 (
                     'NOT'? 'BETWEEN' expression 'AND'

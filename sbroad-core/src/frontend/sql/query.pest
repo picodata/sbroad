@@ -320,10 +320,11 @@ Expr = ${ ExprAtomValue ~ (ExprInfixOpo ~ ExprAtomValue)* }
             Lt    = { "<" }
             LtEq  = { "<=" }
             NotEq = { "<>" | "!=" }
-    ExprAtomValue = _{ (UnaryNot ~ W)* ~ AtomicExpr ~ CastPostfix* ~ (W ~ IsNullPostfix)? }
+    ExprAtomValue = _{ (UnaryNot ~ W)* ~ AtomicExpr ~ CastPostfix* ~ (W ~ IsPostfix)* }
         UnaryNot   = { NotFlag }
         CastPostfix = { "::" ~ ColumnDefType }
-        IsNullPostfix = ${ ^"is" ~ W ~ (NotFlag ~ W )? ~ ^"null" }
+        IsPostfix = ${ ^"is" ~ W ~ (NotFlag ~ W)? ~ (True | False | Unknown | Null) }
+            Unknown = { ^"unknown" }
         AtomicExpr = _{ Literal | Parameter | CastOp | Trim | CurrentDate | IdentifierWithOptionalContinuation | ExpressionInParentheses | UnaryOperator | Case | SubQuery | Row }
             Literal = { True | False | Null | Double | Decimal | Unsigned | Integer | SingleQuotedString }
                 True     = { ^"true" }

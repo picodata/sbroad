@@ -24,6 +24,11 @@ fn sql_to_optimized_ir_add_motions_err(query: &str) -> SbroadError {
     plan.add_motions().unwrap_err()
 }
 
+fn check_output(input: &str, params: Vec<Value>, expected_explain: &str) {
+    let plan = sql_to_optimized_ir(input, params);
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
 #[test]
 fn front_sql1() {
     let input = r#"SELECT "identification_number", "product_code" FROM "hash_testing"
@@ -407,6 +412,95 @@ execution options:
     );
 
     assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_is_true() {
+    check_output(
+        "select true is true",
+        vec![],
+        r#"projection (ROW(true::boolean) = true::boolean -> "col_1")
+execution options:
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
+"#,
+    );
+
+    check_output(
+        "select true is not true",
+        vec![],
+        r#"projection (not ROW(true::boolean) = true::boolean -> "col_1")
+execution options:
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
+"#,
+    );
+}
+
+#[test]
+fn front_sql_is_false() {
+    check_output(
+        "select true is false",
+        vec![],
+        r#"projection (ROW(true::boolean) = false::boolean -> "col_1")
+execution options:
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
+"#,
+    );
+
+    check_output(
+        "select true is not false",
+        vec![],
+        r#"projection (not ROW(true::boolean) = false::boolean -> "col_1")
+execution options:
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
+"#,
+    );
+}
+
+#[test]
+fn front_sql_is_null_unknown() {
+    check_output(
+        "select true is null",
+        vec![],
+        r#"projection (ROW(true::boolean) is null -> "col_1")
+execution options:
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
+"#,
+    );
+
+    check_output(
+        "select true is unknown",
+        vec![],
+        r#"projection (ROW(true::boolean) is null -> "col_1")
+execution options:
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
+"#,
+    );
+
+    check_output(
+        "select true is not null",
+        vec![],
+        r#"projection (not ROW(true::boolean) is null -> "col_1")
+execution options:
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
+"#,
+    );
+
+    check_output(
+        "select true is not unknown",
+        vec![],
+        r#"projection (not ROW(true::boolean) is null -> "col_1")
+execution options:
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
+"#,
+    );
 }
 
 #[test]
