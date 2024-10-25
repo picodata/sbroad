@@ -5,7 +5,7 @@ use crate::executor::engine::helpers::to_user;
 use crate::ir::aggregates::{generate_local_alias_for_aggr, AggregateKind, SimpleAggregate};
 use crate::ir::distribution::Distribution;
 use crate::ir::expression::{
-    ColumnPositionMap, Comparator, FunctionFeature, ReferencePolicy, EXPR_HASH_DEPTH,
+    ColumnPositionMap, Comparator, FunctionFeature, EXPR_HASH_DEPTH,
 };
 use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::{MutRelational, Relational};
@@ -110,7 +110,7 @@ impl<'plan, 'args> AggregateSignature<'plan, 'args> {
 impl<'plan, 'args> Hash for AggregateSignature<'plan, 'args> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.kind.hash(state);
-        let mut comp = Comparator::new(ReferencePolicy::ByAliases, self.plan);
+        let mut comp = Comparator::new(self.plan);
         comp.set_hasher(state);
         for arg in self.arguments {
             comp.hash_for_expr(*arg, EXPR_HASH_DEPTH);
@@ -149,7 +149,7 @@ impl<'plan> GroupingExpression<'plan> {
 
 impl<'plan> Hash for GroupingExpression<'plan> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let mut comp = Comparator::new(ReferencePolicy::ByAliases, self.plan);
+        let mut comp = Comparator::new(self.plan);
         comp.set_hasher(state);
         comp.hash_for_expr(self.id, EXPR_HASH_DEPTH);
     }
@@ -157,7 +157,7 @@ impl<'plan> Hash for GroupingExpression<'plan> {
 
 impl<'plan> PartialEq for GroupingExpression<'plan> {
     fn eq(&self, other: &Self) -> bool {
-        let comp = Comparator::new(ReferencePolicy::ByAliases, self.plan);
+        let comp = Comparator::new(self.plan);
         comp.are_subtrees_equal(self.id, other.id).unwrap_or(false)
     }
 }
@@ -229,6 +229,12 @@ impl<'plan> AggrCollector<'plan> {
 /// For example:
 /// `select a from t group by a having a = 1`
 /// Here expression in `GroupBy` is mapped to `a` in `Projection` and `a` in `Having`
+///
+/// In case there is a reference (or an expression containing references like `"a" + "b"`)
+/// in the location relational operator, there will be a corresponding mapping for it.
+/// In case there is a reference (or expression containing it) in the final relational operator
+/// that doesn't correspond to any GroupBy expression, an error should have been thrown on the
+/// stage of `collect_grouping_expressions`.
 type GroupbyExpressionsMap = HashMap<NodeId, Vec<ExpressionLocationIds>>;
 /// Maps id of `GroupBy` expression used in `GroupBy` (from local stage)
 /// to corresponding local alias used in local Projection. Note:
@@ -573,11 +579,9 @@ impl Plan {
                             return Ok(*value_left == *value_right);
                         }
                     }
-                    Expression::Reference { .. } => {
-                        if let Expression::Reference { .. } = right {
-                            let alias_left = self.get_alias_from_reference_node(&left)?;
-                            let alias_right = self.get_alias_from_reference_node(&right)?;
-                            return Ok(alias_left == alias_right);
+                    Expression::Reference(Reference { targets: left_t, position: left_p, .. }) => {
+                        if let Expression::Reference(Reference { targets: right_t, position: right_p, .. }) = right {
+                            return Ok(left_t == right_t && left_p == right_p);
                         }
                     }
                     Expression::Row(Row {
@@ -1496,6 +1500,11 @@ impl Plan {
         type GroupByExpressionID = NodeId;
         type ExpressionID = NodeId;
         type ExpressionParent = Option<NodeId>;
+        // Map of { Relation -> vec![(
+        //                           expr_id under group by
+        //                           expr_id of the same expr under other relation (e.g. Projection)
+        //                           parent expr over group by expr
+        //                          )] }
         type ParentExpressionMap =
             HashMap<RelationalID, Vec<(GroupByExpressionID, ExpressionID, ExpressionParent)>>;
         let map: ParentExpressionMap = {
@@ -1513,6 +1522,7 @@ impl Plan {
             new_map
         };
         for (rel_id, group) in map {
+            // E.g. GroupBy under final Projection.
             let child_id = *self
                 .get_relational_children(rel_id)?
                 .get(0)

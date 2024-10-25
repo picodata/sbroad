@@ -194,7 +194,7 @@ impl<'plan> PlanExpr<'plan> {
 
 impl<'plan> Hash for PlanExpr<'plan> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let mut comp = Comparator::new(ReferencePolicy::ByFields, self.plan);
+        let mut comp = Comparator::new(self.plan);
         comp.set_hasher(state);
         comp.hash_for_expr(self.id, EXPR_HASH_DEPTH);
     }
@@ -202,35 +202,14 @@ impl<'plan> Hash for PlanExpr<'plan> {
 
 impl<'plan> PartialEq for PlanExpr<'plan> {
     fn eq(&self, other: &Self) -> bool {
-        let comp = Comparator::new(ReferencePolicy::ByFields, self.plan);
+        let comp = Comparator::new(self.plan);
         comp.are_subtrees_equal(self.id, other.id).unwrap_or(false)
     }
 }
 
 impl<'plan> Eq for PlanExpr<'plan> {}
 
-/// Policy of comparing and hashing expressions under `Reference` nodes.
-pub enum ReferencePolicy {
-    /// References are considered equal,
-    /// if their subfields are equal (parent, position, target)
-    ///
-    /// Reference's hash is computed by hashing all subfields.
-    /// E.g. used in `Update` logic for hashing expression in case we assigning several columns to
-    /// the same value (e.g. `b+c` expression will be hashed using `ByFields` policy in query
-    /// like `update T set a = b+c, d = b+c`).
-    ByFields,
-    /// References are considered equal,
-    /// if they refer to the same alias
-    ///
-    /// Reference's hash is computed by hashing alias.
-    /// E.g. used in `GroupBy` logic for comparing expression in projection with one used in the
-    /// grouping expression (e.g. `"a"*2` expression will be hashed using `ByFields` policy in query
-    /// like `select "a"*2 from T group by "a"*2`).
-    ByAliases,
-}
-
 pub struct Comparator<'plan> {
-    policy: ReferencePolicy,
     plan: &'plan Plan,
     state: Option<&'plan mut dyn Hasher>,
 }
@@ -239,9 +218,8 @@ pub const EXPR_HASH_DEPTH: usize = 5;
 
 impl<'plan> Comparator<'plan> {
     #[must_use]
-    pub fn new(policy: ReferencePolicy, plan: &'plan Plan) -> Self {
+    pub fn new(plan: &'plan Plan) -> Self {
         Comparator {
-            policy,
             plan,
             state: None,
         }
@@ -251,6 +229,10 @@ impl<'plan> Comparator<'plan> {
         self.state = Some(state);
     }
 
+    /// TODO: Fix of comparing References via their `targets` and `position` logic
+    ///       was added. It was added in the context of comparing expressions under
+    ///       GroupBy under Projection which have the same output. Is it true for
+    ///       other cases?
     /// Checks whether expression subtrees `lhs` and `rhs` are equal.
     /// This function traverses both trees comparing their nodes.
     ///
@@ -421,18 +403,9 @@ impl<'plan> Comparator<'plan> {
                             return Ok(*value_left == *value_right);
                         }
                     }
-                    Expression::Reference(_) => {
-                        if let Expression::Reference(_) = right {
-                            return match self.policy {
-                                ReferencePolicy::ByAliases => {
-                                    let alias_left =
-                                        self.plan.get_alias_from_reference_node(&left)?;
-                                    let alias_right =
-                                        self.plan.get_alias_from_reference_node(&right)?;
-                                    Ok(alias_left == alias_right)
-                                }
-                                ReferencePolicy::ByFields => Ok(left == right),
-                            };
+                    Expression::Reference(Reference { targets: t_left, position: p_left, .. }) => {
+                        if let Expression::Reference(Reference { targets: t_right, position: p_right, .. }) = right {
+                            return Ok(t_left == t_right && p_left == p_right)
                         }
                     }
                     Expression::Row(Row {
@@ -577,25 +550,16 @@ impl<'plan> Comparator<'plan> {
                 value.hash(state);
             }
             Expression::Reference(Reference {
-                parent,
+                parent: _,
                 position,
                 targets,
                 col_type,
                 asterisk_source: is_asterisk,
-            }) => match self.policy {
-                ReferencePolicy::ByAliases => {
-                    self.plan
-                        .get_alias_from_reference_node(&node)
-                        .unwrap_or("")
-                        .hash(state);
-                }
-                ReferencePolicy::ByFields => {
-                    parent.hash(state);
-                    position.hash(state);
-                    targets.hash(state);
-                    col_type.hash(state);
-                    is_asterisk.hash(state);
-                }
+            }) => {
+                position.hash(state);
+                targets.hash(state);
+                col_type.hash(state);
+                is_asterisk.hash(state);
             },
             Expression::Row(Row { list, .. }) => {
                 for child in list {
