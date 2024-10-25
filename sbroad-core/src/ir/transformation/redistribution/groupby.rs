@@ -7,6 +7,7 @@ use crate::ir::distribution::Distribution;
 use crate::ir::expression::{
     ColumnPositionMap, Comparator, FunctionFeature, EXPR_HASH_DEPTH,
 };
+use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::{MutRelational, Relational};
 use crate::ir::node::{
@@ -120,15 +121,14 @@ impl<'plan, 'args> Hash for AggregateSignature<'plan, 'args> {
 
 impl<'plan, 'args> PartialEq<Self> for AggregateSignature<'plan, 'args> {
     fn eq(&self, other: &Self) -> bool {
+        let comparator = Comparator::new(self.plan);
         self.kind == other.kind
             && self
                 .arguments
                 .iter()
                 .zip(other.arguments.iter())
                 .all(|(l, r)| {
-                    self.plan
-                        .are_aggregate_subtrees_equal(*l, *r)
-                        .unwrap_or(false)
+                    comparator.are_subtrees_equal(*l, *r).unwrap_or(false)
                 })
     }
 }
@@ -313,12 +313,13 @@ impl<'plan> ExpressionMapper<'plan> {
         if is_sq_ref {
             return Ok(());
         }
+        let comparator = Comparator::new(self.plan);
         if let Some(gr_expr) = self
             .gr_exprs
             .iter()
             .find(|gr_expr| {
-                self.plan
-                    .are_aggregate_subtrees_equal(current, **gr_expr)
+                comparator
+                    .are_subtrees_equal(current, **gr_expr)
                     .unwrap_or(false)
             })
             .copied()
@@ -368,278 +369,6 @@ impl Plan {
             return format!("column_{id}");
         }
         format!("{}_{id}", uuid::Uuid::new_v4().as_simple())
-    }
-
-    #[allow(clippy::too_many_lines)]
-    /// Checks whether subtrees `lhs` and `rhs` are equal.
-    /// This function traverses both trees comparing their nodes.
-    ///
-    /// # References Equality
-    /// Note: references are considered equal if the columns names to which
-    /// they refer are equal. This is because this function is used to find
-    /// common expression between `GroupBy` and nodes in Reduce stage of
-    /// 2-stage aggregation (`Projection`, `Having`, `OrderBy`). These nodes
-    /// handle tuples of the same tables and do not introduce new aliases, so it is safe to compare
-    /// references this way.
-    ///
-    /// It would be wrong to use this function for comparing expressions that
-    /// come from different tables:
-    /// ```text
-    /// select a + b from t1
-    /// where c in (select a + b from t2)
-    /// ```
-    /// Here this function would say that expressions `a+b` in projection and
-    /// selection are the same, which is wrong.
-    ///
-    /// # Errors
-    /// - invalid [`Expression::Reference`]s in either of subtrees
-    ///
-    /// # Panics
-    /// - never
-    pub fn are_aggregate_subtrees_equal(
-        &self,
-        lhs: NodeId,
-        rhs: NodeId,
-    ) -> Result<bool, SbroadError> {
-        let l = self.get_node(lhs)?;
-        let r = self.get_node(rhs)?;
-        if let Node::Expression(left) = l {
-            if let Node::Expression(right) = r {
-                match left {
-                    Expression::Alias { .. } => {}
-                    Expression::ExprInParentheses(ExprInParentheses { child: l_child }) => {
-                        // TODO: Should we compare expressions ignoring parentheses?
-                        if let Expression::ExprInParentheses(ExprInParentheses { child: r_child }) =
-                            right
-                        {
-                            return self.are_aggregate_subtrees_equal(*l_child, *r_child);
-                        }
-                    }
-                    Expression::CountAsterisk(_) => {
-                        return Ok(matches!(right, Expression::CountAsterisk(_)))
-                    }
-                    Expression::Bool(BoolExpr {
-                        left: left_left,
-                        op: op_left,
-                        right: right_left,
-                    }) => {
-                        if let Expression::Bool(BoolExpr {
-                            left: left_right,
-                            op: op_right,
-                            right: right_right,
-                        }) = right
-                        {
-                            return Ok(*op_left == *op_right
-                                && self.are_aggregate_subtrees_equal(*left_left, *left_right)?
-                                && self
-                                    .are_aggregate_subtrees_equal(*right_left, *right_right)?);
-                        }
-                    }
-                    Expression::Case(Case {
-                        search_expr: search_expr_left,
-                        when_blocks: when_blocks_left,
-                        else_expr: else_expr_left,
-                    }) => {
-                        if let Expression::Case(Case {
-                            search_expr: search_expr_right,
-                            when_blocks: when_blocks_right,
-                            else_expr: else_expr_right,
-                        }) = right
-                        {
-                            let mut search_expr_equal = false;
-                            if let (Some(search_expr_left), Some(search_expr_right)) =
-                                (search_expr_left, search_expr_right)
-                            {
-                                search_expr_equal = self.are_aggregate_subtrees_equal(
-                                    *search_expr_left,
-                                    *search_expr_right,
-                                )?;
-                            }
-
-                            let when_blocks_equal = when_blocks_left
-                                .iter()
-                                .zip(when_blocks_right.iter())
-                                .all(|((cond_l, res_l), (cond_r, res_r))| {
-                                    self.are_aggregate_subtrees_equal(*cond_l, *cond_r)
-                                        .unwrap_or(false)
-                                        && self
-                                            .are_aggregate_subtrees_equal(*res_l, *res_r)
-                                            .unwrap_or(false)
-                                });
-
-                            let mut else_expr_equal = false;
-                            if let (Some(else_expr_left), Some(else_expr_right)) =
-                                (else_expr_left, else_expr_right)
-                            {
-                                else_expr_equal = self.are_aggregate_subtrees_equal(
-                                    *else_expr_left,
-                                    *else_expr_right,
-                                )?;
-                            }
-                            return Ok(search_expr_equal && when_blocks_equal && else_expr_equal);
-                        }
-                    }
-                    Expression::Arithmetic(ArithmeticExpr {
-                        op: op_left,
-                        left: l_left,
-                        right: r_left,
-                    }) => {
-                        if let Expression::Arithmetic(ArithmeticExpr {
-                            op: op_right,
-                            left: l_right,
-                            right: r_right,
-                        }) = right
-                        {
-                            return Ok(*op_left == *op_right
-                                && self.are_aggregate_subtrees_equal(*l_left, *l_right)?
-                                && self.are_aggregate_subtrees_equal(*r_left, *r_right)?);
-                        }
-                    }
-                    Expression::Cast(Cast {
-                        child: child_left,
-                        to: to_left,
-                    }) => {
-                        if let Expression::Cast(Cast {
-                            child: child_right,
-                            to: to_right,
-                        }) = right
-                        {
-                            return Ok(*to_left == *to_right
-                                && self
-                                    .are_aggregate_subtrees_equal(*child_left, *child_right)?);
-                        }
-                    }
-                    Expression::Trim(Trim {
-                        kind: kind_left,
-                        pattern: pattern_left,
-                        target: target_left,
-                    }) => {
-                        if let Expression::Trim(Trim {
-                            kind: kind_right,
-                            pattern: pattern_right,
-                            target: target_right,
-                        }) = right
-                        {
-                            match (pattern_left, pattern_right) {
-                                (Some(p_left), Some(p_right)) => {
-                                    return Ok(*kind_left == *kind_right
-                                        && self
-                                            .are_aggregate_subtrees_equal(*p_left, *p_right)?
-                                        && self.are_aggregate_subtrees_equal(
-                                            *target_left,
-                                            *target_right,
-                                        )?);
-                                }
-                                (None, None) => {
-                                    return Ok(*kind_left == *kind_right
-                                        && self.are_aggregate_subtrees_equal(
-                                            *target_left,
-                                            *target_right,
-                                        )?);
-                                }
-                                _ => return Ok(false),
-                            }
-                        }
-                    }
-                    Expression::Concat(Concat {
-                        left: left_left,
-                        right: right_left,
-                    }) => {
-                        if let Expression::Concat(Concat {
-                            left: left_right,
-                            right: right_right,
-                        }) = right
-                        {
-                            return Ok(self
-                                .are_aggregate_subtrees_equal(*left_left, *left_right)?
-                                && self
-                                    .are_aggregate_subtrees_equal(*right_left, *right_right)?);
-                        }
-                    }
-                    Expression::Like(Like {
-                        escape: escape_left,
-                        left: left_left,
-                        right: right_left,
-                    }) => {
-                        if let Expression::Like(Like {
-                            left: left_right,
-                            right: right_right,
-                            escape: escape_right,
-                        }) = right
-                        {
-                            return Ok(self
-                                .are_aggregate_subtrees_equal(*escape_left, *escape_right)?
-                                && self.are_aggregate_subtrees_equal(*left_left, *left_right)?
-                                && self
-                                    .are_aggregate_subtrees_equal(*right_left, *right_right)?);
-                        }
-                    }
-                    Expression::Constant(Constant { value: value_left }) => {
-                        if let Expression::Constant(Constant { value: value_right }) = right {
-                            return Ok(*value_left == *value_right);
-                        }
-                    }
-                    Expression::Reference(Reference { targets: left_t, position: left_p, .. }) => {
-                        if let Expression::Reference(Reference { targets: right_t, position: right_p, .. }) = right {
-                            return Ok(left_t == right_t && left_p == right_p);
-                        }
-                    }
-                    Expression::Row(Row {
-                        list: list_left, ..
-                    }) => {
-                        if let Expression::Row(Row {
-                            list: list_right, ..
-                        }) = right
-                        {
-                            return Ok(list_left.iter().zip(list_right.iter()).all(|(l, r)| {
-                                self.are_aggregate_subtrees_equal(*l, *r).unwrap_or(false)
-                            }));
-                        }
-                    }
-                    Expression::StableFunction(StableFunction {
-                        name: name_left,
-                        children: children_left,
-                        feature: feature_left,
-                        func_type: func_type_left,
-                        is_system: is_aggr_left,
-                    }) => {
-                        if let Expression::StableFunction(StableFunction {
-                            name: name_right,
-                            children: children_right,
-                            feature: feature_right,
-                            func_type: func_type_right,
-                            is_system: is_aggr_right,
-                        }) = right
-                        {
-                            return Ok(name_left == name_right
-                                && feature_left == feature_right
-                                && func_type_left == func_type_right
-                                && is_aggr_left == is_aggr_right
-                                && children_left.iter().zip(children_right.iter()).all(
-                                    |(l, r)| {
-                                        self.are_aggregate_subtrees_equal(*l, *r).unwrap_or(false)
-                                    },
-                                ));
-                        }
-                    }
-                    Expression::Unary(UnaryExpr {
-                        op: op_left,
-                        child: child_left,
-                    }) => {
-                        if let Expression::Unary(UnaryExpr {
-                            op: op_right,
-                            child: child_right,
-                        }) = right
-                        {
-                            return Ok(*op_left == *op_right
-                                && self
-                                    .are_aggregate_subtrees_equal(*child_left, *child_right)?);
-                        }
-                    }
-                }
-            }
-        }
-        Ok(false)
     }
 
     /// Used to create a `GroupBy` IR node from AST.
@@ -906,7 +635,7 @@ impl Plan {
                                 aliased_col
                             };
                             // Copy expression from Projection to GroupBy.
-                            let col = self.clone_expr_subtree(proj_col_id)?;
+                            let col = SubtreeCloner::clone_subtree(self, proj_col_id)?;
                             grouping_exprs.push(col);
                         }
                         upper = self.add_groupby(upper, &grouping_exprs, false, Some(*proj_id))?;

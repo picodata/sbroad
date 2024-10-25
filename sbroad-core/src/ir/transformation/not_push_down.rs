@@ -11,6 +11,7 @@ use crate::ir::operator::{Bool, Unary};
 use crate::ir::transformation::{OldNewExpressionMap, OldNewTopIdPair};
 use crate::ir::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
 use crate::ir::value::Value;
+use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
@@ -59,7 +60,7 @@ fn call_expr_tree_not_push_down(
     let (old_top_id, new_top_id) = if new_top_id == top_id && old_new_expression_map.is_empty() {
         (top_id, top_id)
     } else {
-        let old_top_id = plan.clone_expr_subtree(top_id)?;
+        let old_top_id = SubtreeCloner::clone_subtree(plan, top_id)?;
         let filter = |node_id: NodeId| -> bool {
             matches!(
                 plan.get_node(node_id),

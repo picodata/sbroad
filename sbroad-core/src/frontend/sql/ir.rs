@@ -140,95 +140,6 @@ impl CloneExprSubtreeMap {
     }
 }
 
-impl Plan {
-    pub(crate) fn clone_expr_subtree(&mut self, top_id: NodeId) -> Result<NodeId, SbroadError> {
-        let mut subtree =
-            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
-        subtree.populate_nodes(top_id);
-        let nodes = subtree.take_nodes();
-        let mut map = CloneExprSubtreeMap::with_capacity(nodes.len());
-        for LevelNode(_, id) in nodes {
-            let mut expr = self.get_expression_node(id)?.get_expr_owned();
-            match expr {
-                ExprOwned::Constant { .. }
-                | ExprOwned::Reference { .. }
-                | ExprOwned::CountAsterisk { .. } => {}
-                ExprOwned::Alias(Alias { ref mut child, .. })
-                | ExprOwned::ExprInParentheses(ExprInParentheses { ref mut child })
-                | ExprOwned::Cast(Cast { ref mut child, .. })
-                | ExprOwned::Unary(UnaryExpr { ref mut child, .. }) => map.replace(child),
-                ExprOwned::Bool(BoolExpr {
-                    ref mut left,
-                    ref mut right,
-                    ..
-                })
-                | ExprOwned::Arithmetic(ArithmeticExpr {
-                    ref mut left,
-                    ref mut right,
-                    ..
-                })
-                | ExprOwned::Concat(Concat {
-                    ref mut left,
-                    ref mut right,
-                    ..
-                }) => {
-                    map.replace(left);
-                    map.replace(right);
-                }
-                ExprOwned::Like(Like {
-                    ref mut left,
-                    ref mut right,
-                    ref mut escape,
-                }) => {
-                    map.replace(left);
-                    map.replace(right);
-                    map.replace(escape);
-                }
-                ExprOwned::Trim(Trim {
-                    ref mut pattern,
-                    ref mut target,
-                    ..
-                }) => {
-                    if let Some(pattern) = pattern {
-                        map.replace(pattern);
-                    }
-                    map.replace(target);
-                }
-                ExprOwned::Row(Row {
-                    list: ref mut children,
-                    ..
-                })
-                | ExprOwned::StableFunction(StableFunction {
-                    ref mut children, ..
-                }) => {
-                    for child in children {
-                        map.replace(child);
-                    }
-                }
-                ExprOwned::Case(Case {
-                    ref mut search_expr,
-                    ref mut when_blocks,
-                    ref mut else_expr,
-                }) => {
-                    if let Some(search_expr) = search_expr {
-                        map.replace(search_expr);
-                    }
-                    for (cond_expr, res_expr) in when_blocks {
-                        map.replace(cond_expr);
-                        map.replace(res_expr);
-                    }
-                    if let Some(else_expr) = else_expr {
-                        map.replace(else_expr);
-                    }
-                }
-            }
-            let next_id = self.nodes.push(expr.into());
-            map.insert(id, next_id);
-        }
-        Ok(map.get(top_id))
-    }
-}
-
 /// Helper struct to clone plan's subtree.
 /// Assumes that all parameters are bound.
 pub struct SubtreeCloner {
@@ -643,8 +554,8 @@ impl SubtreeCloner {
     pub fn clone_subtree(
         plan: &mut Plan,
         top_id: NodeId,
-        subtree_capacity: usize,
     ) -> Result<NodeId, SbroadError> {
+        let subtree_capacity = top_id.offset as usize;
         let mut helper = Self::new(subtree_capacity);
         helper.clone(plan, top_id, subtree_capacity)
     }

@@ -11,6 +11,7 @@ use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
 use super::expression::{ColumnPositionMap, FunctionFeature, Position};
+use crate::frontend::sql::ir::SubtreeCloner;
 use super::node::expression::Expression;
 
 /// The kind of aggregate function
@@ -330,7 +331,7 @@ impl SimpleAggregate {
                                 let a = *children
                                     .get(1)
                                     .ok_or(SbroadError::Invalid(Entity::Aggregate, None))?;
-                                plan.clone_expr_subtree(a)?
+                                SubtreeCloner::clone_subtree(plan, a)?
                             };
                             vec![ref_id, second_arg]
                         } else {

@@ -20,6 +20,7 @@ use crate::ir::node::{
     Alias, ArithmeticExpr, BoolExpr, Case, Cast, ExprInParentheses, Join, NodeId, Row, Selection,
     StableFunction, Trim, UnaryExpr,
 };
+use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::operator::Bool;
 use crate::ir::{Node, Plan};
 use std::collections::HashMap;
@@ -232,7 +233,7 @@ impl Plan {
             let old_top_id = if map.get(top_id).is_some() && map.len() == 1 {
                 top_id
             } else {
-                self.clone_expr_subtree(top_id)?
+                SubtreeCloner::clone_subtree(self, top_id)?
             };
             let mut new_top_id = top_id;
             for level_node in &nodes {

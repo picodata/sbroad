@@ -209,6 +209,7 @@ impl<'plan> PartialEq for PlanExpr<'plan> {
 
 impl<'plan> Eq for PlanExpr<'plan> {}
 
+/// Helper struct for comparing plan expression subtrees.
 pub struct Comparator<'plan> {
     plan: &'plan Plan,
     state: Option<&'plan mut dyn Hasher>,
@@ -229,12 +230,27 @@ impl<'plan> Comparator<'plan> {
         self.state = Some(state);
     }
 
-    /// TODO: Fix of comparing References via their `targets` and `position` logic
-    ///       was added. It was added in the context of comparing expressions under
-    ///       GroupBy under Projection which have the same output. Is it true for
-    ///       other cases?
-    /// Checks whether expression subtrees `lhs` and `rhs` are equal.
+    /// Checks whether subtrees `lhs` and `rhs` are equal.
     /// This function traverses both trees comparing their nodes.
+    ///
+    /// # References Equality
+    /// References are considered equal if their `targets` and `position`
+    /// fields are equal.
+    /// This function is used to find common expressions
+    /// between `GroupBy` and nodes in Reduce stage of
+    /// 2-stage aggregation (`Projection`, `Having`, `OrderBy`). It's assumed
+    /// that those nodes have the same output so that it's safe to compare only
+    /// those two fields.
+    ///
+    /// # Different tables
+    /// It would be wrong to use this function for comparing expressions that
+    /// come from different tables:
+    /// ```text
+    /// select a + b from t1
+    /// where c in (select a + b from t2)
+    /// ```
+    /// Here this function would say that expressions `a+b` in projection and
+    /// selection are the same, which is wrong.
     ///
     /// # Errors
     /// - invalid [`Expression::Reference`]s in either of subtrees

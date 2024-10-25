@@ -21,6 +21,7 @@ use tarantool::index::{IndexType, RtreeIndexDistanceType};
 use time::{OffsetDateTime, Time};
 
 use crate::errors::{Action, Entity, SbroadError};
+use crate::frontend::sql::ir::SubtreeCloner;
 use crate::executor::engine::Metadata;
 use crate::frontend::sql::ast::{
     AbstractSyntaxTree, ParseNode, ParseNodes, ParseTree, Rule, StackParseNode,
@@ -1731,9 +1732,9 @@ where
     pub(super) fn fix_betweens(&self, plan: &mut Plan) -> Result<(), SbroadError> {
         for between in &self.betweens {
             let left_id = if let Some(id) = self.subquery_replaces.get(&between.left_id) {
-                plan.clone_expr_subtree(*id)?
+                SubtreeCloner::clone_subtree(plan, *id)?
             } else {
-                plan.clone_expr_subtree(between.left_id)?
+                SubtreeCloner::clone_subtree(plan, between.left_id)?
             };
             let less_eq_expr = plan.get_mut_expression_node(between.leq_id)?;
             if let MutExpression::Bool(BoolExpr { ref mut left, .. }) = less_eq_expr {
