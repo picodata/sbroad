@@ -28,6 +28,14 @@ build_integration:
 run_integration:
 	cd $(TEST_APP) && rm -rf tmp/tarantool_configuration.log && TARANTOOL_LOG_LEVEL=5 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/ && cd ..
 
+# Run specific test_file, which name prefix is determined by TEST_FILE_PREFIX argument
+run_integration_file:
+	cd $(TEST_APP) && rm -rf tmp/tarantool_configuration.log && TARANTOOL_LOG_LEVEL=5 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/integration/$(TEST_FILE_PREFIX)_test.lua && cd ..
+
+# Run specific test pattern from specfic group, args are GROUP and PATTERN
+run_integration_pattern:
+	cd $(TEST_APP) && rm -rf tmp/tarantool_configuration.log && TARANTOOL_LOG_LEVEL=5 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v $(GROUP) -p $(PATTERN) && cd ..
+
 install_debug:
 	mkdir -p $(LUADIR)/$(PROJECT_NAME)
 	cp -Rf $(TARGET_ROOT)/debug/$(SRC_LIB) $(LIBDIR)/$(DEST_LIB)
@@ -44,6 +52,14 @@ install_release:
 
 test_integration:
 	$(MAKE) build_integration && $(MAKE) run_integration
+
+# Template: make test_file TEST_FILE_PREFIX=
+test_file:
+	$(MAKE) build_integration && $(MAKE) run_integration_file
+
+# Template: make test_pattern GROUP= PATTERN=
+test_pattern:
+	$(MAKE) build_integration && $(MAKE) run_integration_pattern
 
 clean_integration:
 	$(MAKE) stop
