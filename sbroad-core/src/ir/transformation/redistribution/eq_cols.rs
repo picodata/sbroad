@@ -169,7 +169,7 @@ type OutputColOuter = usize;
 /// is a subexpression of a bigger expression, then there's a chance for it:
 /// ... on i.a = i.b (repartition join is not possible) eq cols: []
 /// ... on i.a = i.b and i.a = o.b (repartition join is possible) eq cols: [(a, b)]
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct EqualityCols {
     pub pairs: Vec<(OutputColInner, OutputColOuter)>,
     distinct_inner: HashSet<OutputColInner>,
@@ -191,6 +191,7 @@ pub struct EqualityCols {
 /// On the other hand, if the join condition consists only of left side of `and`:
 /// `... on i.a = 3`
 /// Then repartition join is not possible for such condition.
+#[derive(Debug)]
 pub struct EqualityColsMap(HashMap<ExpressionId, EqualityCols>);
 
 impl EqualityColsMap {
@@ -293,6 +294,7 @@ impl EqualityCols {
         list_right: &[NodeId],
         node_id: NodeId,
         inner_id: NodeId,
+        outer_id: NodeId,
         plan: &Plan,
         refers_to: &ReferredMap,
     ) -> Result<Option<EqualityCols>, SbroadError> {
@@ -304,37 +306,40 @@ impl EqualityCols {
             match (left_node, right_node) {
                 (
                     Expression::Reference(Reference {
-                        targets: targets_left,
                         position: pos_left,
                         parent: parent_left,
                         col_type: col_type_left,
                         asterisk_source: asterisk_source_left,
+                        ..
                     }),
                     Expression::Reference(Reference {
-                        targets: targets_right,
                         position: pos_right,
                         parent: parent_right,
                         col_type: col_type_right,
                         asterisk_source: asterisk_source_right,
+                        ..
                     }),
                 ) => {
                     // TODO: compare types only if the runtime requires it.
 
                     // if one Reference refers to one child, and the second one refers to another one,
                     // then we have an equality pair
-                    if targets_left != targets_right
-                        && parent_left == parent_right
+                    if parent_left == parent_right
                         && col_type_left == col_type_right
                         && asterisk_source_left == asterisk_source_right
                     {
                         let left_referred_child_id =
                             plan.get_relational_from_reference_node(*left_id)?;
-                        let (inner_pos, outer_pos) = if left_referred_child_id == inner_id {
-                            (*pos_left, *pos_right)
-                        } else {
-                            (*pos_right, *pos_left)
-                        };
-                        new_eq_cols.add_equality_pair(inner_pos, outer_pos);
+                        let right_referred_child_id =
+                            plan.get_relational_from_reference_node(*right_id)?;
+                        if left_referred_child_id == inner_id && right_referred_child_id == outer_id
+                        {
+                            new_eq_cols.add_equality_pair(*pos_left, *pos_right);
+                        } else if left_referred_child_id == outer_id
+                            && right_referred_child_id == inner_id
+                        {
+                            new_eq_cols.add_equality_pair(*pos_right, *pos_left);
+                        }
                     };
                 }
                 (Expression::Constant(_), _) | (_, Expression::Constant(_)) => {}
@@ -349,7 +354,7 @@ impl EqualityCols {
                 }
             }
         }
-        if is_repartition_join_possible && !new_eq_cols.is_empty() {
+        if is_repartition_join_possible {
             Ok(Some(new_eq_cols))
         } else {
             Ok(None)
@@ -369,6 +374,7 @@ impl EqualityCols {
         node_id: NodeId,
         refers_to: &ReferredMap,
         inner_id: NodeId,
+        outer_id: NodeId,
         plan: &Plan,
     ) -> Result<Option<EqualityCols>, SbroadError> {
         let left_expr = plan.get_expression_node(op.left)?;
@@ -383,7 +389,7 @@ impl EqualityCols {
                 }),
             ) => match op.op {
                 Bool::Eq | Bool::In => EqualityCols::eq_cols_for_eq(
-                    list_left, list_right, node_id, inner_id, plan, refers_to,
+                    list_left, list_right, node_id, inner_id, outer_id, plan, refers_to,
                 )?,
                 _ => {
                     if let Some(Referred::Both) = refers_to.get(node_id) {
@@ -502,6 +508,7 @@ impl EqualityCols {
         condition_id: NodeId,
     ) -> Result<Option<EqualityCols>, SbroadError> {
         let mut node_eq_cols: EqualityColsMap = EqualityColsMap::new();
+        let outer_id = plan.get_relational_child(join_id, 0)?;
         let refers_to = ReferredMap::new_from_join_condition(plan, condition_id, join_id)?;
         let filter = |node_id: NodeId| -> bool {
             if let Ok(Node::Expression(Expression::Bool(_))) = plan.get_node(node_id) {
@@ -520,9 +527,9 @@ impl EqualityCols {
             let left_expr = plan.get_expression_node(bool_op.left)?;
             let right_expr = plan.get_expression_node(bool_op.right)?;
             let new_eq_cols = match (left_expr, right_expr) {
-                (Expression::Row(_), Expression::Row(_)) => {
-                    EqualityCols::eq_cols_for_rows(&bool_op, node_id, &refers_to, inner_id, plan)?
-                }
+                (Expression::Row(_), Expression::Row(_)) => EqualityCols::eq_cols_for_rows(
+                    &bool_op, node_id, &refers_to, inner_id, outer_id, plan,
+                )?,
                 (_, _) => {
                     EqualityCols::eq_cols_for_bool(&bool_op, node_id, &refers_to, &mut node_eq_cols)
                 }
