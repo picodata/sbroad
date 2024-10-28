@@ -13,7 +13,8 @@
 use crate::errors::{Entity, SbroadError};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::node::expression::{Expression, MutExpression};
-use crate::ir::node::{Alias, ArithmeticExpr, BoolExpr, NodeId, Row};
+use crate::ir::node::relational::Relational;
+use crate::ir::node::{Alias, ArithmeticExpr, BoolExpr, NodeId, Reference, Row};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::tree::traversal::BreadthFirst;
@@ -162,17 +163,24 @@ impl Chain {
         let mut grouped_top_id: Option<NodeId> = None;
         let ordered_ops = &[Bool::Eq, Bool::NotEq];
         for op in ordered_ops {
-            if let Some((left, right)) = self.grouped.get(op) {
-                let left_row_id = plan.nodes.add_row(left.clone(), None);
-                let right_row_id = plan.nodes.add_row(right.clone(), None);
-                let cond_id = plan.add_cond(left_row_id, op.clone(), right_row_id)?;
-                match grouped_top_id {
-                    None => {
-                        grouped_top_id = Some(cond_id);
-                    }
-                    Some(top_id) => {
-                        grouped_top_id = Some(plan.add_cond(top_id, Bool::And, cond_id)?);
-                    }
+            let Some((left, right)) = self.grouped.get(op) else {
+                continue;
+            };
+            let cond_id = if *op == Bool::Eq {
+                if let Some(grouped) = plan.split_join_references(left, right) {
+                    grouped.add_rows_to_plan(plan)?
+                } else {
+                    add_rows_and_cond(plan, left.clone(), right.clone(), op)?
+                }
+            } else {
+                add_rows_and_cond(plan, left.clone(), right.clone(), op)?
+            };
+            match grouped_top_id {
+                None => {
+                    grouped_top_id = Some(cond_id);
+                }
+                Some(top_id) => {
+                    grouped_top_id = Some(plan.add_cond(top_id, Bool::And, cond_id)?);
                 }
             }
         }
@@ -205,7 +213,155 @@ impl Chain {
     }
 }
 
+fn add_rows_and_cond(
+    plan: &mut Plan,
+    left: impl Into<Vec<NodeId>>,
+    right: impl Into<Vec<NodeId>>,
+    op: &Bool,
+) -> Result<NodeId, SbroadError> {
+    let left_row_id = plan.nodes.add_row(left.into(), None);
+    let right_row_id = plan.nodes.add_row(right.into(), None);
+    plan.add_cond(left_row_id, op.clone(), right_row_id)
+}
+
+struct GroupedRows {
+    // Left row that contains references to first join child
+    join_refs_left: Vec<NodeId>,
+    // Right row that contains references to second join child
+    join_refs_right: Vec<NodeId>,
+    other_left: Vec<NodeId>,
+    other_right: Vec<NodeId>,
+}
+
+impl GroupedRows {
+    fn add_rows_to_plan(self, plan: &mut Plan) -> Result<NodeId, SbroadError> {
+        fn add_eq(
+            left: Vec<NodeId>,
+            right: Vec<NodeId>,
+            plan: &mut Plan,
+        ) -> Result<Option<NodeId>, SbroadError> {
+            debug_assert!(left.len() == right.len());
+            let res = if !left.is_empty() {
+                add_rows_and_cond(plan, left, right, &Bool::Eq)?.into()
+            } else {
+                None
+            };
+            Ok(res)
+        }
+
+        let eq1: Option<NodeId> = add_eq(self.join_refs_left, self.join_refs_right, plan)?;
+        let eq2: Option<NodeId> = add_eq(self.other_left, self.other_right, plan)?;
+
+        let res = match (eq1, eq2) {
+            (Some(id1), Some(id2)) => plan.add_bool(id1, Bool::And, id2)?,
+            (None, Some(id)) | (Some(id), None) => id,
+            (None, None) => panic!("at least some row must be non-empty"),
+        };
+        Ok(res)
+    }
+}
+
 impl Plan {
+    fn split_join_references(&self, left: &[NodeId], right: &[NodeId]) -> Option<GroupedRows> {
+        // First check that we are in join
+        let contains_join_refs = |row: &[NodeId]| -> bool {
+            row.iter().any(|id| {
+                self.get_expression_node(*id).is_ok_and(|expr| {
+                    if let Expression::Reference(Reference {
+                        parent: Some(p), ..
+                    }) = expr
+                    {
+                        if self
+                            .get_relation_node(*p)
+                            .is_ok_and(|rel| matches!(rel, Relational::Join(_)))
+                        {
+                            return true;
+                        }
+                    }
+                    false
+                })
+            })
+        };
+        if !contains_join_refs(left) && !contains_join_refs(right) {
+            return None;
+        }
+
+        // Split (left) = (right) into
+        // (a1) = (b1) and (a2) = (b2)
+        // a1 - contains references from one child
+        // a2 - contains references from some other child
+        // a2, b2 - contain all other expressions
+        // This is done for join conflict resolution:
+        // we calculate the distribution of rows in the `on`
+        // condition to find equality on sharding keys.
+        // In case of `(t1.a, t2.d) = (t2.c, t1.b)` where
+        // sk(t1) = (a, b), sk(t2) = (c, d) we will fail
+        // to find matching keys and insert Motion(Full).
+        // So we need to group references by their table (child).
+
+        // a1 - will store references of the first child
+        // b1 - of the second child
+        let mut join_refs_left = Vec::new();
+        let mut join_refs_right = Vec::new();
+        let mut other_left = Vec::new();
+        let mut other_right = Vec::new();
+
+        let first_child_target = Some(vec![0]);
+        let second_child_target = Some(vec![1]);
+
+        left.iter()
+            .zip(right.iter())
+            .map(|(left_id, right_id)| {
+                // Map each pair of equal expressions into
+                // (left, right, flag), where flag=true indicates
+                // that this pair is of form Reference1 = Reference2
+                // where Reference1 refers to first join child
+                // and Reference2 refers to second join child
+
+                let other_pair = (left_id, right_id, false);
+                let Some(Reference {
+                    targets: target_l,
+                    parent: parent_l,
+                    ..
+                }) = self.get_reference(*left_id)
+                else {
+                    return other_pair;
+                };
+                let Some(Reference {
+                    targets: target_r,
+                    parent: parent_r,
+                    ..
+                }) = self.get_reference(*right_id)
+                else {
+                    return other_pair;
+                };
+                debug_assert!(parent_r == parent_l);
+
+                if target_l == &first_child_target && target_r == &second_child_target {
+                    return (left_id, right_id, true);
+                } else if target_l == &second_child_target && target_r == &first_child_target {
+                    return (right_id, left_id, true);
+                }
+                other_pair
+            })
+            .for_each(|(left_id, right_id, is_join_refs)| {
+                if is_join_refs {
+                    join_refs_left.push(*left_id);
+                    join_refs_right.push(*right_id);
+                } else {
+                    other_left.push(*left_id);
+                    other_right.push(*right_id);
+                }
+            });
+
+        Some(GroupedRows {
+            join_refs_left,
+            join_refs_right,
+            other_left,
+            other_right,
+        })
+    }
+
     fn get_columns_or_self(&self, expr_id: NodeId) -> Result<Vec<NodeId>, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {

@@ -106,3 +106,47 @@ fn merge_tuples6() {
 
     assert_eq!(check_transformation(input, vec![], &merge_tuples), expected);
 }
+
+#[test]
+fn merge_tuples7() {
+    let input = r#"
+    select "a", "f" from "t" inner join "t2"
+    on "t"."a" = "t2"."e" and "t2"."f" = "t"."b"
+"#;
+    // merge_tuples must group rows of the same table on the same
+    // side of the equality for join conflict resultion to work
+    // correctly, otherwise we will get Motion(Full) instead
+    // local join here
+
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "t"."a", "t2"."f" FROM (SELECT "t"."a", "t"."b", "t"."c", "t"."d" FROM "t")"#,
+            r#"as "t" INNER JOIN (SELECT "t2"."e", "t2"."f", "t2"."g", "t2"."h" FROM "t2") as "t2" ON ("t"."a", "t"."b") = ("t2"."e", "t2"."f")"#,
+        ),
+        vec![],
+    );
+
+    assert_eq!(check_transformation(input, vec![], &merge_tuples), expected);
+}
+
+#[test]
+fn merge_tuples8() {
+    let input = r#"
+    select "a", "f" from "t" inner join "t2"
+    on "t"."a" = "t"."b" and "t"."a" = "t2"."e" and "t2"."f" = "t"."b" and "t2"."f" = "t2"."e"
+"#;
+    // check merge tuple will create two groupes:
+    // one with grouped columns and other group with all other equalities
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {} {}",
+            r#"SELECT "t"."a", "t2"."f" FROM (SELECT "t"."a", "t"."b", "t"."c", "t"."d" FROM "t")"#,
+            r#"as "t" INNER JOIN (SELECT "t2"."e", "t2"."f", "t2"."g", "t2"."h" FROM "t2") as "t2" ON"#,
+            r#"("t"."b", "t"."a") = ("t2"."f", "t2"."e") and ("t2"."f", "t"."a") = ("t2"."e", "t"."b")"#,
+        ),
+        vec![],
+    );
+
+    assert_eq!(check_transformation(input, vec![], &merge_tuples), expected);
+}

@@ -2577,7 +2577,7 @@ fn front_sql_groupby_with_aggregates() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("t1"."a"::unsigned -> "a", "t1"."b"::unsigned -> "b", "t1"."c"::decimal -> "c", "t2"."g"::unsigned -> "g", "t2"."e"::unsigned -> "e", "t2"."f"::decimal -> "f")
-    join on ROW("t1"."a"::unsigned, "t2"."g"::unsigned) = ROW("t2"."e"::unsigned, "t1"."b"::unsigned)
+    join on ROW("t1"."a"::unsigned, "t1"."b"::unsigned) = ROW("t2"."e"::unsigned, "t2"."g"::unsigned)
         scan "t1"
             projection ("column_596"::unsigned -> "a", "column_696"::unsigned -> "b", sum(("sum_1596"::decimal))::decimal -> "c")
                 group by ("column_596"::unsigned, "column_696"::unsigned) output: ("column_596"::unsigned -> "column_596", "column_696"::unsigned -> "column_696", "sum_1596"::decimal -> "sum_1596")
@@ -2585,7 +2585,7 @@ fn front_sql_groupby_with_aggregates() {
                         projection ("t"."a"::unsigned -> "column_596", "t"."b"::unsigned -> "column_696", sum(("t"."c"::unsigned))::decimal -> "sum_1596")
                             group by ("t"."a"::unsigned, "t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                                 scan "t"
-        motion [policy: full]
+        motion [policy: segment([ref("e"), ref("g")])]
             scan "t2"
                 projection ("column_2496"::unsigned -> "g", "column_2596"::unsigned -> "e", sum(("sum_3496"::decimal))::decimal -> "f")
                     group by ("column_2496"::unsigned, "column_2596"::unsigned) output: ("column_2496"::unsigned -> "column_2496", "column_2596"::unsigned -> "column_2596", "sum_3496"::decimal -> "sum_3496")
@@ -2600,7 +2600,6 @@ execution options:
     );
 
     assert_eq!(expected_explain, plan.as_explain().unwrap());
-    println!("{}", plan.as_explain().unwrap());
 }
 
 #[test]
@@ -4091,7 +4090,6 @@ fn front_select_without_scan_3() {
     let metadata = &RouterConfigurationMock::new();
     let err = AbstractSyntaxTree::transform_into_plan(input, metadata).unwrap_err();
 
-    dbg!(&err);
     assert_eq!(
         "invalid type: expected a Column in SelectWithoutScan, got Asterisk.",
         err.to_string()
@@ -4105,7 +4103,6 @@ fn front_select_without_scan_4() {
     let metadata = &RouterConfigurationMock::new();
     let err = AbstractSyntaxTree::transform_into_plan(input, metadata).unwrap_err();
 
-    dbg!(&err);
     assert_eq!(
         "invalid type: expected a Column in SelectWithoutScan, got Distinct.",
         err.to_string()

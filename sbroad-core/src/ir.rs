@@ -1388,6 +1388,15 @@ impl Plan {
         }
     }
 
+    /// Return Reference if this `node_id` refers to it,
+    /// otherwise return `None`.
+    pub fn get_reference(&self, node_id: NodeId) -> Option<&Reference> {
+        if let Expression::Reference(r) = self.get_expression_node(node_id).ok()? {
+            return Some(r);
+        }
+        None
+    }
+
     /// Get mutable expression type node
     ///
     /// # Errors

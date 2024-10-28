@@ -18,7 +18,7 @@ use std::hash::BuildHasher;
 
 use super::node::expression::Expression;
 use super::node::relational::Relational;
-use super::node::{Like, Limit, SelectWithoutScan};
+use super::node::{ArithmeticExpr, Like, Limit, SelectWithoutScan};
 
 /// Helper macros to build a hash map or set
 /// from the list of arguments.
@@ -221,7 +221,14 @@ impl Plan {
                     writeln_with_tabulation(buf, tabulation_number + 1, "Child")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *child)?;
                 }
-                Expression::Arithmetic(_) => writeln!(buf, "Arithmetic")?,
+                Expression::Arithmetic(ArithmeticExpr { left, right, op }) => {
+                    writeln!(buf, "Arithmetic: [op: {op}]")?;
+                    writeln_with_tabulation(buf, tabulation_number + 1, "Child")?;
+                    writeln_with_tabulation(buf, tabulation_number + 1, "Left child")?;
+                    self.formatted_arena_node(buf, tabulation_number + 1, *left)?;
+                    writeln_with_tabulation(buf, tabulation_number + 1, "Right child")?;
+                    self.formatted_arena_node(buf, tabulation_number + 1, *right)?;
+                }
             };
         }
         Ok(())
