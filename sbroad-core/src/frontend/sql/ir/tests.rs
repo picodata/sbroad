@@ -1704,9 +1704,9 @@ fn front_sql_aggregates() {
 
     let expected_explain = String::from(
         r#"projection ("column_596"::unsigned -> "b", ROW(sum(("count_1496"::integer))::decimal) + ROW(sum(("count_1596"::integer))::decimal) -> "col_1")
-    group by ("column_596"::unsigned) output: ("column_596"::unsigned -> "column_596", "count_1596"::integer -> "count_1596", "count_1496"::integer -> "count_1496")
+    group by ("column_596"::unsigned) output: ("column_596"::unsigned -> "column_596", "count_1496"::integer -> "count_1496", "count_1596"::integer -> "count_1596")
         motion [policy: segment([ref("column_596")])]
-            projection ("t"."b"::unsigned -> "column_596", count(("t"."b"::unsigned))::integer -> "count_1596", count(("t"."a"::unsigned))::integer -> "count_1496")
+            projection ("t"."b"::unsigned -> "column_596", count(("t"."a"::unsigned))::integer -> "count_1496", count(("t"."b"::unsigned))::integer -> "count_1596")
                 group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                     scan "t"
 execution options:
@@ -1719,6 +1719,31 @@ execution options:
 }
 
 #[test]
+fn front_sql_distinct_asterisk() {
+    check_output(
+        r#"select distinct * from (select "id" from "test_space_hist")
+                 join (select "id" from "test_space") on true"#,
+    vec![],
+        r#"projection ("column_1996"::unsigned -> "id", "column_2096"::unsigned -> "id")
+    group by ("column_1996"::unsigned, "column_2096"::unsigned) output: ("column_1996"::unsigned -> "column_1996", "column_2096"::unsigned -> "column_2096")
+        motion [policy: segment([ref("column_1996"), ref("column_2096")])]
+            projection ("id"::unsigned -> "column_1996", "id"::unsigned -> "column_2096")
+                group by ("id"::unsigned, "id"::unsigned) output: ("id"::unsigned -> "id", "id"::unsigned -> "id")
+                    join on true::boolean
+                        scan
+                            projection ("test_space_hist"."id"::unsigned -> "id")
+                                scan "test_space_hist"
+                        motion [policy: full]
+                            scan
+                                projection ("test_space"."id"::unsigned -> "id")
+                                    scan "test_space"
+execution options:
+    vdbe_max_steps = 45000
+    vtable_max_rows = 5000
+"#)
+}
+
+#[test]
 fn front_sql_avg_aggregate() {
     let input = r#"SELECT avg("b"), avg(distinct "b"), avg("b") * avg("b") FROM "t""#;
 
@@ -1727,7 +1752,7 @@ fn front_sql_avg_aggregate() {
     let expected_explain = String::from(
         r#"projection (sum(("sum_696"::decimal::double))::decimal / sum(("count_696"::decimal::double))::decimal -> "col_1", avg(distinct ("column_796"::decimal::double))::decimal -> "col_2", ROW(sum(("sum_696"::decimal::double))::decimal / sum(("count_696"::decimal::double))::decimal) * ROW(sum(("sum_696"::decimal::double))::decimal / sum(("count_696"::decimal::double))::decimal) -> "col_3")
     motion [policy: full]
-        projection ("t"."b"::unsigned -> "column_796", count(("t"."b"::unsigned))::integer -> "count_696", sum(("t"."b"::unsigned))::decimal -> "sum_696")
+        projection ("t"."b"::unsigned -> "column_796", sum(("t"."b"::unsigned))::decimal -> "sum_696", count(("t"."b"::unsigned))::integer -> "count_696")
             group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                 scan "t"
 execution options:
@@ -2529,9 +2554,9 @@ fn front_sql_groupby_expression3() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("column_532"::unsigned -> "col_1", "column_832"::unsigned * ROW(sum(("sum_2496"::decimal))::decimal) / ROW(sum(("count_2596"::integer))::decimal) -> "col_2")
-    group by ("column_532"::unsigned, "column_832"::unsigned) output: ("column_532"::unsigned -> "column_532", "column_832"::unsigned -> "column_832", "count_2596"::integer -> "count_2596", "sum_2496"::decimal -> "sum_2496")
+    group by ("column_532"::unsigned, "column_832"::unsigned) output: ("column_532"::unsigned -> "column_532", "column_832"::unsigned -> "column_832", "sum_2496"::decimal -> "sum_2496", "count_2596"::integer -> "count_2596")
         motion [policy: segment([ref("column_532"), ref("column_832")])]
-            projection (ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned) -> "column_532", (ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned)) -> "column_832", count((ROW("t"."a"::unsigned) * ROW("t"."b"::unsigned)))::integer -> "count_2596", sum((ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned)))::decimal -> "sum_2496")
+            projection (ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned) -> "column_532", (ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned)) -> "column_832", sum((ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned)))::decimal -> "sum_2496", count((ROW("t"."a"::unsigned) * ROW("t"."b"::unsigned)))::integer -> "count_2596")
                 group by (ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned), (ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned))) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                     scan "t"
 execution options:
@@ -2978,7 +3003,7 @@ fn front_sql_unique_local_aggregates() {
     let expected_explain = String::from(
         r#"projection (sum(("sum_696"::decimal))::decimal -> "col_1", sum(("count_896"::integer))::decimal -> "col_2", ROW(sum(("sum_696"::decimal))::decimal) + ROW(sum(("count_896"::integer))::decimal) -> "col_3")
     motion [policy: full]
-        projection (sum(("t"."a"::unsigned))::decimal -> "sum_696", count(("t"."a"::unsigned))::integer -> "count_896")
+        projection (count(("t"."a"::unsigned))::integer -> "count_896", sum(("t"."a"::unsigned))::decimal -> "sum_696")
             scan "t"
 execution options:
     vdbe_max_steps = 45000

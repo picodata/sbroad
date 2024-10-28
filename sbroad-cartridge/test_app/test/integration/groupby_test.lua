@@ -1742,6 +1742,51 @@ groupby_queries.test_total = function()
     })
 end
 
+groupby_queries.test_distinct_asterisk_single_column = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        WITH first  AS (SELECT "id" FROM "arithmetic_space" WHERE "id" = 1),
+             second AS (SELECT "id" FROM "arithmetic_space2" WHERE "id" = 2)
+        SELECT DISTINCT * FROM first JOIN second ON TRUE
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "id", type = "integer" },
+        { name = "id", type = "integer" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 2},
+    })
+end
+
+groupby_queries.test_distinct_asterisk_several_columns = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        WITH first  AS (SELECT "id", "a" FROM "arithmetic_space"),
+             second AS (SELECT "id", "a" FROM "arithmetic_space2")
+        SELECT DISTINCT * FROM first JOIN second ON first."id" = second."id"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "id", type = "integer" },
+        { name = "a", type = "integer" },
+        { name = "id", type = "integer" },
+        { name = "a", type = "integer" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 1, 1, 2},
+        {2, 1, 2, 2},
+        {3, 2, 3, 1},
+        {4, 2, 4, 1},
+    })
+end
+
 groupby_queries.test_total_no_rows = function()
     local api = cluster:server("api-1").net_box
 
