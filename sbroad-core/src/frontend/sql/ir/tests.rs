@@ -3911,6 +3911,39 @@ fn front_mock_set_param_transaction() {
 }
 
 #[test]
+fn front_mock_partition_by() {
+    let metadata = &RouterConfigurationMock::new();
+
+    let queries_to_check = vec![
+        r#"create table t(a int primary key) partition by list (a)"#,
+        r#"create table t(a int primary key) partition by hash (a, b)"#,
+        r#"create table t(a int primary key) partition by range (a, b, c)"#,
+    ];
+    for query in queries_to_check {
+        let plan = AbstractSyntaxTree::transform_into_plan(query, metadata);
+        assert!(plan.is_ok())
+    }
+
+    let queries_to_check = vec![
+        r#"create table tp partition of t default"#,
+        r#"create table tp partition of t default partition by range (a)"#,
+        r#"create table tp partition of t for values in (1)"#,
+        r#"create table tp partition of t for values in (1, 2)"#,
+        r#"create table tp partition of t for values from (1) to (2)"#,
+        r#"create table tp partition of t for values from (1, 3) to (2, 4)"#,
+        r#"create table tp partition of t for values from (1, MINVALUE) to (2, MAXVALUE)"#,
+        r#"create table tp partition of t for values with (modulus 1, remainder 2)"#,
+        r#"create table tp partition of t for values with (modulus 1, remainder 2) partition by range (a, b, c)"#,
+    ];
+    for query in queries_to_check {
+        let err = AbstractSyntaxTree::transform_into_plan(query, metadata).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("PARTITION OF logic is not supported yet"))
+    }
+}
+
+#[test]
 fn front_create_table_with_tier_syntax() {
     let query = r#"CREATE TABLE warehouse (
         id INTEGER PRIMARY KEY,

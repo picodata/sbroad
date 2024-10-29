@@ -901,6 +901,9 @@ fn parse_create_table(
             Rule::WaitAppliedLocally => {
                 wait_applied_globally = false;
             }
+            Rule::Partition => {
+                warn!(None, "PARTITION BY option is not supported yet.");
+            }
             _ => panic!("Unexpected rule met under CreateTable."),
         }
     }
@@ -4287,6 +4290,12 @@ impl AbstractSyntaxTree {
                     let create_sharded_table = parse_create_table(self, node)?;
                     let plan_id = plan.nodes.push(create_sharded_table.into());
                     map.add(id, plan_id);
+                }
+                Rule::CreatePartition => {
+                    return Err(SbroadError::NotImplemented(
+                        Entity::Rule,
+                        format_smolstr!("PARTITION OF logic is not supported yet."),
+                    ));
                 }
                 Rule::GrantPrivilege => {
                     let (grant_type, grantee_name, timeout) = parse_grant_revoke(node, self)?;

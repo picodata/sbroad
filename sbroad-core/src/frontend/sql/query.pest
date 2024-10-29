@@ -79,32 +79,50 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
             PrivilegeWrite = { ^"write" }
 
 DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
-         | CreateProc | DropProc | RenameProc | SetParam | SetTransaction | AlterSystem }
-
-    WaitApplied = _{ WaitAppliedGlobally | WaitAppliedLocally }
-      WaitAppliedGlobally = @{ ^"wait" ~ W ~ ^"applied" ~ W ~ ^"globally" }
-      WaitAppliedLocally = @{ ^"wait" ~ W ~ ^"applied" ~ W ~ ^"locally" }
-
+         | CreateProc | DropProc | RenameProc | SetParam | SetTransaction | AlterSystem
+         | CreatePartition }
+    CreatePartition = ${
+        ^"create" ~ W ~ ^"table" ~ W ~ (IfNotExists ~ W)? ~ Identifier ~ W ~ ^"partition" ~ W ~ ^"of" ~ W ~
+        Identifier ~ W ~ PartitionOfSpec ~ (W ~ Partition)?
+    }
+        PartitionOfSpec = ${ (^"for" ~ W ~ ^"values" ~ W ~ ForValuesSpec) | ^"default" }
+            ForValuesSpec = _{ ForValuesSpecIn | ForValuesSpecFromTo | ForValuesSpecWith }
+                ForValuesSpecIn = { ^"in" ~ W ~ Row }
+                ForValuesSpecFromTo = ${ ^"from" ~ W ~ ForValuesSpecFromToRow ~ W ~ ^"to" ~ W ~ ForValuesSpecFromToRow }
+                    ForValuesSpecFromToRow = !{ "(" ~ ExprOrMinMax ~ ("," ~ ExprOrMinMax)* ~ ")" }
+                        ExprOrMinMax = { MinValue | MaxValue | Expr }
+                            MinValue = { ^"minvalue" }
+                            MaxValue = { ^"maxvalue" }
+                ForValuesSpecWith = ${ ^"with" ~ WO ~ "(" ~ ^"modulus" ~ W ~ Literal ~ WO ~ "," ~ WO ~ ^"remainder" ~ W ~  Literal ~ WO ~ ")" }
     CreateTable = ${
         ^"create" ~ W ~ ^"table" ~ W ~ (IfNotExists ~ W)? ~ NewTable ~ WO ~
         "(" ~ WO ~ Columns ~ WO ~ ("," ~ WO ~ PrimaryKey)? ~ WO ~ ")" ~
-        (W ~ Engine)? ~ (W ~ Distribution)? ~ (W ~ WaitApplied)? ~ (W ~ TimeoutOption)?
+        (W ~ Engine)? ~ (W ~ Distribution)? ~ (W ~ WaitApplied)? ~ (W ~ Partition)? ~ (W ~ TimeoutOption)?
     }
         NewTable = @{Table}
         Columns = !{ ColumnDef ~ ("," ~ ColumnDef)* }
             ColumnDef = ${ Identifier ~ W ~ ColumnDefType ~ (W ~ ColumnDefIsNull)? ~ (W ~ PrimaryKeyMark)? }
             ColumnDefIsNull = { (NotFlag ~ W)? ~ ^"null" }
             PrimaryKeyMark = { ^"primary" ~ W ~ ^"key" }
-        PrimaryKey = ${ PrimaryKeyMark ~ WO ~ "(" ~ WO ~ PrimaryKeyIdentifiers ~ WO ~ ")" }
-            PrimaryKeyIdentifiers = _{ Identifier ~ (WO ~ "," ~ WO ~ Identifier)* }
+            PrimaryKey = ${ PrimaryKeyMark ~ WO ~ "(" ~ WO ~ PrimaryKeyIdentifiers ~ WO ~ ")" }
+                PrimaryKeyIdentifiers = _{ Identifier ~ (WO ~ "," ~ WO ~ Identifier)* }
         Engine = ${ ^"using" ~ W ~ (Memtx | Vinyl) }
             Memtx = { ^"memtx" }
             Vinyl = { ^"vinyl" }
         Distribution = ${ ^"distributed" ~ W ~ (Global | Sharding) }
-        Global = { ^"globally" }
-        Sharding = ${ ^"by" ~ WO ~ "(" ~ WO ~ ShardingIdentifiers ~ WO ~ ")" ~ (W ~ Tier)? }
-            ShardingIdentifiers = _{ Identifier ~ (WO ~ "," ~ WO ~ Identifier)* }
-        Tier = ${ ^"in" ~ W ~ ^"tier" ~ W ~ Identifier }
+            Global = { ^"globally" }
+            Sharding = ${ ^"by" ~ WO ~ "(" ~ WO ~ ShardingIdentifiers ~ WO ~ ")" ~ (W ~ Tier)? }
+                ShardingIdentifiers = _{ Identifier ~ (WO ~ "," ~ WO ~ Identifier)* }
+                Tier = ${ ^"in" ~ W ~ ^"tier" ~ W ~ Identifier }
+        WaitApplied = _{ WaitAppliedGlobally | WaitAppliedLocally }
+            WaitAppliedGlobally = @{ ^"wait" ~ W ~ ^"applied" ~ W ~ ^"globally" }
+            WaitAppliedLocally = @{ ^"wait" ~ W ~ ^"applied" ~ W ~ ^"locally" }
+        Partition = ${ ^"partition" ~ W ~ ^"by" ~ W ~ PartitionType ~ WO ~ PartitionBySpec }
+            PartitionType = { PartitionRange | PartitionList | PartitionHash }
+                PartitionRange = { ^"range" }
+                PartitionList = { ^"list" }
+                PartitionHash = { ^"hash" }
+            PartitionBySpec = !{ "(" ~ Identifier ~ ("," ~ Identifier)* ~ ")" }
     DropTable = ${ ^"drop" ~ W ~ ^"table" ~ W ~ (IfExists ~ W)? ~ Table ~ (W ~ WaitApplied)? ~ (W ~ TimeoutOption)? }
     CreateProc = ${
         ^"create" ~ W ~ ^"procedure" ~ W ~ (IfNotExists ~ W)? ~ Identifier ~ WO
