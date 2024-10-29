@@ -234,13 +234,15 @@ fn exec_plan_subtree_aggregates() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            f_sql(r#"SELECT "T1"."sys_op" as "column_596",
+            f_sql(
+                r#"SELECT "T1"."sys_op" as "column_596",
 ("T1"."id") * ("T1"."sys_op") as "column_1632", "T1"."id" as "column_2096",
 count ("T1"."id") as "count_2696", sum ("T1"."id") as "sum_1796",
 count ("T1"."sysFrom") as "count_1596", group_concat ("T1"."FIRST_NAME", ?) as "group_concat_2496",
 total ("T1"."id") as "total_2896", min ("T1"."id") as "min_3096", max ("T1"."id") as "max_3296"
 FROM "test_space" as "T1"
-GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#),
+GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#
+            ),
             vec![Value::from("o")]
         )
     );

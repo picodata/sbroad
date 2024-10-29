@@ -2,12 +2,10 @@ use smol_str::{format_smolstr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::to_user;
+use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::aggregates::{generate_local_alias_for_aggr, AggregateKind, SimpleAggregate};
 use crate::ir::distribution::Distribution;
-use crate::ir::expression::{
-    ColumnPositionMap, Comparator, FunctionFeature, EXPR_HASH_DEPTH,
-};
-use crate::frontend::sql::ir::SubtreeCloner;
+use crate::ir::expression::{ColumnPositionMap, Comparator, FunctionFeature, EXPR_HASH_DEPTH};
 use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::{MutRelational, Relational};
 use crate::ir::node::{
@@ -127,9 +125,7 @@ impl<'plan, 'args> PartialEq<Self> for AggregateSignature<'plan, 'args> {
                 .arguments
                 .iter()
                 .zip(other.arguments.iter())
-                .all(|(l, r)| {
-                    comparator.are_subtrees_equal(*l, *r).unwrap_or(false)
-                })
+                .all(|(l, r)| comparator.are_subtrees_equal(*l, *r).unwrap_or(false))
     }
 }
 

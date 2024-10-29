@@ -1723,7 +1723,7 @@ fn front_sql_distinct_asterisk() {
     check_output(
         r#"select distinct * from (select "id" from "test_space_hist")
                  join (select "id" from "test_space") on true"#,
-    vec![],
+        vec![],
         r#"projection ("column_1996"::unsigned -> "id", "column_2096"::unsigned -> "id")
     group by ("column_1996"::unsigned, "column_2096"::unsigned) output: ("column_1996"::unsigned -> "column_1996", "column_2096"::unsigned -> "column_2096")
         motion [policy: segment([ref("column_1996"), ref("column_2096")])]
@@ -1740,7 +1740,8 @@ fn front_sql_distinct_asterisk() {
 execution options:
     vdbe_max_steps = 45000
     vtable_max_rows = 5000
-"#)
+"#,
+    )
 }
 
 #[test]

@@ -551,10 +551,7 @@ impl SubtreeCloner {
     /// # Errors
     /// - invalid plan subtree, e.g some node is met twice in the plan
     /// - parameters/ddl/acl nodes are found in subtree
-    pub fn clone_subtree(
-        plan: &mut Plan,
-        top_id: NodeId,
-    ) -> Result<NodeId, SbroadError> {
+    pub fn clone_subtree(plan: &mut Plan, top_id: NodeId) -> Result<NodeId, SbroadError> {
         let subtree_capacity = top_id.offset as usize;
         let mut helper = Self::new(subtree_capacity);
         helper.clone(plan, top_id, subtree_capacity)

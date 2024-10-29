@@ -21,11 +21,11 @@ use tarantool::index::{IndexType, RtreeIndexDistanceType};
 use time::{OffsetDateTime, Time};
 
 use crate::errors::{Action, Entity, SbroadError};
-use crate::frontend::sql::ir::SubtreeCloner;
 use crate::executor::engine::Metadata;
 use crate::frontend::sql::ast::{
     AbstractSyntaxTree, ParseNode, ParseNodes, ParseTree, Rule, StackParseNode,
 };
+use crate::frontend::sql::ir::SubtreeCloner;
 use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
 use crate::ir::ddl::{AlterSystemType, ColumnDef, SetParamScopeType, SetParamValue};

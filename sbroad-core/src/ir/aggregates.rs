@@ -11,8 +11,8 @@ use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
 use super::expression::{ColumnPositionMap, FunctionFeature, Position};
-use crate::frontend::sql::ir::SubtreeCloner;
 use super::node::expression::Expression;
+use crate::frontend::sql::ir::SubtreeCloner;
 
 /// The kind of aggregate function
 ///

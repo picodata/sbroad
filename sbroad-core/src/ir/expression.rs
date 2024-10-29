@@ -220,10 +220,7 @@ pub const EXPR_HASH_DEPTH: usize = 5;
 impl<'plan> Comparator<'plan> {
     #[must_use]
     pub fn new(plan: &'plan Plan) -> Self {
-        Comparator {
-            plan,
-            state: None,
-        }
+        Comparator { plan, state: None }
     }
 
     pub fn set_hasher<H: Hasher>(&mut self, state: &'plan mut H) {
@@ -419,9 +416,18 @@ impl<'plan> Comparator<'plan> {
                             return Ok(*value_left == *value_right);
                         }
                     }
-                    Expression::Reference(Reference { targets: t_left, position: p_left, .. }) => {
-                        if let Expression::Reference(Reference { targets: t_right, position: p_right, .. }) = right {
-                            return Ok(t_left == t_right && p_left == p_right)
+                    Expression::Reference(Reference {
+                        targets: t_left,
+                        position: p_left,
+                        ..
+                    }) => {
+                        if let Expression::Reference(Reference {
+                            targets: t_right,
+                            position: p_right,
+                            ..
+                        }) = right
+                        {
+                            return Ok(t_left == t_right && p_left == p_right);
                         }
                     }
                     Expression::Row(Row {
@@ -576,7 +582,7 @@ impl<'plan> Comparator<'plan> {
                 targets.hash(state);
                 col_type.hash(state);
                 is_asterisk.hash(state);
-            },
+            }
             Expression::Row(Row { list, .. }) => {
                 for child in list {
                     self.hash_for_child_expr(*child, depth);

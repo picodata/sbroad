@@ -5,13 +5,13 @@
 //! * To:   `select * from "t" where "a" = 1 and "b" = 2`
 
 use crate::errors::{Entity, SbroadError};
+use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::node::expression::{Expression, MutExpression};
 use crate::ir::node::{BoolExpr, Constant, ExprInParentheses, NodeId, Row, UnaryExpr};
 use crate::ir::operator::{Bool, Unary};
 use crate::ir::transformation::{OldNewExpressionMap, OldNewTopIdPair};
 use crate::ir::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
 use crate::ir::value::Value;
-use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;

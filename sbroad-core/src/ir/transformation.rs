@@ -16,11 +16,11 @@ use super::node::expression::{Expression, MutExpression};
 use super::node::relational::{MutRelational, Relational};
 use super::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
 use crate::errors::{Entity, SbroadError};
+use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::node::{
     Alias, ArithmeticExpr, BoolExpr, Case, Cast, ExprInParentheses, Join, NodeId, Row, Selection,
     StableFunction, Trim, UnaryExpr,
 };
-use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::operator::Bool;
 use crate::ir::{Node, Plan};
 use std::collections::HashMap;
