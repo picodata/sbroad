@@ -1,4 +1,3 @@
-use opentelemetry::Context;
 use rmp::decode::{read_array_len, Bytes, RmpRead};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
@@ -7,17 +6,13 @@ use tarantool::tlua::{self, AsLua, Push, PushGuard, PushInto, PushOne, PushOneIn
 use tarantool::tuple::{Tuple, TupleBuilder};
 
 use crate::backend::sql::tree::OrderedSyntaxNodes;
-use crate::debug;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::{ExecutionPlan, QueryType};
 use crate::ir::value::Value;
 use crate::ir::Options;
-use crate::otm::{current_id, extract_context, inject_context};
 
 use crate::executor::engine::TableVersionMap;
 use crate::ir::node::NodeId;
-#[cfg(not(feature = "mock"))]
-use opentelemetry::trace::TraceContextExt;
 
 use super::engine::helpers::vshard::CacheInfo;
 use super::vtable::VirtualTableMeta;
@@ -197,22 +192,6 @@ impl SchemaInfo {
     }
 }
 
-/// Helper struct for storing tracing related information
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct TracingMetadata {
-    /// Context passed between nodes
-    pub context: ContextCarrier,
-    /// Id of a trace
-    pub trace_id: String,
-}
-
-impl TracingMetadata {
-    #[must_use]
-    pub fn new(context: ContextCarrier, trace_id: String) -> Self {
-        Self { context, trace_id }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct EncodedRows {
     /// Lengths of encoded rows.
@@ -298,7 +277,6 @@ pub struct RequiredData {
     pub query_type: QueryType,
     pub options: Options,
     pub schema_info: SchemaInfo,
-    pub tracing_meta: Option<TracingMetadata>,
     pub tables: EncodedTables,
 }
 
@@ -310,7 +288,6 @@ impl Default for RequiredData {
             query_type: QueryType::DQL,
             options: Options::default(),
             schema_info: SchemaInfo::default(),
-            tracing_meta: None,
             tables: EncodedTables::default(),
         }
     }
@@ -364,20 +341,12 @@ impl RequiredData {
         schema_info: SchemaInfo,
         tables: EncodedTables,
     ) -> Self {
-        let mut tracing_meta = None;
-        if let Some(trace_id) = current_id() {
-            let mut carrier = HashMap::new();
-            inject_context(&mut carrier);
-            tracing_meta = Some(TracingMetadata::new(ContextCarrier::new(carrier), trace_id));
-        }
-
         RequiredData {
             plan_id,
             parameters,
             query_type,
             options,
             schema_info,
-            tracing_meta,
             tables,
         }
     }
@@ -539,43 +508,5 @@ impl TryFrom<EncodedOptionalData> for OptionalData {
     fn try_from(value: EncodedOptionalData) -> Result<Self, Self::Error> {
         let ir: OptionalData = value.0.as_slice().try_into()?;
         Ok(ir)
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct ContextCarrier {
-    payload: HashMap<String, String>,
-}
-
-impl ContextCarrier {
-    #[must_use]
-    pub fn new(payload: HashMap<String, String>) -> Self {
-        ContextCarrier { payload }
-    }
-
-    #[must_use]
-    pub fn empty() -> Self {
-        ContextCarrier {
-            payload: HashMap::new(),
-        }
-    }
-}
-
-impl From<&mut ContextCarrier> for Context {
-    fn from(carrier: &mut ContextCarrier) -> Self {
-        if carrier.payload.is_empty() {
-            Context::new()
-        } else {
-            debug!(
-                Option::from("dispatched IR"),
-                &format!("Serialized OTM span context: {:?}", carrier.payload),
-            );
-            let ctx = extract_context(&mut carrier.payload);
-            debug!(
-                Option::from("dispatched IR"),
-                &format!("Deserialized OTM span context: {:?}", ctx.span()),
-            );
-            ctx
-        }
     }
 }

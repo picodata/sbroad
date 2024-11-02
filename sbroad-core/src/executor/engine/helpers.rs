@@ -31,7 +31,6 @@ use crate::executor::protocol::{EncodedTables, SchemaInfo};
 use crate::ir::node::Node;
 use crate::ir::operator::ConflictStrategy;
 use crate::ir::value::{EncodedValue, LuaValue, MsgPackValue};
-use crate::otm::child_span;
 use crate::utils::ByteCounter;
 use crate::{
     backend::sql::{
@@ -55,7 +54,6 @@ use crate::{
         Plan,
     },
 };
-use sbroad_proc::otm_child_span;
 use serde::Serialize;
 use tarantool::msgpack::rmp::{self, decode::RmpRead};
 use tarantool::session::with_su;
@@ -2364,7 +2362,6 @@ fn encode_result_tuple(metadata: &[MetadataColumn], rows: &[u8]) -> Result<Tuple
     Ok(Tuple::new(&tuple_buf)?)
 }
 
-#[otm_child_span("tarantool.cache.hit.read.prepared")]
 fn cache_hit<R: QueryCache, M: MutexLike<R::Cache>>(
     locked_cache: &mut M::Guard<'_>,
     params: &[Value],
@@ -2388,7 +2385,6 @@ where
     )
 }
 
-#[otm_child_span("tarantool.cache.miss.read.prepared")]
 fn cache_miss<R: QueryCache, M: MutexLike<R::Cache>>(
     locked_cache: &mut M::Guard<'_>,
     params: &[Value],

@@ -19,8 +19,6 @@ use crate::ir::operator::{Bool, JoinKind};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::traversal::{LevelNode, PostOrderWithFilter, REL_CAPACITY};
 use crate::ir::value::Value;
-use crate::otm::child_span;
-use sbroad_proc::otm_child_span;
 
 /// Buckets are used to determine which nodes to send the query to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -277,7 +275,6 @@ where
     /// - Failed to find a virtual table.
     /// - Relational nodes contain invalid children.
     #[allow(clippy::too_many_lines)]
-    #[otm_child_span("query.bucket.discovery")]
     pub fn bucket_discovery(&mut self, top_id: NodeId) -> Result<Buckets, SbroadError> {
         // if top's output has Distribution::Single then the whole subtree must executed only on
         // a single node, no need to traverse the subtree

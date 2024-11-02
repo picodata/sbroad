@@ -10,8 +10,6 @@ use crate::ir::node::{
 use crate::ir::tree::traversal::{LevelNode, PostOrder, PostOrderWithFilter};
 use crate::ir::value::Value;
 use crate::ir::{ArenaType, Node, OptionParamValue, Plan, ValueIdx};
-use crate::otm::child_span;
-use sbroad_proc::otm_child_span;
 use smol_str::format_smolstr;
 
 use crate::ir::relation::Type;
@@ -685,7 +683,6 @@ impl Plan {
     /// - Invalid amount of parameters.
     /// - Internal errors.
     #[allow(clippy::too_many_lines)]
-    #[otm_child_span("plan.bind")]
     pub fn bind_params(&mut self, values: Vec<Value>) -> Result<(), SbroadError> {
         if values.is_empty() {
             // Check there are no parameters in the plan,

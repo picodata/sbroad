@@ -31,11 +31,9 @@ use crate::{
         relational::{MutRelational, Relational},
         Motion, Node, NodeId,
     },
-    otm::child_span,
 };
 use ahash::AHashMap;
 use rand::{thread_rng, Rng};
-use sbroad_proc::otm_child_span;
 use smol_str::{format_smolstr, SmolStr};
 use tarantool::tlua::{CDataOnStack, LuaState, LuaTable, PushGuard, PushInto};
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
@@ -695,7 +693,6 @@ fn exec_with_custom_plan(
 
 /// Generic function over `dql_on_some` and `dml_on_some` functions.
 /// Used to execute IR on some replicasets (that are discovered from given `buckets`) using vshard router choosed by `tier argument`.
-#[otm_child_span("query.dispatch.cartridge.some")]
 pub fn impl_exec_ir_on_buckets(
     runtime: &impl Vshard,
     sub_plan: ExecutionPlan,
@@ -946,7 +943,6 @@ pub(crate) type GroupedBuckets = HashMap<String, Vec<u64>>;
 /// according to router cache.
 ///
 /// Rust binding to Lua `get_replicasets_from_buckets` function.
-#[otm_child_span("buckets.group")]
 fn lua_get_replicasets_from_buckets(
     buckets: &Buckets,
     tier_name: Option<&SmolStr>,
@@ -993,7 +989,6 @@ fn lua_get_replicasets_from_buckets(
 /// into `GroupedBuckets` (map from replicaset uuid to set of bucket_ids).
 ///
 /// Rust binding to Lua `group_buckets_by_replicasets` function.
-#[otm_child_span("buckets.group")]
 fn group(
     buckets: &HashSet<u64, RepeatableState>,
     tier_name: Option<&SmolStr>,
@@ -1018,7 +1013,6 @@ fn group(
     Ok(res)
 }
 
-#[otm_child_span("buckets.random")]
 pub fn get_random_bucket(runtime: &impl Vshard) -> Buckets {
     let mut rng = thread_rng();
     let bucket_id: u64 = rng.gen_range(1..=runtime.bucket_count());

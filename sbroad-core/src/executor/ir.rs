@@ -22,8 +22,6 @@ use crate::ir::relation::SpaceEngine;
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::{LevelNode, PostOrder};
 use crate::ir::Plan;
-use crate::otm::child_span;
-use sbroad_proc::otm_child_span;
 
 /// Query type (used to parse the returned results).
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -146,7 +144,6 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - invalid motion node
-    #[otm_child_span("query.motion.add")]
     pub fn set_motion_vtable(
         &mut self,
         motion_id: &NodeId,

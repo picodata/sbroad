@@ -8,7 +8,6 @@ The application was created for integration testing of the `sbroad` library. It 
 * [Architecture](#architecture)
     * [sbroad.execute](#sbroad-execute)
     * [sbroad.calculate_bucket_id](#sbroad-calculate_bucket_id)
-    * [sbroad.trace](#sbroad-trace)
 * [General observations](#general-observations)
 * [Local load testing](#load-test)
 
@@ -40,7 +39,7 @@ order to unite build and run execution).
 
 The application includes two roles:
 
-- `api` (includes `sbroad-router` and enables these functions: `sbroad.calculate_bucket_id`, `sbroad.execute`, `sbroad.trace`)
+- `api` (includes `sbroad-router` and enables these functions: `sbroad.calculate_bucket_id`, `sbroad.execute`)
 - `storage` (includes `sbroad-storage` and enables the `sbroad.calculate_bucket_id` function)
 
 Notice that sbroad function are placed into global [_G](https://www.lua.org/pil/14.html), so you can call sbroad functions at any place of app. Let's have a look at sbroad functions:
@@ -142,33 +141,6 @@ sbroad.calculate_bucket_id"({ box.tuple.new{ 1, "123" }, "testing_space" })
 sbroad.calculate_bucket_id"({ 1, "123", 1 }, "testing_space" })
 ---
 - 360
-...
-```
-
-### <a name="sbroad-trace"></a>`sbroad.trace(sql_query, {params}, carrier, query_id)`
-execute the parametrized sql query in the same way as [sbroad.execute](#sbroad-execute), but also start trace of query.
-
-**Parameters**:
-* sql_query (string) -- sql query to execute on cluster
-* params (array) -- params for sql query. The number and order of the arguments correspond to the `?` signs inside `sql_query`
-* carrier (table|box.NULL) -- tracer params that can be represented as [W3C format](https://www.w3.org/TR/trace-context/#traceparent-header) or as [Jaegger format](https://www.jaegertracing.io/docs/1.38/client-libraries/#propagation-format)
-* query_id (string) -- query id at format `"idN"`
-
-**Return**:
-* result of query (table|nil)
-* error
-
-**Example**:
-Start jaeger:
-```
-docker run --name jaeger -d --rm -p6831:6831/udp -p6832:6832/udp -p16686:16686 -p14268:14268 jaegertracing/all-in-one:latest
-```
-The result can be found at http://localhost:16686/ (choose sbroad service at left panel).
-```
-sbroad.execute([[select "name" from "testing_space" where "id" = ?]], {3}, box.NULL, "id1")
----
-- {{{metadata = {name = 'id', type = 'integer'}, {name = 'name', type = 'string'}}, {rows = {3, "123"}}}
-- null
 ...
 ```
 

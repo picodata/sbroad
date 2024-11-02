@@ -27,6 +27,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use self::engine::query_id;
 use crate::errors::{Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::{Router, TableVersionMap, Vshard};
@@ -38,9 +39,7 @@ use crate::ir::node::{Motion, NodeId};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
 use crate::ir::{Plan, Slices};
-use crate::otm::{child_span, query_id};
 use crate::utils::MutexLike;
-use sbroad_proc::otm_child_span;
 use smol_str::SmolStr;
 
 pub mod bucket;
@@ -191,7 +190,6 @@ where
         self.coordinator
     }
 
-    #[otm_child_span("query.materialize_subtree")]
     pub fn materialize_subtree(&mut self, slices: Slices) -> Result<(), SbroadError> {
         let tier = self.exec_plan.get_ir_plan().tier.as_ref();
         // all tables from one tier, so we can use corresponding vshard object
@@ -277,7 +275,6 @@ where
     /// - Failed to discover buckets.
     /// - Failed to materialize motion result and build a virtual table.
     /// - Failed to get plan top.
-    #[otm_child_span("query.dispatch")]
     pub fn dispatch(&mut self) -> Result<Box<dyn Any>, SbroadError> {
         if self.is_explain() {
             return self.produce_explain();

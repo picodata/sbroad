@@ -4,5 +4,4 @@ members = [
    "sbroad-benches",
    "sbroad-cartridge",
    "sbroad-core",
-   "sbroad-proc",
 ]

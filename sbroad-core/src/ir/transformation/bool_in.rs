@@ -16,8 +16,6 @@ use crate::ir::node::{BoolExpr, NodeId};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::Plan;
-use crate::otm::child_span;
-use sbroad_proc::otm_child_span;
 use smol_str::format_smolstr;
 
 /// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
@@ -92,7 +90,6 @@ impl Plan {
     ///
     /// # Errors
     /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
-    #[otm_child_span("plan.transformation.replace_in_operator")]
     pub fn replace_in_operator(&mut self) -> Result<(), SbroadError> {
         self.transform_expr_trees(&call_expr_tree_replace_in)
     }

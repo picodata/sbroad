@@ -2,7 +2,8 @@
 //!
 //! Traits that define an execution engine interface.
 
-use smol_str::{format_smolstr, SmolStr};
+use base64ct::{Base64, Encoding};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::tuple::Tuple;
 
 use crate::cbo::histogram::Scalar;
@@ -155,6 +156,13 @@ pub trait QueryCache {
     /// - table was not found in system space
     /// - could not access the system space
     fn get_table_version(&self, _: &str) -> Result<u64, SbroadError>;
+}
+
+/// Calculate a key in the query cache for a given pattern.
+#[inline]
+#[must_use]
+pub fn query_id(pattern: &str) -> SmolStr {
+    Base64::encode_string(blake3::hash(pattern.as_bytes()).to_hex().as_bytes()).to_smolstr()
 }
 
 /// Helper struct specifying in which format

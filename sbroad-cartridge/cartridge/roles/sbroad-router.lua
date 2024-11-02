@@ -9,7 +9,6 @@ local function init(opts) -- luacheck: no unused args
 
     _G.sbroad.calculate_bucket_id = sbroad_common.calculate_bucket_id
     _G.sbroad.execute = sbroad_router.execute
-    _G.sbroad.trace = sbroad_router.trace
 
     sbroad_common.init(opts.is_master)
 

@@ -41,7 +41,7 @@ _G.get_sharding_column = function()
 end
 
 local function execute(query, params)
-    local result, err = rust.dispatch_query(query, params, box.NULL, box.NULL, helper.constants.STAT_TRACER)
+    local result, err = rust.dispatch_query(query, params)
     if err then
       return nil, err
     end

@@ -26,8 +26,6 @@ use crate::ir::tree::traversal::{
 };
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
-use crate::otm::child_span;
-use sbroad_proc::otm_child_span;
 
 pub(crate) mod dml;
 pub(crate) mod eq_cols;
@@ -2222,7 +2220,6 @@ impl Plan {
     /// - failed to get relational nodes (plan is invalid?)
     /// - failed to resolve distribution conflicts
     /// - failed to set distribution
-    #[otm_child_span("plan.transformation.add_motions")]
     pub fn add_motions(&mut self) -> Result<(), SbroadError> {
         type CteChildId = ChildId;
         type MotionId = ChildId;

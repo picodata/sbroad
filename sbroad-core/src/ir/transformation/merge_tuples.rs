@@ -20,8 +20,6 @@ use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::tree::traversal::BreadthFirst;
 use crate::ir::tree::traversal::EXPR_CAPACITY;
 use crate::ir::Plan;
-use crate::otm::child_span;
-use sbroad_proc::otm_child_span;
 use smol_str::{format_smolstr, ToSmolStr};
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
@@ -582,7 +580,6 @@ impl Plan {
     ///
     /// # Errors
     /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
-    #[otm_child_span("plan.transformation.merge_tuples")]
     pub fn merge_tuples(&mut self) -> Result<(), SbroadError> {
         self.transform_expr_trees(&call_expr_tree_merge_tuples)
     }

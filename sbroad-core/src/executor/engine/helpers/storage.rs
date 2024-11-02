@@ -1,5 +1,4 @@
 use rmp::encode::write_array_len;
-use sbroad_proc::otm_child_span;
 use smol_str::{format_smolstr, SmolStr};
 use std::any::Any;
 use std::collections::HashMap;
@@ -18,7 +17,6 @@ use crate::executor::engine::helpers::table_name;
 use crate::executor::lru::DEFAULT_CAPACITY;
 use crate::ir::node::NodeId;
 use crate::ir::value::{EncodedValue, Value};
-use crate::otm::child_span;
 use crate::utils::ByteCounter;
 
 const IPROTO_DATA: u8 = 0x30;
@@ -70,7 +68,6 @@ impl StorageMetadata {
     }
 }
 
-#[otm_child_span("tarantool.statement.prepare")]
 pub fn prepare(pattern: String) -> Result<Statement, SbroadError> {
     let proxy = sql_cache_proxy();
     let stmt = proxy.prepare(pattern).map_err(|e| {
@@ -80,7 +77,6 @@ pub fn prepare(pattern: String) -> Result<Statement, SbroadError> {
     Ok(stmt)
 }
 
-#[otm_child_span("tarantool.statement.unprepare")]
 pub fn unprepare(
     plan_id: &SmolStr,
     entry: &mut (Statement, Vec<NodeId>),
@@ -248,7 +244,6 @@ fn encoded_params(params: &[Value]) -> Vec<EncodedValue> {
     params.iter().map(EncodedValue::from).collect()
 }
 
-#[otm_child_span("tarantool.statement.prepared.execute")]
 pub fn execute_prepared(
     stmt: &Statement,
     params: &[Value],
@@ -263,7 +258,6 @@ pub fn execute_prepared(
     dql_result_to_tuple(&mut stream, max_rows, format)
 }
 
-#[otm_child_span("tarantool.statement.unprepared.execute")]
 pub fn execute_unprepared(
     query: &str,
     params: &[Value],

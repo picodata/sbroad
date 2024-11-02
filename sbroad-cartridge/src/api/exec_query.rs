@@ -27,8 +27,6 @@ fn dispatch_query_inner(args: &RawBytes) -> anyhow::Result<RawProcResult> {
     let tuple = Tuple::try_from_slice(args)?;
     let lua_params = PatternWithParams::try_from(&tuple).context("build params")?;
 
-    // We initialize the global tracer on every configuration update.
-    // As a side effect, we can't trace load_config() call itself (sic!).
     load_config(&COORDINATOR_ENGINE)?;
 
     COORDINATOR_ENGINE.with(|engine| {

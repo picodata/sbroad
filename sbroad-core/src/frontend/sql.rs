@@ -50,7 +50,6 @@ use crate::ir::relation::{Column, ColumnRole, TableKind, Type as RelationType};
 use crate::ir::tree::traversal::{LevelNode, PostOrder, EXPR_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{node::plugin, OptionKind, OptionParamValue, OptionSpec, Plan};
-use crate::otm::child_span;
 
 use crate::errors::Entity::AST;
 use crate::executor::engine::helpers::{normalize_name_from_sql, to_user};
@@ -65,7 +64,6 @@ use crate::ir::node::plugin::{
 };
 use crate::ir::transformation::redistribution::ColumnPosition;
 use crate::warn;
-use sbroad_proc::otm_child_span;
 use tarantool::decimal::Decimal;
 use tarantool::space::SpaceEngineType;
 
@@ -3273,7 +3271,6 @@ impl AbstractSyntaxTree {
     ///
     /// # Errors
     /// - Failed to parse an SQL query.
-    #[otm_child_span("ast.parse")]
     fn fill<'query>(
         &mut self,
         query: &'query str,
@@ -3661,7 +3658,6 @@ impl AbstractSyntaxTree {
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::uninlined_format_args)]
-    #[otm_child_span("ast.resolve")]
     fn resolve_metadata<M>(
         &self,
         metadata: &M,

@@ -19,8 +19,6 @@ use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::{LevelNode, PostOrder};
 use crate::ir::tree::Snapshot;
 use crate::ir::Plan;
-use crate::otm::child_span;
-use sbroad_proc::otm_child_span;
 
 /// Payload of the syntax tree node.
 #[derive(Clone, Deserialize, Debug, PartialEq, Eq, Serialize)]
@@ -1971,7 +1969,6 @@ impl<'p> SyntaxPlan<'p> {
     /// - Failed to ad an IR plan to the syntax tree
     /// - Failed to get to the top of the syntax tree
     /// - Failed to move projection nodes under their scans
-    #[otm_child_span("syntax.new")]
     pub fn new(
         plan: &'p ExecutionPlan,
         top: NodeId,
@@ -2114,7 +2111,6 @@ impl OrderedSyntaxNodes {
 impl TryFrom<SyntaxPlan<'_>> for OrderedSyntaxNodes {
     type Error = SbroadError;
 
-    #[otm_child_span("syntax.ordered")]
     fn try_from(mut sp: SyntaxPlan) -> Result<Self, Self::Error> {
         // Result with plan node ids.
         let mut positions: Vec<usize> = Vec::with_capacity(sp.nodes.arena.len());

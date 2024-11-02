@@ -13,8 +13,6 @@ use crate::ir::transformation::{OldNewExpressionMap, OldNewTopIdPair};
 use crate::ir::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
-use crate::otm::child_span;
-use sbroad_proc::otm_child_span;
 use smol_str::{format_smolstr, SmolStr};
 
 /// Enum representing status of Not push down traversal.
@@ -270,7 +268,6 @@ impl Plan {
         Ok(new_expr_id)
     }
 
-    #[otm_child_span("plan.transformation.push_down_not")]
     pub fn push_down_not(&mut self) -> Result<(), SbroadError> {
         self.transform_expr_trees(&call_expr_tree_not_push_down)
     }

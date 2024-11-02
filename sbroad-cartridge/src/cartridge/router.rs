@@ -40,8 +40,6 @@ use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::ir::value::Value;
 use sbroad::ir::Plan;
-use sbroad::otm::child_span;
-use sbroad_proc::otm_child_span;
 
 pub struct SingleTier {
     bucket_count: u64,
@@ -244,7 +242,6 @@ impl Router for RouterRuntime {
     }
 
     /// Execute a sub tree on the nodes
-    #[otm_child_span("query.dispatch.cartridge")]
     fn dispatch(
         &self,
         plan: &mut ExecutionPlan,
@@ -260,7 +257,6 @@ impl Router for RouterRuntime {
     }
 
     /// Transform sub query results into a virtual table.
-    #[otm_child_span("query.motion.materialize")]
     fn materialize_motion(
         &self,
         plan: &mut ExecutionPlan,

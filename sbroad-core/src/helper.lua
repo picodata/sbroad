@@ -1,29 +1,6 @@
 local compat = require('compat')
 local compat_mt = compat ~= nil and getmetatable(compat) or nil
 
--- Make table read-only
-local function protect(tbl)
-    return setmetatable({}, {
-        __index = tbl,
-        __newindex = function(_, key, value)
-            error("attempting to change constant " ..
-                   tostring(key) .. " to " .. tostring(value))
-        end
-    })
-end
-
-local constants = {
-    -- Used for sending tracing to Jaeger agent.
-    GLOBAL_TRACER = "global",
-    -- Gathers stats about spans and saves them to temporary spaces
-    -- on each node, but does it only for 1% of the queries.
-    STAT_TRACER = "stat",
-    -- Like STAT_TRACER but saves stats for each query.
-    -- It is used only for tests.
-    TEST_TRACER = "test_stat"
-}
-constants = protect(constants)
-
 --- Checks if building against picodata - mainly needed because stored procs should be used then.
 local function pico_compat()
   return package.loaded["pico"] ~= nil
@@ -125,6 +102,5 @@ return {
     dql_error = dql_error,
     format_result = format_result,
     unwrap_execute_result = unwrap_execute_result,
-    constants = constants,
     table_size = table_size
 }
