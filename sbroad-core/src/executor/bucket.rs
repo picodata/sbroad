@@ -276,6 +276,12 @@ where
     /// - Relational nodes contain invalid children.
     #[allow(clippy::too_many_lines)]
     pub fn bucket_discovery(&mut self, top_id: NodeId) -> Result<Buckets, SbroadError> {
+        let top_node = self.exec_plan.get_ir_plan().get_relation_node(top_id)?;
+        if let Relational::Delete(Delete { output: None, .. }) = top_node {
+            // DELETE without WHERE clause should be executed on all buckets
+            return Ok(Buckets::All);
+        }
+
         // if top's output has Distribution::Single then the whole subtree must executed only on
         // a single node, no need to traverse the subtree
         let top_output_id = self.exec_plan.get_ir_plan().get_relational_output(top_id)?;
@@ -409,7 +415,13 @@ where
                         ));
                     }
                 },
-                Relational::Delete(Delete { output, .. })
+                Relational::Delete(Delete { output: None, .. }) => {
+                    unreachable!("DELETE without WHERE clause should have been handled previously.")
+                }
+                Relational::Delete(Delete {
+                    output: Some(output),
+                    ..
+                })
                 | Relational::Insert(Insert { output, .. })
                 | Relational::Update(Update { output, .. }) => {
                     let child_id = ir_plan.get_relational_child(node_id, 0)?;

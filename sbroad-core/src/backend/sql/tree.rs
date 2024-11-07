@@ -775,9 +775,8 @@ impl<'p> SyntaxPlan<'p> {
                 self.nodes.push_sn_plan(sn);
             }
             Node::Relational(ref rel) => match rel {
-                Relational::Insert { .. }
-                | Relational::Delete { .. }
-                | Relational::Update { .. } => {
+                Relational::Delete { .. } => self.add_delete(id),
+                Relational::Insert { .. } | Relational::Update { .. } => {
                     panic!("DML node {node:?} is not supported in the syntax plan")
                 }
                 Relational::Join { .. } => self.add_join(id),
@@ -841,6 +840,13 @@ impl<'p> SyntaxPlan<'p> {
     }
 
     // Relational nodes.
+
+    fn add_delete(&mut self, id: NodeId) {
+        // DELETE without WHERE clause doesn't have children, so we
+        // have nothing to pop from the stack.
+        let sn = SyntaxNode::new_pointer(id, None, vec![]);
+        self.nodes.push_sn_plan(sn);
+    }
 
     fn add_cte(&mut self, id: NodeId) {
         let (_, cte) = self.prologue_rel(id);

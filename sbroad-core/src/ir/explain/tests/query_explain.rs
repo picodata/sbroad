@@ -154,9 +154,6 @@ fn test_query_explain_9() {
     let metadata = &RouterRuntimeMock::new();
     let mut query = Query::new(metadata, sql, vec![]).unwrap();
     let expected = r#"delete "t2"
-    motion [policy: local]
-        projection ("t2"."g"::unsigned -> "pk_col_0", "t2"."h"::unsigned -> "pk_col_1")
-            scan "t2"
 execution options:
     vdbe_max_steps = 45000
     vtable_max_rows = 5000

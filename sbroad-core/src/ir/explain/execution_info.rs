@@ -192,7 +192,12 @@ impl BucketsInfo {
             return Ok(true);
         }
 
-        let child_id = plan.get_relational_child(top_id, 0)?;
+        let children = plan.children(top_id);
+        if children.is_empty() {
+            // Case of DELETE without WHERE.
+            return Ok(true);
+        }
+        let child_id = children[0];
         let child_node = plan.get_relation_node(child_id)?;
 
         Ok(child_node.is_local_motion())

@@ -17,7 +17,7 @@ impl<'r> Index<usize> for Children<'r> {
         match self {
             Children::None => panic!("node has no children!"),
             Children::Single(i) => {
-                assert!(idx > 0, "node has one child!");
+                assert!(idx == 0, "node has one child!");
                 i
             }
             Children::Couple(l, r) => match idx {

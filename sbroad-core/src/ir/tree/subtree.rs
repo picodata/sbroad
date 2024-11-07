@@ -305,7 +305,6 @@ fn subtree_next<'plan>(
                 Relational::Except(Except { output, .. })
                 | Relational::Insert(Insert { output, .. })
                 | Relational::Intersect(Intersect { output, .. })
-                | Relational::Delete(Delete { output, .. })
                 | Relational::ScanSubQuery(ScanSubQuery { output, .. })
                 | Relational::Union(Union { output, .. })
                 | Relational::UnionAll(UnionAll { output, .. }) => {
@@ -318,6 +317,21 @@ fn subtree_next<'plan>(
                     if iter.need_output() && step == children.len() {
                         *iter.get_child().borrow_mut() += 1;
                         return Some(*output);
+                    }
+                    None
+                }
+                Relational::Delete(Delete { output, .. }) => {
+                    let step = *iter.get_child().borrow();
+                    let children = r.children();
+                    if step < children.len() {
+                        *iter.get_child().borrow_mut() += 1;
+                        return children.get(step).copied();
+                    }
+                    if let Some(output) = output {
+                        if iter.need_output() && step == children.len() {
+                            *iter.get_child().borrow_mut() += 1;
+                            return Some(*output);
+                        }
                     }
                     None
                 }

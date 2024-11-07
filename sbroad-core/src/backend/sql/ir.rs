@@ -3,10 +3,9 @@ use crate::executor::protocol::VTablesMeta;
 use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::Relational;
 use crate::ir::node::{
-    Constant, Insert, Join, Motion, Node, NodeId, Reference, ScanRelation, StableFunction,
+    Constant, Delete, Join, Node, NodeId, Reference, ScanRelation, StableFunction,
 };
 use crate::ir::relation::Column;
-use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::traversal::{LevelNode, PostOrderWithFilter};
 use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
@@ -167,17 +166,13 @@ impl ExecutionPlan {
             let ir = self.get_ir_plan();
             let top_id = ir.get_top()?;
             let top = ir.get_relation_node(top_id)?;
+
             if top.is_dml() {
-                let motion_id = ir.dml_child_id(top_id)?;
-                let motion = ir.get_relation_node(motion_id)?;
-                if !matches!(
-                    motion,
-                    Relational::Motion(Motion {
-                        policy: MotionPolicy::LocalSegment { .. } | MotionPolicy::Local,
-                        ..
-                    })
-                ) {
-                    reserved_motion_id = Some(motion_id);
+                let top_children = ir.children(top_id);
+
+                // DELETE without WHERE clause don't have children.
+                if !top_children.is_empty() {
+                    reserved_motion_id = Some(top_children[0]);
                 }
             }
         }
@@ -263,153 +258,158 @@ impl ExecutionPlan {
                 sql.push_str(delim);
             }
 
-            match data {
-                // TODO: should we care about plans without projections?
-                // Or they should be treated as invalid?
-                SyntaxData::Asterisk(relation_name) => {
-                    if let Some(relation_name) = relation_name {
-                        push_identifier(&mut sql, relation_name.as_str());
-                        sql.push('.')
+                match data {
+                    // TODO: should we care about plans without projections?
+                    // Or they should be treated as invalid?
+                    SyntaxData::Asterisk(relation_name) => {
+                        if let Some(relation_name) = relation_name {
+                            push_identifier(&mut sql, relation_name.as_str());
+                            sql.push('.')
+                        }
+                        sql.push('*')
                     }
-                    sql.push('*')
-                }
-                SyntaxData::Alias(s) => {
-                    sql.push_str("as ");
-                    push_identifier(&mut sql, s);
-                }
-                SyntaxData::UnquotedAlias(s) => {
-                    sql.push_str("as ");
-                    sql.push_str(s);
-                }
-                SyntaxData::Cast => sql.push_str("CAST"),
-                SyntaxData::Case => sql.push_str("CASE"),
-                SyntaxData::When => sql.push_str("WHEN"),
-                SyntaxData::Then => sql.push_str("THEN"),
-                SyntaxData::Else => sql.push_str("ELSE"),
-                SyntaxData::End => sql.push_str("END"),
-                SyntaxData::CloseParenthesis => sql.push(')'),
-                SyntaxData::Concat => sql.push_str("||"),
-                SyntaxData::Comma => sql.push(','),
-                SyntaxData::Condition => sql.push_str("ON"),
-                SyntaxData::Escape => sql.push_str("ESCAPE"),
-                SyntaxData::Like => sql.push_str("LIKE"),
-                SyntaxData::Distinct => sql.push_str("DISTINCT"),
-                SyntaxData::OrderByPosition(index) => sql.push_str(format!("{index}").as_str()),
-                SyntaxData::OrderByType(order_type) => match order_type {
-                    OrderByType::Asc => sql.push_str("ASC"),
-                    OrderByType::Desc => sql.push_str("DESC"),
-                },
-                SyntaxData::Inline(content) => sql.push_str(content),
-                SyntaxData::From => sql.push_str("FROM"),
-                SyntaxData::Leading => sql.push_str("LEADING"),
-                SyntaxData::Limit(limit) => sql.push_str(&format_smolstr!("LIMIT {limit}")),
-                SyntaxData::Both => sql.push_str("BOTH"),
-                SyntaxData::Trailing => sql.push_str("TRAILING"),
-                SyntaxData::Operator(s) => sql.push_str(s.as_str()),
-                SyntaxData::OpenParenthesis => sql.push('('),
-                SyntaxData::Trim => sql.push_str("TRIM"),
-                SyntaxData::PlanId(id) => {
-                    let node = ir_plan.get_node(*id)?;
-                    match node {
-                        Node::Ddl(_) => {
-                            return Err(SbroadError::Unsupported(
-                                Entity::Node,
-                                Some("DDL nodes are not supported in the generated SQL".into()),
-                            ));
-                        }
-                        Node::Acl(_) => {
-                            return Err(SbroadError::Unsupported(
-                                Entity::Node,
-                                Some("ACL nodes are not supported in the generated SQL".into()),
-                            ));
-                        }
-                        Node::Block(_) => {
-                            return Err(SbroadError::Unsupported(
-                                Entity::Node,
-                                Some(
-                                    "Code block nodes are not supported in the generated SQL"
-                                        .into(),
-                                ),
-                            ));
-                        }
-                        Node::Parameter(..) => {
-                            return Err(SbroadError::Unsupported(
-                                Entity::Node,
-                                Some("Parameters are not supported in the generated SQL".into()),
-                            ));
-                        }
-                        Node::Invalid(..) => {
-                            return Err(SbroadError::Unsupported(
-                                Entity::Node,
-                                Some("Invalid nodes are not supported in the generated SQL".into()),
-                            ));
-                        }
-                        Node::Plugin(_) => {
-                            return Err(SbroadError::Unsupported(
-                                Entity::Node,
-                                Some("Plugin are not supported in the generated SQL".into()),
-                            ));
-                        }
-                        Node::Relational(rel) => match rel {
-                            Relational::Except { .. } => sql.push_str("EXCEPT"),
-                            Relational::GroupBy { .. } => sql.push_str("GROUP BY"),
-                            Relational::Intersect { .. } => sql.push_str("INTERSECT"),
-                            Relational::Having { .. } => sql.push_str("HAVING"),
-                            Relational::OrderBy { .. } => sql.push_str("ORDER BY"),
-                            Relational::Delete { .. } => {
+                    SyntaxData::Alias(s) => {
+                        sql.push_str("as ");
+                        push_identifier(&mut sql, s);
+                    }
+                    SyntaxData::UnquotedAlias(s) => {
+                        sql.push_str("as ");
+                        sql.push_str(s);
+                    }
+                    SyntaxData::Cast => sql.push_str("CAST"),
+                    SyntaxData::Case => sql.push_str("CASE"),
+                    SyntaxData::When => sql.push_str("WHEN"),
+                    SyntaxData::Then => sql.push_str("THEN"),
+                    SyntaxData::Else => sql.push_str("ELSE"),
+                    SyntaxData::End => sql.push_str("END"),
+                    SyntaxData::CloseParenthesis => sql.push(')'),
+                    SyntaxData::Concat => sql.push_str("||"),
+                    SyntaxData::Comma => sql.push(','),
+                    SyntaxData::Condition => sql.push_str("ON"),
+                    SyntaxData::Escape => sql.push_str("ESCAPE"),
+                    SyntaxData::Like => sql.push_str("LIKE"),
+                    SyntaxData::Distinct => sql.push_str("DISTINCT"),
+                    SyntaxData::OrderByPosition(index) => sql.push_str(format!("{index}").as_str()),
+                    SyntaxData::OrderByType(order_type) => match order_type {
+                        OrderByType::Asc => sql.push_str("ASC"),
+                        OrderByType::Desc => sql.push_str("DESC"),
+                    },
+                    SyntaxData::Inline(content) => sql.push_str(content),
+                    SyntaxData::From => sql.push_str("FROM"),
+                    SyntaxData::Leading => sql.push_str("LEADING"),
+                    SyntaxData::Limit(limit) => sql.push_str(&format_smolstr!("LIMIT {limit}")),
+                    SyntaxData::Both => sql.push_str("BOTH"),
+                    SyntaxData::Trailing => sql.push_str("TRAILING"),
+                    SyntaxData::Operator(s) => sql.push_str(s.as_str()),
+                    SyntaxData::OpenParenthesis => sql.push('('),
+                    SyntaxData::Trim => sql.push_str("TRIM"),
+                    SyntaxData::PlanId(id) => {
+                        let node = ir_plan.get_node(*id)?;
+                        match node {
+                            Node::Ddl(_) => {
                                 return Err(SbroadError::Unsupported(
                                     Entity::Node,
-                                    Some("DML nodes are not supported in the generated SQL".into()),
+                                    Some("DDL nodes are not supported in the generated SQL".into()),
                                 ));
                             }
-                            Relational::Insert(Insert { relation, .. }) => {
-                                sql.push_str("INSERT INTO ");
-                                push_identifier(&mut sql, relation);
+                            Node::Acl(_) => {
+                                return Err(SbroadError::Unsupported(
+                                    Entity::Node,
+                                    Some("ACL nodes are not supported in the generated SQL".into()),
+                                ));
                             }
-                            Relational::Join(Join { kind, .. }) => sql.push_str(
-                                format!("{} JOIN", kind.to_string().to_uppercase()).as_str(),
-                            ),
-                            Relational::Projection { .. }
-                            | Relational::SelectWithoutScan { .. } => sql.push_str("SELECT"),
-                            Relational::ScanRelation(ScanRelation { relation, .. }) => {
-                                push_identifier(&mut sql, relation);
+                            Node::Block(_) => {
+                                return Err(SbroadError::Unsupported(
+                                    Entity::Node,
+                                    Some(
+                                        "Code block nodes are not supported in the generated SQL"
+                                            .into(),
+                                    ),
+                                ));
                             }
-                            Relational::ScanSubQuery { .. }
-                            | Relational::ScanCte { .. }
-                            | Relational::Motion { .. }
-                            | Relational::ValuesRow { .. }
-                            | Relational::Limit { .. } => {}
-                            Relational::Selection { .. } => sql.push_str("WHERE"),
-                            Relational::Union { .. } => sql.push_str("UNION"),
-                            Relational::UnionAll { .. } => sql.push_str("UNION ALL"),
-                            Relational::Update { .. } => sql.push_str("UPDATE"),
-                            Relational::Values { .. } => sql.push_str("VALUES"),
-                        },
-                        Node::Expression(expr) => {
-                            match expr {
-                                Expression::Alias { .. }
-                                | Expression::ExprInParentheses { .. }
-                                | Expression::Bool { .. }
-                                | Expression::Arithmetic { .. }
-                                | Expression::Cast { .. }
-                                | Expression::Case { .. }
-                                | Expression::Concat { .. }
-                                | Expression::Like { .. }
-                                | Expression::Row { .. }
-                                | Expression::Trim { .. }
-                                | Expression::Unary { .. } => {}
-                                Expression::Constant(Constant { value, .. }) => {
-                                    write!(sql, "{value}").map_err(|e| {
-                                        SbroadError::FailedTo(
-                                            Action::Put,
-                                            Some(Entity::Value),
-                                            format_smolstr!("constant value to SQL: {e}"),
-                                        )
-                                    })?;
+                            Node::Parameter(..) => {
+                                return Err(SbroadError::Unsupported(
+                                    Entity::Node,
+                                    Some(
+                                        "Parameters are not supported in the generated SQL".into(),
+                                    ),
+                                ));
+                            }
+                            Node::Invalid(..) => {
+                                return Err(SbroadError::Unsupported(
+                                    Entity::Node,
+                                    Some(
+                                        "Invalid nodes are not supported in the generated SQL"
+                                            .into(),
+                                    ),
+                                ));
+                            }
+                            Node::Plugin(_) => {
+                                return Err(SbroadError::Unsupported(
+                                    Entity::Node,
+                                    Some("Plugin are not supported in the generated SQL".into()),
+                                ));
+                            }
+                            Node::Relational(rel) => match rel {
+                                Relational::Except { .. } => sql.push_str("EXCEPT"),
+                                Relational::GroupBy { .. } => sql.push_str("GROUP BY"),
+                                Relational::Intersect { .. } => sql.push_str("INTERSECT"),
+                                Relational::Having { .. } => sql.push_str("HAVING"),
+                                Relational::OrderBy { .. } => sql.push_str("ORDER BY"),
+                                Relational::Delete(Delete { relation, .. }) => {
+                                    sql.push_str("DELETE FROM ");
+                                    push_identifier(&mut sql, relation)
                                 }
-                                Expression::Reference(Reference { position, .. }) => {
-                                    let rel_id = ir_plan.get_relational_from_reference_node(*id)?;
-                                    let rel_node = ir_plan.get_relation_node(rel_id)?;
+                                Relational::Join(Join { kind, .. }) => sql.push_str(
+                                    format!("{} JOIN", kind.to_string().to_uppercase()).as_str(),
+                                ),
+                                Relational::Projection { .. }
+                                | Relational::SelectWithoutScan { .. } => sql.push_str("SELECT"),
+                                Relational::ScanRelation(ScanRelation { relation, .. }) => {
+                                    push_identifier(&mut sql, relation);
+                                }
+                                Relational::ScanSubQuery { .. }
+                                | Relational::ScanCte { .. }
+                                | Relational::Motion { .. }
+                                | Relational::ValuesRow { .. }
+                                | Relational::Limit { .. } => {}
+                                Relational::Selection { .. } => sql.push_str("WHERE"),
+                                Relational::Union { .. } => sql.push_str("UNION"),
+                                Relational::UnionAll { .. } => sql.push_str("UNION ALL"),
+                                Relational::Values { .. } => sql.push_str("VALUES"),
+                                Relational::Insert { .. } | Relational::Update { .. } => {
+                                    return Err(SbroadError::Invalid(
+                                        Entity::Node,
+                                        Some("DML nodes are not supported in local SQL".into()),
+                                    ));
+                                }
+                            },
+                            Node::Expression(expr) => {
+                                match expr {
+                                    Expression::Alias { .. }
+                                    | Expression::ExprInParentheses { .. }
+                                    | Expression::Bool { .. }
+                                    | Expression::Arithmetic { .. }
+                                    | Expression::Cast { .. }
+                                    | Expression::Case { .. }
+                                    | Expression::Concat { .. }
+                                    | Expression::Like { .. }
+                                    | Expression::Row { .. }
+                                    | Expression::Trim { .. }
+                                    | Expression::Unary { .. } => {}
+                                    Expression::Constant(Constant { value, .. }) => {
+                                        write!(sql, "{value}").map_err(|e| {
+                                            SbroadError::FailedTo(
+                                                Action::Put,
+                                                Some(Entity::Value),
+                                                format_smolstr!("constant value to SQL: {e}"),
+                                            )
+                                        })?;
+                                    }
+                                    Expression::Reference(Reference { position, .. }) => {
+                                        let rel_id =
+                                            ir_plan.get_relational_from_reference_node(*id)?;
+                                        let rel_node = ir_plan.get_relation_node(rel_id)?;
 
                                     if rel_node.is_motion() {
                                         if let Ok(vt) = self.get_motion_vtable(*id) {

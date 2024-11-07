@@ -3,7 +3,7 @@ use ahash::AHashMap;
 use crate::{
     error,
     ir::node::{
-        expression::Expression, relational::Relational, Alias, Constant, Delete, Insert, Limit,
+        expression::Expression, relational::Relational, Alias, Constant, Limit,
         Motion, NodeId, Update, Values, ValuesRow,
     },
     utils::MutexLike,
@@ -60,7 +60,7 @@ use tarantool::session::with_su;
 use tarantool::tuple::Tuple;
 
 use self::{
-    storage::{dql_cache_miss_result, DQLStorageReturnFormat},
+    storage::{dql_cache_miss_result, StorageReturnFormat},
     vshard::CacheInfo,
 };
 
@@ -139,17 +139,24 @@ pub fn build_required_binary(exec_plan: &mut ExecutionPlan) -> Result<Binary, Sb
                 sub_plan_id = Some(ir.pattern_id(top_id)?);
             }
             QueryType::DML => {
-                let child_id = ir.get_relational_child(top_id, 0)?;
-                let is_cacheable = matches!(
-                    ir.get_relation_node(child_id)?,
-                    Relational::Motion(Motion {
-                        policy: MotionPolicy::Local | MotionPolicy::LocalSegment { .. },
-                        ..
-                    })
-                );
-                if is_cacheable {
-                    let cacheable_subtree_root_id = exec_plan.get_motion_subtree_root(child_id)?;
-                    sub_plan_id = Some(ir.pattern_id(cacheable_subtree_root_id)?);
+                let top = ir.get_relation_node(top_id)?;
+                let top_children = ir.children(top_id);
+                if matches!(top, Relational::Delete(_)) && top_children.is_empty() {
+                    sub_plan_id = Some(ir.pattern_id(top_id)?);
+                } else {
+                    let child_id = top_children[0];
+                    let is_cacheable = matches!(
+                        ir.get_relation_node(child_id)?,
+                        Relational::Motion(Motion {
+                            policy: MotionPolicy::Local | MotionPolicy::LocalSegment { .. },
+                            ..
+                        })
+                    );
+                    if is_cacheable {
+                        let cacheable_subtree_root_id =
+                            exec_plan.get_motion_subtree_root(child_id)?;
+                        sub_plan_id = Some(ir.pattern_id(cacheable_subtree_root_id)?);
+                    }
                 }
             }
         };
@@ -187,56 +194,39 @@ pub fn build_optional_binary(mut exec_plan: ExecutionPlan) -> Result<Binary, Sbr
             let plan = exec_plan.get_ir_plan();
             let sp_top_id = plan.get_top()?;
             let sp_top = plan.get_relation_node(sp_top_id)?;
-            let motion_id = match sp_top {
-                Relational::Insert(Insert { children, .. })
-                | Relational::Update(Update { children, .. })
-                | Relational::Delete(Delete { children, .. }) => {
-                    *children.first().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::Plan,
-                            Some(format_smolstr!(
-                                "expected at least one child under DML node {sp_top:?}",
-                            )),
-                        )
-                    })?
-                }
-                _ => {
-                    return Err(SbroadError::Invalid(
-                        Entity::Plan,
-                        Some(format_smolstr!("unsupported DML statement: {sp_top:?}",)),
-                    ));
-                }
-            };
-            let motion = plan.get_relation_node(motion_id)?;
-            let Relational::Motion(Motion { policy, .. }) = motion else {
-                return Err(SbroadError::Invalid(
-                    Entity::Plan,
-                    Some(format_smolstr!(
-                        "expected motion node under dml node, got: {motion:?}",
-                    )),
-                ));
-            };
-            // SQL is needed only for the motion node subtree.
-            // HACK: we don't actually need SQL when the subtree is already
-            //       materialized into a virtual table on the router.
-            let already_materialized = exec_plan.contains_vtable_for_motion(motion_id);
+            let sp_top_children = plan.children(sp_top_id);
 
-            if already_materialized {
-                OrderedSyntaxNodes::empty()
-            } else if let MotionPolicy::LocalSegment { .. } | MotionPolicy::Local = policy {
-                let motion_child_id = exec_plan.get_motion_child(motion_id)?;
-                let sp = SyntaxPlan::new(&exec_plan, motion_child_id, Snapshot::Oldest)?;
+            if matches!(sp_top, Relational::Delete(_)) && sp_top_children.is_empty() {
+                // We have a case of DELETE without WHERE
+                // which we want to execute via local SQL.
+                let sp = SyntaxPlan::new(&exec_plan, sp_top_id, Snapshot::Oldest)?;
                 OrderedSyntaxNodes::try_from(sp)?
             } else {
-                // In case we are not dealing with `LocalSegment` and `Local` policies, `exec_plan`
-                // must contain vtable for `motion_id` (See `dispatch` method in `src/executor.rs`)
-                // so we mustn't got here.
-                return Err(SbroadError::Invalid(
-                    Entity::Plan,
-                    Some(format_smolstr!(
-                        "unsupported motion policy under DML node: {policy:?}",
-                    )),
-                ));
+                let motion_id = sp_top_children[0];
+                let policy = plan.get_motion_policy(motion_id)?;
+
+                // SQL is needed only for the motion node subtree.
+                // HACK: we don't actually need SQL when the subtree is already
+                //       materialized into a virtual table on the router.
+                let already_materialized = exec_plan.contains_vtable_for_motion(motion_id);
+
+                if already_materialized {
+                    OrderedSyntaxNodes::empty()
+                } else if let MotionPolicy::LocalSegment { .. } | MotionPolicy::Local = policy {
+                    let motion_child_id = exec_plan.get_motion_child(motion_id)?;
+                    let sp = SyntaxPlan::new(&exec_plan, motion_child_id, Snapshot::Oldest)?;
+                    OrderedSyntaxNodes::try_from(sp)?
+                } else {
+                    // In case we are not dealing with `LocalSegment` and `Local` policies, `exec_plan`
+                    // must contain vtable for `motion_id` (See `dispatch` method in `src/executor.rs`)
+                    // so we mustn't got here.
+                    return Err(SbroadError::Invalid(
+                        Entity::Plan,
+                        Some(format_smolstr!(
+                            "unsupported motion policy under DML node: {policy:?}",
+                        )),
+                    ));
+                }
             }
         }
     };
@@ -1378,7 +1368,7 @@ pub fn read_from_cache<R: QueryCache, M: MutexLike<R::Cache>>(
     plan_id: &SmolStr,
     vdbe_max_steps: u64,
     max_rows: u64,
-    return_format: &DQLStorageReturnFormat,
+    return_format: &StorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError>
 where
     R::Cache: StorageCache,
@@ -1420,7 +1410,7 @@ fn read_bypassing_cache(
     tables: &mut EncodedTables,
     vdbe_max_steps: u64,
     max_rows: u64,
-    return_format: &DQLStorageReturnFormat,
+    return_format: &StorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError> {
     // Transaction rollbacks are very expensive in Tarantool, so we're going to
     // avoid transactions for DQL queries. We can achieve atomicity by truncating
@@ -1443,7 +1433,7 @@ fn read_bypassing_cache(
 pub fn prepare_and_read<R: QueryCache, M: MutexLike<R::Cache>>(
     locked_cache: &mut M::Guard<'_>,
     info: &mut impl PlanInfo,
-    return_format: &DQLStorageReturnFormat,
+    return_format: &StorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError>
 where
     R::Cache: StorageCache,
@@ -1508,7 +1498,7 @@ where
 pub fn read_or_prepare<R: QueryCache, M: MutexLike<R::Cache>>(
     locked_cache: &mut M::Guard<'_>,
     info: &mut impl PlanInfo,
-    return_format: &DQLStorageReturnFormat,
+    return_format: &StorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError>
 where
     R::Cache: StorageCache,
@@ -1567,7 +1557,7 @@ where
     let mut info = QueryInfo::new(optional, required);
     let mut locked_cache = runtime.cache().lock();
     let result =
-        read_or_prepare::<R, R::Mutex>(&mut locked_cache, &mut info, &DQLStorageReturnFormat::Raw)?;
+        read_or_prepare::<R, R::Mutex>(&mut locked_cache, &mut info, &StorageReturnFormat::DqlRaw)?;
     let bytes = result.downcast::<Vec<u8>>().map_err(|e| {
         SbroadError::FailedTo(
             Action::Deserialize,
@@ -1887,7 +1877,38 @@ where
 {
     let plan = optional.exec_plan.get_ir_plan();
     let delete_id = plan.get_top()?;
-    let delete_child_id = plan.dml_child_id(delete_id)?;
+    let delete_childen = plan.children(delete_id);
+
+    if delete_childen.is_empty() {
+        // We have a deal with a DELETE without WHERE filter
+        // and want to execute local SQL instead of space api.
+
+        let mut info = QueryInfo::new(optional, required);
+        let mut locked_cache = runtime.cache().lock();
+        let res = read_or_prepare::<R, R::Mutex>(
+            &mut locked_cache,
+            &mut info,
+            &StorageReturnFormat::DmlRaw,
+        )?;
+        let bytes = res.downcast::<Vec<u8>>().map_err(|e| {
+            SbroadError::Invalid(
+                Entity::Tuple,
+                Some(format_smolstr!("Unable to downcast DML result vec: {e:?}")),
+            )
+        })?;
+        let mut reader = bytes.as_ref().as_slice();
+        let mut data: Vec<ConsumerResult> =
+            rmp_serde::decode::from_read(&mut reader).map_err(|e| {
+                SbroadError::Invalid(
+                    Entity::Tuple,
+                    Some(format_smolstr!("Unable to decode DML ConsumerResult: {e}")),
+                )
+            })?;
+        let res = data.remove(0);
+        return Ok(res);
+    }
+
+    let delete_child_id = delete_childen[0];
     let builder = init_delete_tuple_builder(plan, delete_id)?;
     let space_name = plan.dml_node_table(delete_id)?.name().clone();
     let mut result = ConsumerResult::default();
@@ -2087,7 +2108,7 @@ where
         &mut locked_cache,
         info,
         true,
-        &DQLStorageReturnFormat::Vshard,
+        &StorageReturnFormat::DqlVshard,
     )? {
         return Ok(res);
     }
@@ -2101,7 +2122,7 @@ pub fn read_if_in_cache<R: QueryCache, M: MutexLike<R::Cache>>(
     locked_cache: &mut M::Guard<'_>,
     info: &mut impl RequiredPlanInfo,
     first_try: bool,
-    return_format: &DQLStorageReturnFormat,
+    return_format: &StorageReturnFormat,
 ) -> Result<Option<Box<dyn Any>>, SbroadError>
 where
     R::Cache: StorageCache,
@@ -2149,12 +2170,12 @@ where
         &mut locked_cache,
         info,
         false,
-        &DQLStorageReturnFormat::Vshard,
+        &StorageReturnFormat::DqlVshard,
     )? {
         return Ok(res);
     }
 
-    read_or_prepare::<R, R::Mutex>(&mut locked_cache, info, &DQLStorageReturnFormat::Vshard)
+    read_or_prepare::<R, R::Mutex>(&mut locked_cache, info, &StorageReturnFormat::DqlVshard)
 }
 
 /// A common function for all engines to calculate the sharding key value from a `map`
@@ -2370,7 +2391,7 @@ fn cache_hit<R: QueryCache, M: MutexLike<R::Cache>>(
     plan_id: &SmolStr,
     vdbe_max_steps: u64,
     max_rows: u64,
-    return_format: &DQLStorageReturnFormat,
+    return_format: &StorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError>
 where
     R::Cache: StorageCache,
@@ -2393,7 +2414,7 @@ fn cache_miss<R: QueryCache, M: MutexLike<R::Cache>>(
     plan_id: &SmolStr,
     vdbe_max_steps: u64,
     max_rows: u64,
-    return_format: &DQLStorageReturnFormat,
+    return_format: &StorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError>
 where
     R::Cache: StorageCache,

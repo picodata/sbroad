@@ -265,6 +265,9 @@ impl RelOwned {
     #[must_use]
     pub fn mut_output(&mut self) -> &mut NodeId {
         match self {
+            RelOwned::Delete(Delete { output, .. }) => output
+                .as_mut()
+                .expect("DELETE without WHERE clause doesn't have an output."),
             RelOwned::ScanCte(ScanCte { output, .. })
             | RelOwned::Except(Except { output, .. })
             | RelOwned::GroupBy(GroupBy { output, .. })
@@ -273,7 +276,6 @@ impl RelOwned {
             | RelOwned::Having(Having { output, .. })
             | RelOwned::Join(Join { output, .. })
             | RelOwned::Limit(Limit { output, .. })
-            | RelOwned::Delete(Delete { output, .. })
             | RelOwned::Insert(Insert { output, .. })
             | RelOwned::Intersect(Intersect { output, .. })
             | RelOwned::Motion(Motion { output, .. })
@@ -351,6 +353,9 @@ impl MutRelational<'_> {
     #[must_use]
     pub fn mut_output(&mut self) -> &mut NodeId {
         match self {
+            MutRelational::Delete(Delete { output, .. }) => output
+                .as_mut()
+                .expect("DELETE without WHERE clause doesn't have an output."),
             MutRelational::ScanCte(ScanCte { output, .. })
             | MutRelational::Except(Except { output, .. })
             | MutRelational::GroupBy(GroupBy { output, .. })
@@ -359,7 +364,6 @@ impl MutRelational<'_> {
             | MutRelational::Having(Having { output, .. })
             | MutRelational::Join(Join { output, .. })
             | MutRelational::Limit(Limit { output, .. })
-            | MutRelational::Delete(Delete { output, .. })
             | MutRelational::Insert(Insert { output, .. })
             | MutRelational::Intersect(Intersect { output, .. })
             | MutRelational::Motion(Motion { output, .. })
@@ -578,6 +582,9 @@ impl Relational<'_> {
     #[must_use]
     pub fn output(&self) -> NodeId {
         match self {
+            Relational::Delete(Delete { output, .. }) => {
+                output.expect("DELETE without WHERE clause doesn't have an output.")
+            }
             Relational::ScanCte(ScanCte { output, .. })
             | Relational::Except(Except { output, .. })
             | Relational::GroupBy(GroupBy { output, .. })
@@ -586,7 +593,6 @@ impl Relational<'_> {
             | Relational::Update(Update { output, .. })
             | Relational::Limit(Limit { output, .. })
             | Relational::Join(Join { output, .. })
-            | Relational::Delete(Delete { output, .. })
             | Relational::Insert(Insert { output, .. })
             | Relational::Intersect(Intersect { output, .. })
             | Relational::Motion(Motion { output, .. })

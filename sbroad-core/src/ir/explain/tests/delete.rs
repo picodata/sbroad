@@ -5,11 +5,8 @@ fn delete1_test() {
     explain_check(
         r#"DELETE FROM "t1""#,
         &format!(
-            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            "{}\n{}\n{}\n{}\n",
             r#"delete "t1""#,
-            r#"    motion [policy: local]"#,
-            r#"        projection ("t1"."a"::string -> "pk_col_0", "t1"."b"::integer -> "pk_col_1")"#,
-            r#"            scan "t1""#,
             r#"execution options:"#,
             r#"    vdbe_max_steps = 45000"#,
             r#"    vtable_max_rows = 5000"#,

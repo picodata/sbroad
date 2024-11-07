@@ -5,9 +5,9 @@ use smol_str::{SmolStr, ToSmolStr};
 use crate::backend::sql::tree::{SyntaxData, SyntaxPlan};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::node::{
-    Alias, BoolExpr, Case, Constant, Delete, Except, ExprInParentheses, GroupBy, Having, Insert,
-    Intersect, Join, Motion, NodeId, OrderBy, Projection, Reference, Row, ScanCte, ScanRelation,
-    ScanSubQuery, Selection, UnaryExpr, Union, UnionAll, Update, Values, ValuesRow,
+    Alias, BoolExpr, Case, Constant, Delete, ExprInParentheses, GroupBy, Having, Join, Motion,
+    NodeId, OrderBy, Reference, Row, ScanCte, ScanRelation, ScanSubQuery, Selection, UnaryExpr,
+    Update, ValuesRow,
 };
 use crate::ir::operator::OrderByEntity;
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
@@ -18,7 +18,7 @@ use std::hash::BuildHasher;
 
 use super::node::expression::Expression;
 use super::node::relational::Relational;
-use super::node::{ArithmeticExpr, Like, Limit, SelectWithoutScan};
+use super::node::{ArithmeticExpr, Like, Limit};
 
 /// Helper macros to build a hash map or set
 /// from the list of arguments.
@@ -429,35 +429,16 @@ impl Plan {
                     }
                 }
                 // Print output.
-                match relation {
-                    Relational::ScanRelation(ScanRelation { output, .. })
-                    | Relational::Join(Join { output, .. })
-                    | Relational::Except(Except { output, .. })
-                    | Relational::Delete(Delete { output, .. })
-                    | Relational::Insert(Insert { output, .. })
-                    | Relational::Intersect(Intersect { output, .. })
-                    | Relational::Projection(Projection { output, .. })
-                    | Relational::ScanCte(ScanCte { output, .. })
-                    | Relational::ScanSubQuery(ScanSubQuery { output, .. })
-                    | Relational::GroupBy(GroupBy { output, .. })
-                    | Relational::OrderBy(OrderBy { output, .. })
-                    | Relational::Selection(Selection { output, .. })
-                    | Relational::SelectWithoutScan(SelectWithoutScan { output, .. })
-                    | Relational::Having(Having { output, .. })
-                    | Relational::Values(Values { output, .. })
-                    | Relational::Motion(Motion { output, .. })
-                    | Relational::Union(Union { output, .. })
-                    | Relational::UnionAll(UnionAll { output, .. })
-                    | Relational::Update(Update { output, .. })
-                    | Relational::ValuesRow(ValuesRow { output, .. })
-                    | Relational::Limit(Limit { output, .. }) => {
-                        writeln_with_tabulation(
-                            buf,
-                            tabulation_number + 1,
-                            format!("Output_id: {output}").as_str(),
-                        )?;
-                        self.formatted_arena_node(buf, tabulation_number + 2, *output)?;
-                    }
+                if let Relational::Delete(Delete { output: None, .. }) = relation {
+                    writeln_with_tabulation(buf, tabulation_number + 1, "Output: NONE")?;
+                } else {
+                    let output = relation.output();
+                    writeln_with_tabulation(
+                        buf,
+                        tabulation_number + 1,
+                        format!("Output_id: {output}").as_str(),
+                    )?;
+                    self.formatted_arena_node(buf, tabulation_number + 2, output)?;
                 }
                 writeln!(buf, "---------------------------------------------")?;
             }

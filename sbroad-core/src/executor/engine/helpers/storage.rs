@@ -19,21 +19,36 @@ use crate::ir::node::NodeId;
 use crate::ir::value::{EncodedValue, Value};
 use crate::utils::ByteCounter;
 
+// Byte keys used to decode MessagePack result came
+// from local Tarantool execution.
 const IPROTO_DATA: u8 = 0x30;
+const IPROTO_ROW_COUNT: u8 = 0x42;
 const IPROTO_META: u8 = 0x32;
 
-pub enum DQLStorageReturnFormat {
+/// Format in which we want to transform Local tarantool execution result into.
+///
+/// Fields:
+/// * Dql -> { 'metadata', 'raws' }
+/// * Dml -> { `row_count` }
+///
+/// Format:
+/// * Raw -> vector of bytes
+/// * Vshard -> Tuple(row count, cache miss flag, producer result)
+#[derive(Debug)]
+pub enum StorageReturnFormat {
     // Return result as a vector of bytes, no need
     // to allocate Tuple. Used for global tables
     // reads (exec_ir_on_any) or DML queries, that
     // materialize reading subtree locally.
-    Raw,
+    DqlRaw,
+    /// The same as for `DqlRaw`.
+    DmlRaw,
     // Return result as a Tuple of three elements:
     // [rows count, cache miss flag, producer result]
     // Used by all dql queries who go through vshard
     // (and so iproto), where we always must return
     // Tuple
-    Vshard,
+    DqlVshard,
 }
 
 /// Storage runtime configuration.
@@ -99,10 +114,32 @@ pub fn unprepare(
     Ok(())
 }
 
+type EncodedRowCount = rmpv::Value;
 type EncodedMetadata = rmpv::Value;
 type EncodedData = rmpv::Value;
 
-fn parse_dql(stream: &mut (impl Read + Sized)) -> (EncodedMetadata, EncodedData) {
+fn parse_dml_result(stream: &mut (impl Read + Sized)) -> EncodedRowCount {
+    let map_len = rmp::decode::read_map_len(stream).expect("failed to read DML result");
+    assert_eq!(map_len, 1, "invalid format for DML result");
+    let key = rmp::decode::read_pfix(stream).expect("failed to read IPROTO key");
+    let row_count = match key {
+        IPROTO_ROW_COUNT => {
+            let decode_res =
+                rmpv::decode::read_value(stream).expect("failed to read DML row_count");
+            let rmpv::Value::Map(map_vec) = decode_res else {
+                panic!("Expected map for decode_res, got: {decode_res:?}");
+            };
+            let (_, value) = map_vec.first().expect("Decoded map is empty");
+            value.clone()
+        }
+        _ => {
+            unreachable!("unexpected IPROTO key: {}", key);
+        }
+    };
+    row_count
+}
+
+fn parse_dql_result(stream: &mut (impl Read + Sized)) -> (EncodedMetadata, EncodedData) {
     let map_len = rmp::decode::read_map_len(stream).expect("failed to read DQL result");
     assert_eq!(map_len, 2, "invalid format for DQL result");
     let mut meta = None;
@@ -157,6 +194,12 @@ fn repack_data(
     Ok(("rows".into(), rmpv::Value::Array(rows)))
 }
 
+/// Transform single MessagePack Value(row_count)
+/// into pair of (Value("row_count"), Value(row_count)).
+fn repack_row_count(row_count: EncodedRowCount) -> (rmpv::Value, rmpv::Value) {
+    ("row_count".into(), row_count)
+}
+
 pub(crate) fn dql_cache_miss_result() -> Tuple {
     const RESULT_SIZE: usize = 20;
 
@@ -199,34 +242,48 @@ pub(crate) fn dql_cache_miss_result() -> Tuple {
     Tuple::try_from_slice(bytes.as_slice()).expect("failed to create cache miss tuple")
 }
 
-fn dql_result_to_tuple(
+/// Transform result of local Tarantool execution into result structure we'll later
+/// show to user. local Tarantool result cames to us in a view of a MessagePack.
+/// We want to transofrm it into ConsumerResult (DML) or ProducerResult (DQL).
+fn result_to_tuple(
     stream: &mut (impl Read + Sized),
     max_rows: u64,
-    format: &DQLStorageReturnFormat,
+    format: &StorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError> {
-    let (meta, data) = parse_dql(stream);
-    let rows_len: u64 = if let rmpv::Value::Array(rows) = &data {
-        rows.len() as u64
-    } else {
-        panic!("Unexpected rows format!");
+    let (repacked, rows_len) = match format {
+        StorageReturnFormat::DmlRaw => {
+            let row_count = parse_dml_result(stream);
+            let new_row_count = repack_row_count(row_count);
+            (rmpv::Value::Map(vec![new_row_count]), None)
+        }
+        StorageReturnFormat::DqlRaw | StorageReturnFormat::DqlVshard => {
+            let (meta, data) = parse_dql_result(stream);
+            let rows_len: u64 = if let rmpv::Value::Array(rows) = &data {
+                rows.len() as u64
+            } else {
+                panic!("Unexpected rows format!");
+            };
+            let new_meta = repack_meta(meta);
+            let new_data = repack_data(data, max_rows)?;
+
+            (rmpv::Value::Map(vec![new_meta, new_data]), Some(rows_len))
+        }
     };
-    let new_meta = repack_meta(meta);
-    let new_data = repack_data(data, max_rows)?;
-    let repacked = rmpv::Value::Map(vec![new_meta, new_data]);
+
     // To pre-allocate the buffer, we need to know the size of the encoded value.
     let mut byte_counter = ByteCounter::default();
     rmpv::encode::write_value(&mut byte_counter, &repacked).expect("failed to write result");
     let mut buf = Vec::with_capacity(byte_counter.bytes());
 
     let res: Box<dyn Any> = match format {
-        DQLStorageReturnFormat::Raw => {
+        StorageReturnFormat::DmlRaw | StorageReturnFormat::DqlRaw => {
             write_array_len(&mut buf, 1).expect("failed to write array length");
             rmpv::encode::write_value(&mut buf, &repacked).expect("failed to write result");
             Box::new(buf)
         }
-        DQLStorageReturnFormat::Vshard => {
+        StorageReturnFormat::DqlVshard => {
             write_array_len(&mut buf, 3).expect("failed to write array length");
-            rmpv::encode::write_value(&mut buf, &rmpv::Value::from(rows_len))
+            rmpv::encode::write_value(&mut buf, &rmpv::Value::from(rows_len.unwrap()))
                 .expect("failed to write rows count");
             rmpv::encode::write_value(&mut buf, &rmpv::Value::from(false))
                 .expect("failed to write cache miss flag");
@@ -249,13 +306,13 @@ pub fn execute_prepared(
     params: &[Value],
     vdbe_max_steps: u64,
     max_rows: u64,
-    format: &DQLStorageReturnFormat,
+    format: &StorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let encoded_params = encoded_params(params);
     let mut stream = with_su(ADMIN_ID, || {
         stmt.execute_raw(&encoded_params, vdbe_max_steps)
     })??;
-    dql_result_to_tuple(&mut stream, max_rows, format)
+    result_to_tuple(&mut stream, max_rows, format)
 }
 
 pub fn execute_unprepared(
@@ -263,11 +320,11 @@ pub fn execute_unprepared(
     params: &[Value],
     vdbe_max_steps: u64,
     max_rows: u64,
-    format: &DQLStorageReturnFormat,
+    format: &StorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let encoded_params = encoded_params(params);
     let mut stream = with_su(ADMIN_ID, || {
         prepare_and_execute_raw(query, &encoded_params, vdbe_max_steps)
     })??;
-    dql_result_to_tuple(&mut stream, max_rows, format)
+    result_to_tuple(&mut stream, max_rows, format)
 }

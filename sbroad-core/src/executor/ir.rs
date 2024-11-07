@@ -650,103 +650,109 @@ impl ExecutionPlan {
                         }
                     }
 
-                    let output = rel.mut_output();
-                    *rel.mut_output() = subtree_map.get_id(*output);
-                    relational_output_id = Some(*rel.mut_output());
+                    if !matches!(rel, RelOwned::Delete(Delete { output: None, .. })) {
+                        // DELETE without WHERE doesn't have an output.
 
-                    // If we deal with Projection we have to fix
-                    // only References that have an Asterisk source.
-                    // References without asterisks would be covered with aliases like
-                    // "COL_1 as <alias>".
-                    let is_projection = matches!(rel, RelOwned::Projection(_));
-                    if !rel_renamed_output_lists.is_empty() {
-                        let rel_output_list: Vec<NodeId> =
-                            new_plan.get_row_list(*rel.mut_output())?.to_vec();
+                        let output = rel.mut_output();
+                        *rel.mut_output() = subtree_map.get_id(*output);
+                        relational_output_id = Some(*rel.mut_output());
 
-                        for output_id in &rel_output_list {
-                            let ref_under_alias = new_plan.get_child_under_alias(*output_id)?;
-                            let ref_expr = new_plan.get_expression_node(ref_under_alias)?;
-                            let Expression::Reference(Reference {
-                                position,
-                                targets,
-                                asterisk_source,
-                                ..
-                            }) = ref_expr
-                            else {
-                                continue;
-                            };
+                        // If we deal with Projection we have to fix
+                        // only References that have an Asterisk source.
+                        // References without asterisks would be covered with aliases like
+                        // "COL_1 as <alias>".
+                        let is_projection = matches!(rel, RelOwned::Projection(_));
+                        if !rel_renamed_output_lists.is_empty() {
+                            let rel_output_list: Vec<NodeId> =
+                                new_plan.get_row_list(*rel.mut_output())?.to_vec();
 
-                            if is_projection && asterisk_source.is_none() {
-                                continue;
-                            }
+                            for output_id in &rel_output_list {
+                                let ref_under_alias = new_plan.get_child_under_alias(*output_id)?;
+                                let ref_expr = new_plan.get_expression_node(ref_under_alias)?;
+                                let Expression::Reference(Reference {
+                                    position,
+                                    targets,
+                                    asterisk_source,
+                                    ..
+                                }) = ref_expr
+                                else {
+                                    continue;
+                                };
 
-                            let mut ref_rel_node = None;
-
-                            let target = if let Some(targets) = targets {
-                                *targets
-                                    .first()
-                                    .expect("Reference must have at least one target.")
-                            } else {
-                                break;
-                            };
-                            for (index, child) in rel.children().iter().enumerate() {
-                                if index != target {
+                                if is_projection && asterisk_source.is_none() {
                                     continue;
                                 }
-                                ref_rel_node = Some(*child);
-                            }
-                            let Some(ref_rel_node) = ref_rel_node else {
-                                continue;
-                            };
 
-                            if let Some(child_output_list) =
-                                rel_renamed_output_lists.get(&ref_rel_node)
-                            {
-                                let child_output_alias_id =
-                                    child_output_list.get(*position).unwrap_or_else(|| {
-                                        panic!(
-                                            "Unable to get motion output at requested position."
-                                        );
-                                    });
-                                let child_alias =
-                                    new_plan.get_expression_node(*child_output_alias_id)?;
-                                let child_alias_name = child_alias.get_alias_name()?.to_smolstr();
+                                let mut ref_rel_node = None;
 
-                                let rel_alias = new_plan.get_mut_expression_node(*output_id)?;
-                                if let MutExpression::Alias(Alias { ref mut name, .. }) = rel_alias
-                                {
-                                    *name = child_alias_name;
+                                let target = if let Some(targets) = targets {
+                                    *targets
+                                        .first()
+                                        .expect("Reference must have at least one target.")
                                 } else {
-                                    panic!("Expected alias under Row output list");
+                                    break;
+                                };
+                                for (index, child) in rel.children().iter().enumerate() {
+                                    if index != target {
+                                        continue;
+                                    }
+                                    ref_rel_node = Some(*child);
+                                }
+                                let Some(ref_rel_node) = ref_rel_node else {
+                                    continue;
+                                };
+
+                                if let Some(child_output_list) =
+                                    rel_renamed_output_lists.get(&ref_rel_node)
+                                {
+                                    let child_output_alias_id =
+                                        child_output_list.get(*position).unwrap_or_else(|| {
+                                            panic!(
+                                                "Unable to get motion output at requested position."
+                                            );
+                                        });
+                                    let child_alias =
+                                        new_plan.get_expression_node(*child_output_alias_id)?;
+                                    let child_alias_name =
+                                        child_alias.get_alias_name()?.to_smolstr();
+
+                                    let rel_alias = new_plan.get_mut_expression_node(*output_id)?;
+                                    if let MutExpression::Alias(Alias { ref mut name, .. }) =
+                                        rel_alias
+                                    {
+                                        *name = child_alias_name;
+                                    } else {
+                                        panic!("Expected alias under Row output list");
+                                    }
                                 }
                             }
+
+                            let arena_type = match rel {
+                                RelOwned::Union(_)
+                                | RelOwned::UnionAll(_)
+                                | RelOwned::Except(_)
+                                | RelOwned::Values(_)
+                                | RelOwned::Intersect(_)
+                                | RelOwned::Limit(_)
+                                | RelOwned::SelectWithoutScan(_) => ArenaType::Arena32,
+                                RelOwned::ScanCte(_)
+                                | RelOwned::Selection(_)
+                                | RelOwned::Having(_)
+                                | RelOwned::ValuesRow(_)
+                                | RelOwned::OrderBy(_)
+                                | RelOwned::ScanRelation(_)
+                                | RelOwned::Join(_)
+                                | RelOwned::Delete(_)
+                                | RelOwned::ScanSubQuery(_)
+                                | RelOwned::GroupBy(_)
+                                | RelOwned::Projection(_) => ArenaType::Arena64,
+                                RelOwned::Insert(_) => ArenaType::Arena96,
+                                RelOwned::Update(_) | RelOwned::Motion(_) => ArenaType::Arena136,
+                            };
+                            let next_id = new_plan.nodes.next_id(arena_type);
+
+                            rel_renamed_output_lists.insert(next_id, rel_output_list);
                         }
-
-                        let arena_type = match rel {
-                            RelOwned::Union(_)
-                            | RelOwned::UnionAll(_)
-                            | RelOwned::Except(_)
-                            | RelOwned::Values(_)
-                            | RelOwned::Intersect(_)
-                            | RelOwned::Limit(_)
-                            | RelOwned::SelectWithoutScan(_) => ArenaType::Arena32,
-                            RelOwned::ScanCte(_)
-                            | RelOwned::Selection(_)
-                            | RelOwned::Having(_)
-                            | RelOwned::ValuesRow(_)
-                            | RelOwned::OrderBy(_)
-                            | RelOwned::ScanRelation(_)
-                            | RelOwned::Join(_)
-                            | RelOwned::Delete(_)
-                            | RelOwned::ScanSubQuery(_)
-                            | RelOwned::GroupBy(_)
-                            | RelOwned::Projection(_) => ArenaType::Arena64,
-                            RelOwned::Insert(_) => ArenaType::Arena96,
-                            RelOwned::Update(_) | RelOwned::Motion(_) => ArenaType::Arena136,
-                        };
-                        let next_id = new_plan.nodes.next_id(arena_type);
-
-                        rel_renamed_output_lists.insert(next_id, rel_output_list);
                     }
                 }
                 NodeOwned::Expression(ref mut expr) => match expr {

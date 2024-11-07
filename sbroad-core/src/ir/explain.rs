@@ -1402,14 +1402,18 @@ impl FullExplain {
 
                     Some(ExplainNode::Update(Update::new(ir, id)?))
                 }
-                Relational::Delete(Delete { relation, .. }) => {
-                    let values = stack.pop().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "Delete node failed to pop a value row.".into(),
-                        )
-                    })?;
+                Relational::Delete(Delete {
+                    relation, output, ..
+                }) => {
+                    if output.is_some() {
+                        let values = stack.pop().ok_or_else(|| {
+                            SbroadError::UnexpectedNumberOfValues(
+                                "Delete node failed to pop a value row.".into(),
+                            )
+                        })?;
 
-                    current_node.children.push(values);
+                        current_node.children.push(values);
+                    }
 
                     Some(ExplainNode::Delete(relation.to_smolstr()))
                 }

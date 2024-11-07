@@ -433,7 +433,7 @@ pub struct Delete {
     /// Contains exactly one single element.
     pub children: Vec<NodeId>,
     /// The output tuple (reserved for `delete returning`).
-    pub output: NodeId,
+    pub output: Option<NodeId>,
 }
 
 impl From<Delete> for NodeAligned {

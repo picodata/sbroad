@@ -1767,7 +1767,18 @@ impl Plan {
         }
 
         let mut map = Strategy::new(rel_id);
-        let child_id = self.dml_child_id(rel_id)?;
+
+        let children = self.children(rel_id);
+        if children.is_empty() {
+            // We have a deal with DELETE without WHERE filter.
+            // In such a case we don't materialize DELETE subtree
+            // and we don't need a Motion node.
+            // We will execute such a query via local `DELETE FROM T` sql
+            // instead of Tarantool space api.
+            return Ok(map);
+        }
+        let child_id = children[0];
+
         let table = self.dml_node_table(rel_id)?;
         let pk_len = table.primary_key.positions.len();
         if pk_len == 0 {

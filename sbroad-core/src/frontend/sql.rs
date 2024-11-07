@@ -4074,7 +4074,16 @@ impl AbstractSyntaxTree {
                             else {
                                 unreachable!("Scan expected under ScanTable")
                             };
-                            (plan_scan_id, relation.clone())
+
+                            // See below where `proj_child_id`` is used. We don't want to apply such
+                            // an optimization for global tables yet (see issue
+                            // https://git.picodata.io/picodata/sbroad/-/issues/861).
+                            let proj_child_id = if metadata.table(relation)?.is_global() {
+                                Some(plan_scan_id)
+                            } else {
+                                None
+                            };
+                            (proj_child_id, relation.clone())
                         }
                         Rule::DeleteFilter => {
                             let ast_table_id = first_child_node
@@ -4107,7 +4116,7 @@ impl AbstractSyntaxTree {
                             let plan_select_id =
                                 plan.add_select(&[plan_scan_id], expr_plan_node_id)?;
                             plan.fix_subquery_rows(&mut worker, plan_select_id)?;
-                            (plan_select_id, relation_name)
+                            (Some(plan_select_id), relation_name)
                         }
                         _ => {
                             return Err(SbroadError::Invalid(
@@ -4121,41 +4130,48 @@ impl AbstractSyntaxTree {
                     };
 
                     let table = metadata.table(&table_name)?;
-                    // The projection in the delete operator contains only the primary key columns.
-                    let mut pk_columns = Vec::with_capacity(table.primary_key.positions.len());
-                    for pos in &table.primary_key.positions {
-                        let column: &Column = table.columns.get(*pos).ok_or_else(|| {
-                            SbroadError::Invalid(
-                                Entity::Table,
-                                Some(format_smolstr!(
-                                    "{} {} {pos}",
-                                    "primary key refers to non-existing column",
-                                    "at position",
-                                )),
-                            )
-                        })?;
-                        let col_with_scan = ColumnWithScan::new(column.name.as_str(), None);
-                        pk_columns.push(col_with_scan);
-                    }
-                    let pk_column_ids = plan.new_columns(
-                        &NewColumnsSource::Other {
-                            child: proj_child_id,
-                            columns_spec: Some(ColumnsRetrievalSpec::Names(pk_columns)),
-                            asterisk_source: None,
-                        },
-                        false,
-                        false,
-                    )?;
-                    let mut alias_ids = Vec::with_capacity(pk_column_ids.len());
-                    for (pk_pos, pk_column_id) in pk_column_ids.iter().enumerate() {
-                        let pk_alias_id = plan
-                            .nodes
-                            .add_alias(&format!("pk_col_{pk_pos}"), *pk_column_id)?;
-                        alias_ids.push(pk_alias_id);
-                    }
-                    let plan_proj_id = plan.add_proj_internal(proj_child_id, &alias_ids, false)?;
-                    let plan_delete_id = plan.add_delete(table.name, plan_proj_id)?;
 
+                    // In case of DELETE without filter we don't want to store
+                    // it's Projection + Scan relational children.
+                    let plan_proj_id = if let Some(proj_child_id) = proj_child_id {
+                        // The projection in the delete operator contains only the primary key columns.
+                        let mut pk_columns = Vec::with_capacity(table.primary_key.positions.len());
+                        for pos in &table.primary_key.positions {
+                            let column: &Column = table.columns.get(*pos).ok_or_else(|| {
+                                SbroadError::Invalid(
+                                    Entity::Table,
+                                    Some(format_smolstr!(
+                                        "{} {} {pos}",
+                                        "primary key refers to non-existing column",
+                                        "at position",
+                                    )),
+                                )
+                            })?;
+                            let col_with_scan = ColumnWithScan::new(column.name.as_str(), None);
+                            pk_columns.push(col_with_scan);
+                        }
+                        let pk_column_ids = plan.new_columns(
+                            &NewColumnsSource::Other {
+                                child: proj_child_id,
+                                columns_spec: Some(ColumnsRetrievalSpec::Names(pk_columns)),
+                                asterisk_source: None,
+                            },
+                            false,
+                            false,
+                        )?;
+                        let mut alias_ids = Vec::with_capacity(pk_column_ids.len());
+                        for (pk_pos, pk_column_id) in pk_column_ids.iter().enumerate() {
+                            let pk_alias_id = plan
+                                .nodes
+                                .add_alias(&format!("pk_col_{pk_pos}"), *pk_column_id)?;
+                            alias_ids.push(pk_alias_id);
+                        }
+                        Some(plan.add_proj_internal(proj_child_id, &alias_ids, false)?)
+                    } else {
+                        None
+                    };
+
+                    let plan_delete_id = plan.add_delete(table.name, plan_proj_id)?;
                     map.add(id, plan_delete_id);
                 }
                 Rule::Insert => {

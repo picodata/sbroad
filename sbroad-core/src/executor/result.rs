@@ -196,7 +196,7 @@ impl Encode for ProducerResult {}
 
 /// Results of query execution for `INSERT`.
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Deserialize, Eq, Clone)]
 pub struct ConsumerResult {
     pub row_count: u64,
 }

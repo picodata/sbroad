@@ -336,15 +336,26 @@ impl Plan {
     ///
     /// # Errors
     /// - child id pointes to non-existing or non-relational node.
-    pub fn add_delete(&mut self, table: SmolStr, child_id: NodeId) -> Result<NodeId, SbroadError> {
-        let output = self.add_row_for_output(child_id, &[], true, None)?;
+    pub fn add_delete(
+        &mut self,
+        table: SmolStr,
+        child_id: Option<NodeId>,
+    ) -> Result<NodeId, SbroadError> {
+        let (output, children) = if let Some(child_id) = child_id {
+            let output = self.add_row_for_output(child_id, &[], true, None)?;
+            (Some(output), vec![child_id])
+        } else {
+            (None, vec![])
+        };
         let delete = Delete {
             relation: table,
-            children: vec![child_id],
+            children,
             output,
         };
         let delete_id = self.add_relational(delete.into())?;
-        self.replace_parent_in_subtree(output, None, Some(delete_id))?;
+        if let Some(output) = output {
+            self.replace_parent_in_subtree(output, None, Some(delete_id))?;
+        }
         Ok(delete_id)
     }
 
