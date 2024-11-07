@@ -49,7 +49,7 @@
 //!    In a current example we'll get two "AND"-ed chains:
 //!    - `(a) = 1 and (c) = (e) and (b) = 1 and (d) = 1 and (e) = 4 and (f) = 1 and (a) = (f)`
 //!    - `(a) = 1 and (c) = (b) and (b) = 1`
-//!    as `(e) = 3` doesn't contain "AND"s.
+//!      as `(e) = 3` doesn't contain "AND"s.
 //!
 //! 2. Each chain may produce multiple equality classes (where all the
 //!    element are equal to each other). For example, the first chain

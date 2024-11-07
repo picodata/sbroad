@@ -4265,7 +4265,7 @@ fn front_sql_whitespaces_are_not_ignored() {
     }
 
     for query in correct_queries {
-        let res = ParseTree::parse(Rule::Command, &query);
+        let res = ParseTree::parse(Rule::Command, query);
         if res.is_err() {
             println!("Query [{query}] is invalid.")
         }

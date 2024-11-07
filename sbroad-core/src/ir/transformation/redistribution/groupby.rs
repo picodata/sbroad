@@ -177,7 +177,7 @@ impl<'plan> AggrCollector<'plan> {
     /// # Arguments
     /// * `top` - id of expression root in which to look for aggregates
     /// * `parent_rel` - id of parent relational node, where `top` is located. It is used to
-    /// create `AggrInfo`
+    ///   create `AggrInfo`
     ///
     /// # Errors
     /// - invalid expression tree pointed by `top`
@@ -274,13 +274,13 @@ impl<'plan> ExpressionMapper<'plan> {
     /// # Arguments
     /// * `expr_root` - expression id from which matching will start
     /// * `node_id` - id of relational node (`Having`, `Projection`, `OrderBy`),
-    /// where expression pointed by `expr_root` is located
+    ///   where expression pointed by `expr_root` is located
     ///
     /// # Errors
     /// - invalid references in any expression (`GroupBy`'s or node's one)
     /// - invalid query: node expression contains references that are not
-    /// found in `GroupBy` expression. The reason is that user specified expression in
-    /// node that does not match any expression in `GroupBy`
+    ///   found in `GroupBy` expression. The reason is that user specified expression in
+    ///   node that does not match any expression in `GroupBy`
     fn find_matches(&mut self, expr_root: NodeId, node_id: NodeId) -> Result<(), SbroadError> {
         self.node_id = Some(node_id);
         self.find(expr_root, None)?;
@@ -580,22 +580,22 @@ impl Plan {
     /// - id of `GroupBy` node if is was created or `upper` otherwise
     /// - list of ids of expressions used in `GroupBy`. Duplicate expressions are removed.
     /// - mapping between `GroupBy` expressions and corresponding expressions in final nodes
-    /// (`Projection`, `Having`, `GroupBy`, `OrderBy`).
+    ///   (`Projection`, `Having`, `GroupBy`, `OrderBy`).
     ///
     /// # Arguments
     /// * `upper` - id of the top node in reduce stage, if `GroupBy` is present in the query
-    /// the top node in Reduce stage will be `GroupBy`.
+    ///   the top node in Reduce stage will be `GroupBy`.
     /// * `finals` - ids of nodes in final stage starting from `Projection`
     ///
     /// # Errors
     /// - invalid references in `GroupBy`
     /// - invalid query with `GroupBy`: some expression in some final node wasn't matched to
-    /// some `GroupBy` expression
+    ///   some `GroupBy` expression
     /// - invalid query without `GroupBy` and with aggregates: there are column references outside
-    /// aggregate functions
+    ///   aggregate functions
     /// - invalid query with `Having`: in case there's no `GroupBy`, `Having` may contain
-    /// only expressions with constants and aggregates. References outside of aggregate functions
-    /// are illegal.
+    ///   only expressions with constants and aggregates. References outside of aggregate functions
+    ///   are illegal.
     #[allow(clippy::too_many_lines)]
     fn collect_grouping_expressions(
         &mut self,
@@ -762,12 +762,12 @@ impl Plan {
     ///
     /// * `child_id` - id of child for Projection node to be created.
     /// * `aggr_infos` - vector of metadata for each aggregate function that was found in final
-    /// projection. Each info specifies what kind of aggregate it is (sum, avg, etc) and location
-    /// in final projection.
+    ///   projection. Each info specifies what kind of aggregate it is (sum, avg, etc) and location
+    ///   in final projection.
     /// * `grouping_exprs` - ids of grouping expressions from local `GroupBy`, empty if there is
-    /// no `GroupBy` in original query.
+    ///   no `GroupBy` in original query.
     /// * `finals` - ids of nodes from final stage, starting from `Projection`.
-    /// Final stage may contain `Projection`, `Limit`, `OrderBy`, `Having` nodes.
+    ///   Final stage may contain `Projection`, `Limit`, `OrderBy`, `Having` nodes.
     ///
     /// Local Projection is created by creating columns for grouping expressions and columns
     /// for local aggregates. If there is no `GroupBy` in the original query then `child_id` refers
@@ -812,7 +812,7 @@ impl Plan {
     /// # Returns
     /// - id of local `Projection` that was created.
     /// - vector of positions by which `GroupBy` is done. Positions are relative to local `Projection`
-    /// output.
+    ///   output.
     /// - map between `GroupBy` expression and corresponding local alias.
     fn add_local_projection(
         &mut self,
@@ -915,22 +915,22 @@ impl Plan {
     /// # Arguments
     /// * `aggr_infos` - list of metadata info for each aggregate
     /// * `upper_id` - first node in local stage, if `GroupBy` was
-    /// present in the original user query, then it is the id of that
-    /// `GroupBy`
+    ///   present in the original user query, then it is the id of that
+    ///   `GroupBy`
     /// * `grouping_exprs` - ids of grouping expressions from local
-    /// `GroupBy`. It is assumed that there are no duplicate expressions
-    /// among them.
+    ///   `GroupBy`. It is assumed that there are no duplicate expressions
+    ///   among them.
     /// * `output_cols` - list of projection columns, where to push grouping
-    /// expressions.
+    ///   expressions.
     ///
     /// # Returns
     /// - map between grouping expression id and corresponding local alias
     /// - id of a Projection child, in case there are distinct aggregates and
-    /// no local `GroupBy` node, this node will be created
+    ///   no local `GroupBy` node, this node will be created
     /// - list of positions in projection columns by which `GroupBy` is done. These
-    /// positions are later used to create Motion node and they include only positions
-    /// from original `GroupBy`. Grouping expressions from distinct aggregates are not
-    /// included in this list as they shouldn't be used for Motion node.
+    ///   positions are later used to create Motion node and they include only positions
+    ///   from original `GroupBy`. Grouping expressions from distinct aggregates are not
+    ///   included in this list as they shouldn't be used for Motion node.
     fn add_grouping_exprs(
         &mut self,
         aggr_infos: &mut [AggrInfo],
@@ -1042,6 +1042,7 @@ impl Plan {
     /// This function collects local aggregates from each `AggrInfo`,
     /// then it removes duplicates from them using `AggregateSignature`.
     /// Next, it creates for each unique aggregate local alias and column.
+    #[allow(clippy::mutable_key_type)]
     fn add_local_aggregates(
         &mut self,
         aggr_infos: &mut [AggrInfo],
@@ -1137,9 +1138,9 @@ impl Plan {
     /// # Arguments
     /// * `child_id` - id if relational node that will the child of `GroupBy`
     /// * `grouping_exprs` - list of grouping expressions ids (which does not include
-    /// grouping expressions from distinct arguments)
+    ///   grouping expressions from distinct arguments)
     /// * `local_aliases_map` - map between expression from `GroupBy` to alias used
-    /// at local stage
+    ///   at local stage
     ///
     /// # Returns
     /// - if `GroupBy` node was created, return its id
@@ -1338,11 +1339,11 @@ impl Plan {
     /// # Arguments
     /// * `finals` - ids of nodes to be patched
     /// * `finals_child_id` - id of a relational node right after `finals` in the plan. In case
-    /// original query had `GroupBy`, this will be final `GroupBy` id.
+    ///    original query had `GroupBy`, this will be final `GroupBy` id.
     /// * `local_aliases_map` - map between grouping expressions ids and corresponding local aliases.
     /// * `aggr_infos` - list of metadata about aggregates
     /// * `gr_expr_map` - map between grouping expressions in `GroupBy` and grouping expressions
-    /// used in `finals`.
+    ///    used in `finals`.
     fn patch_finals(
         &mut self,
         finals: &[NodeId],

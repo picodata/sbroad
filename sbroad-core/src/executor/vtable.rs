@@ -538,7 +538,7 @@ impl VirtualTable {
     ///
     /// Assumptions:
     /// 1. All columns from `from_vtable` are located in
-    /// a row from the beginning of the current vtable's columns.
+    ///    a row from the beginning of the current vtable's columns.
     ///
     /// # Errors
     /// - invalid arguments

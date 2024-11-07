@@ -88,8 +88,8 @@ impl Key {
 /// E.g. given 2 tables:
 /// * t(a, b) distributed by a
 /// * q(p, r) distributed by p
-/// After their join (`t join q on a = p`) we'll get table tq(a, b, p, r) where
-/// both Key((a)) and Key((p)) will represent the same segmentation.
+///   After their join (`t join q on a = p`) we'll get table tq(a, b, p, r) where
+///   both Key((a)) and Key((p)) will represent the same segmentation.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct KeySet(HashSet<Key, RepeatableState>);
 

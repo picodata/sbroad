@@ -317,21 +317,20 @@ fn bench_pure_pest_parsing(c: &mut Criterion) {
 
 fn parse(pattern: &str) -> Plan {
     let metadata = &RouterConfigurationMock::new();
-    let plan = AbstractSyntaxTree::transform_into_plan(pattern, metadata).unwrap();
-    return plan;
+    AbstractSyntaxTree::transform_into_plan(pattern, metadata).unwrap()
 }
 
 fn bench_full_parsing(c: &mut Criterion) {
     let many_references_query = get_query_with_many_references();
     c.bench_function("full_parsing_many_references", |b| {
-        b.iter(|| black_box(parse(&many_references_query)));
+        b.iter(|| black_box(parse(many_references_query)));
     });
 
     let target_queries = get_target_queries();
     for (index, target_query) in target_queries.iter().enumerate() {
         let bench_name = format!("full_parsing_target_query{index}");
         c.bench_function(bench_name.as_str(), |b| {
-            b.iter(|| black_box(parse(&target_query)))
+            b.iter(|| black_box(parse(target_query)))
         });
     }
 }
@@ -342,12 +341,12 @@ fn bench_take_subtree(c: &mut Criterion) {
     let params = vec![Value::from(param)];
 
     let target_query = get_query_with_many_references();
-    let mut query = Query::new(&mut engine, target_query, params).unwrap();
+    let mut query = Query::new(&engine, target_query, params).unwrap();
 
     let plan = query.get_exec_plan().get_ir_plan();
     let top_id = plan.get_top().unwrap();
 
-    let bench_name = format!("getting_subtree");
+    let bench_name = "getting_subtree".to_string();
     c.bench_function(bench_name.as_str(), |b| {
         b.iter(|| {
             let _subtree = query.get_mut_exec_plan().take_subtree(top_id).unwrap();
@@ -361,18 +360,18 @@ fn bench_serde_clone(c: &mut Criterion) {
     let params = vec![Value::from(param)];
 
     let target_query = get_query_with_many_references();
-    let query = Query::new(&mut engine, target_query, params).unwrap();
+    let query = Query::new(&engine, target_query, params).unwrap();
 
     let plan = query.get_exec_plan().get_ir_plan();
 
-    let bench_name = format!("serializing_plan_many_references");
+    let bench_name = "serializing_plan_many_references".to_string();
     c.bench_function(bench_name.as_str(), |b| {
         b.iter(|| {
             let _ser_bytes = bincode::serialize(plan).unwrap();
         })
     });
 
-    let bench_name = format!("deserializing_plan_many_references");
+    let bench_name = "deserializing_plan_many_references".to_string();
     let ser_bytes: &[u8] = &bincode::serialize(plan).unwrap();
     c.bench_function(bench_name.as_str(), |b| {
         b.iter(|| {
@@ -380,7 +379,7 @@ fn bench_serde_clone(c: &mut Criterion) {
         })
     });
 
-    let bench_name = format!("cloning_plan_many_references");
+    let bench_name = "cloning_plan_many_references".to_string();
     c.bench_function(bench_name.as_str(), |b| {
         b.iter(|| {
             let _new_plan = plan.clone();
@@ -410,7 +409,7 @@ fn bench_ir_build(c: &mut Criterion) {
             b.iter(|| {
                 let params = vec![Value::from(param)];
                 param += 1;
-                build_ir(&target_query, params, &mut engine);
+                build_ir(target_query, params, &mut engine);
             })
         });
     }

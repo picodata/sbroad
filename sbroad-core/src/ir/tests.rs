@@ -9,6 +9,7 @@ use smol_str::SmolStr;
 /// * `type` = Integer
 /// * `is_nullable` = false
 /// * `role` = User
+///
 /// Used only for tests purposes.
 #[must_use]
 #[cfg(test)]
@@ -35,6 +36,7 @@ pub fn vcolumn_integer_user_non_null() -> VTableColumn {
 /// Helper function to create `Column` object with given name, type and default
 /// * `is_nullable` = false
 /// * `role` = User
+///
 /// Used only for tests purposes.
 #[must_use]
 #[cfg(test)]
@@ -62,6 +64,7 @@ pub fn vcolumn_user_non_null(r#type: Type) -> VTableColumn {
 /// * `is_nullable` = true
 /// * `role` = Sharding
 /// * `type` = Unsigned
+///
 /// Used only for tests purposes.
 #[must_use]
 #[cfg(test)]

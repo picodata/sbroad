@@ -245,7 +245,6 @@ impl<'e> Iterator for EncodedRowsIter<'e> {
             assert_eq!(array_len as usize, self.marking.len());
         }
         let row_len = self.marking.get(cur_pos)?;
-
         assert!(*row_len <= u32::MAX as usize);
         let mut builder = TupleBuilder::rust_allocated();
         builder.reserve(*row_len);

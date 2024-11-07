@@ -234,9 +234,9 @@ impl EqualityCols {
     /// # Returns
     /// - `None` in case the subtree with this eq operator does not allow repartition join
     /// - empty `EqualityCols` in case the subtree does not forbid repartition join,
-    /// repartition join still can be done if the parent expression is "good".
+    ///   repartition join still can be done if the parent expression is "good".
     /// - non-empty `EqualityCols` in case the subtree is "good" and supports repartition join
-    /// by returned `EqualityCols`.
+    ///   by returned `EqualityCols`.
     fn eq_cols_for_bool(
         op: &BoolOp,
         node_id: NodeId,
@@ -286,9 +286,9 @@ impl EqualityCols {
     /// # Returns
     /// - `None` in case the subtree with this eq operator does not allow repartition join
     /// - empty `EqualityCols` in case the subtree does not forbid repartition join,
-    /// repartition join still can be done if the parent expression is "good".
+    ///   repartition join still can be done if the parent expression is "good".
     /// - non-empty `EqualityCols` in case the subtree is "good" and supports repartition join
-    /// by returned `EqualityCols`.
+    ///   by returned `EqualityCols`.
     fn eq_cols_for_eq(
         list_left: &[NodeId],
         list_right: &[NodeId],
@@ -366,9 +366,9 @@ impl EqualityCols {
     /// # Returns
     /// - `None` in case the subtree with this eq operator does not allow repartition join
     /// - empty `EqualityCols` in case the subtree does not forbid repartition join,
-    /// repartition join still can be done if the parent expression is "good".
+    ///   repartition join still can be done if the parent expression is "good".
     /// - non-empty `EqualityCols` in case the subtree is "good" and supports repartition join
-    /// by returned `EqualityCols`.
+    ///   by returned `EqualityCols`.
     fn eq_cols_for_rows(
         op: &BoolOp,
         node_id: NodeId,
@@ -431,9 +431,9 @@ impl EqualityCols {
     /// # Returns
     /// - `None` in case the subtree with this `and` does not allow repartition join
     /// - empty `EqualityCols` in case the subtree does not forbid repartition join,
-    /// repartition join still can be done if the parent expression is "good".
+    ///   repartition join still can be done if the parent expression is "good".
     /// - non-empty `EqualityCols` in case the subtree is "good" and supports repartition join
-    /// by returned `EqualityCols`.
+    ///   by returned `EqualityCols`.
     fn eq_cols_for_and(
         left: NodeId,
         right: NodeId,
@@ -499,7 +499,7 @@ impl EqualityCols {
     ///
     /// # Returns
     /// - `None` in case this join condition does
-    /// not allow Repartition join.
+    ///   not allow Repartition join.
     /// - Otherwise, returns non-empty `EqualityCols` wrapped in `Option`
     pub fn from_join_condition(
         plan: &Plan,

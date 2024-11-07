@@ -326,7 +326,7 @@ impl<'de> Visitor<'de> for ColumnVisitor {
                 "type" => column_type.push_str(&value.to_lowercase()),
                 "role" => column_role.push_str(&value.to_lowercase()),
                 "is_nullable" => column_is_nullable.push_str(&value.to_lowercase()),
-                _ => return Err(Error::custom(&format!("invalid column param: {key}"))),
+                _ => return Err(Error::custom(format!("invalid column param: {key}"))),
             }
         }
 

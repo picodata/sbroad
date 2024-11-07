@@ -3,8 +3,8 @@ use ahash::AHashMap;
 use crate::{
     error,
     ir::node::{
-        expression::Expression, relational::Relational, Alias, Constant, Limit,
-        Motion, NodeId, Update, Values, ValuesRow,
+        expression::Expression, relational::Relational, Alias, Constant, Limit, Motion, NodeId,
+        Update, Values, ValuesRow,
     },
     utils::MutexLike,
 };
@@ -617,7 +617,7 @@ pub fn init_insert_tuple_builder(
 ///
 /// # Panics
 /// - Bucket id not provided when inserting into sharded
-/// table
+///   table
 pub fn build_insert_args<'t>(
     vt_tuple: &'t VTableTuple,
     builder: &'t TupleBuilderPattern,

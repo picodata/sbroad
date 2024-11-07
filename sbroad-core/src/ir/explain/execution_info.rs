@@ -200,6 +200,9 @@ impl BucketsInfo {
         let child_id = children[0];
         let child_node = plan.get_relation_node(child_id)?;
 
-        Ok(child_node.is_local_motion())
+        // In case of DELETE without WHERE clause it doesn't contain Motion child.
+        let can_estimate = !child_node.is_motion() || child_node.is_local_motion();
+
+        Ok(can_estimate)
     }
 }

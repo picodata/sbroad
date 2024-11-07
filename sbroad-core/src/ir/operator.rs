@@ -245,24 +245,24 @@ pub enum UpdateStrategy {
     /// # Details
     /// Update works as follows:
     /// 1. Projection below update selects whole table tuple
-    /// with updated columns (but without bucket_id) and
-    /// old values for sharding columns.
+    ///    with updated columns (but without bucket_id) and
+    ///    old values for sharding columns.
     /// 2. Then on the router each tuple is transformed into two
-    /// tuples (one for insertion and one for deletion):
+    ///    tuples (one for insertion and one for deletion):
     ///     * old values of sharding columns are popped out from original tuple
     ///       and used to calculate the bucket_id for deletion tuple. The original
     ///       tuple becomes the tuple for insertion.
     ///     * deletion tuple is created from primary keys of insertion tuple.
     ///     * bucket_id for insertion tuple is calculated using new shard key values.
     /// 3. Because pk key can't be updated and insertion tuple contains
-    /// primary key + at least 1 sharding column and deletion tuple consists only from primary key
-    /// => len of insertion tuple > len of deletion tuple.
-    /// This invariant will be used to distinguish between these tuples on the storage (tuples are
-    /// stored in the same table, because currently whole sbroad assumes that motion
-    /// produces only one table). The len of deletion tuple is saved in this struct
-    /// variant
+    ///    primary key + at least 1 sharding column and deletion tuple consists only from primary key
+    ///    => len of insertion tuple > len of deletion tuple.
+    ///    This invariant will be used to distinguish between these tuples on the storage (tuples are
+    ///    stored in the same table, because currently whole sbroad assumes that motion
+    ///    produces only one table). The len of deletion tuple is saved in this struct
+    ///    variant
     /// 4. On storages the table is traversed and in transaction first tuples are deleted,
-    /// then insertion tuples are inserted.
+    ///    then insertion tuples are inserted.
     ShardedUpdate { delete_tuple_len: Option<usize> },
     /// Strategy when no sharding column is updated.
     ///
@@ -410,6 +410,7 @@ impl Plan {
     /// `table_tuple` consists from table columns in the same order but:
     /// 1. If column is updated, it is replaced with corresponding update expression
     /// 2. `bucket_id` column is skipped
+    ///
     /// For example:
     /// ```text
     /// t: a b bucket_id c
@@ -444,7 +445,7 @@ impl Plan {
     ///
     /// # Arguments
     /// * `update_defs` - mapping between column position in table
-    /// and corresponding update expression.
+    ///   and corresponding update expression.
     /// * `relation` - name of the table being updated.
     /// * `rel_child_id` - id of `Update` child
     ///
@@ -452,6 +453,7 @@ impl Plan {
     /// - invalid update table
     /// - invalid table columns positions in `update_defs`
     #[allow(clippy::too_many_lines)]
+    #[allow(clippy::mutable_key_type)]
     pub fn add_update(
         &mut self,
         relation: &str,

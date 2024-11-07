@@ -1817,11 +1817,13 @@ enum ParseExpression {
     /// Workaround for the mixfix BETWEEN operator breaking the logic of
     /// pratt parsing for infix operators.
     /// For expression `expr_1 BETWEEN expr_2 AND expr_3` we would create ParseExpression tree of
+    ///
     /// And
     ///   - left  = InterimBetween
     ///               - left  = expr_1
     ///               - right = expr_2
     ///   - right = expr_3
+    ///
     /// because priority of BETWEEN is higher than of AND.
     ///
     /// When we face such a tree, we transform it into Expression::Between. So during parsing AND

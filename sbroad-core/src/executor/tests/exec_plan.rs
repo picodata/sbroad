@@ -610,7 +610,7 @@ fn exec_plan_subquery_as_expression_under_projection() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!("{}", r#"SELECT (VALUES (?)) as "col_1" FROM "test_space""#,),
+            r#"SELECT (VALUES (?)) as "col_1" FROM "test_space""#.to_string(),
             vec![Value::Unsigned(1u64)]
         )
     );
@@ -629,10 +629,8 @@ fn exec_plan_subquery_as_expression_under_projection_several() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT (VALUES (?)) as "col_1", (VALUES (?)) as "col_2" FROM "test_space""#,
-            ),
+            r#"SELECT (VALUES (?)) as "col_1", (VALUES (?)) as "col_2" FROM "test_space""#
+                .to_string(),
             vec![Value::Unsigned(1u64), Value::Unsigned(2u64)]
         )
     );
@@ -651,10 +649,7 @@ fn exec_plan_subquery_as_expression_under_selection() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT "test_space"."id" FROM "test_space" WHERE (VALUES (?))"#,
-            ),
+            r#"SELECT "test_space"."id" FROM "test_space" WHERE (VALUES (?))"#.to_string(),
             vec![Value::Boolean(true)]
         )
     );
@@ -693,10 +688,7 @@ fn exec_plan_subquery_as_expression_under_order_by() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT "COL_1" as "id" FROM (SELECT "COL_1" FROM "TMP_test_0136") ORDER BY ("COL_1") + (VALUES (?))"#,
-            ),
+            r#"SELECT "COL_1" as "id" FROM (SELECT "COL_1" FROM "TMP_test_0136") ORDER BY ("COL_1") + (VALUES (?))"#.to_string(),
             vec![Value::Unsigned(1)]
         )
     );
@@ -715,10 +707,7 @@ fn exec_plan_subquery_as_expression_under_projection_nested() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT (VALUES ((VALUES (?)))) as "col_1" FROM "test_space""#,
-            ),
+            r#"SELECT (VALUES ((VALUES (?)))) as "col_1" FROM "test_space""#.to_string(),
             vec![Value::Unsigned(1)]
         )
     );
@@ -747,10 +736,7 @@ fn exec_plan_subquery_as_expression_under_group_by() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT ("test_space"."id") + (VALUES (?)) as "column_932", count (*) as "count_1496" FROM "test_space" GROUP BY ("test_space"."id") + (VALUES (?))"#,
-            ),
+            r#"SELECT ("test_space"."id") + (VALUES (?)) as "column_932", count (*) as "count_1496" FROM "test_space" GROUP BY ("test_space"."id") + (VALUES (?))"#.to_string(),
             vec![Value::Unsigned(1u64), Value::Unsigned(1u64)]
         )
     );
@@ -760,10 +746,7 @@ fn exec_plan_subquery_as_expression_under_group_by() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT sum ("count_1496") as "col_1" FROM (SELECT "COL_1" FROM "TMP_test_0136") GROUP BY "COL_1""#,
-            ),
+            r#"SELECT sum ("count_1496") as "col_1" FROM (SELECT "COL_1" FROM "TMP_test_0136") GROUP BY "COL_1""#.to_string(),
             vec![]
         )
     );
@@ -786,10 +769,7 @@ fn global_table_scan() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT "global_t"."a", "global_t"."b" FROM "global_t""#,
-            ),
+            r#"SELECT "global_t"."a", "global_t"."b" FROM "global_t""#.to_string(),
             vec![]
         )
     );
@@ -1124,7 +1104,7 @@ fn global_except() {
         .unwrap();
     let mut expected = ProducerResult::new();
     expected.rows.extend(vec![vec![
-        LuaValue::String(format!("Execute query locally")),
+        LuaValue::String("Execute query locally".to_string()),
         LuaValue::String(String::from(PatternWithParams::new(
             r#"SELECT "global_t"."a" FROM "global_t" EXCEPT SELECT "COL_1" FROM "TMP_test_0136""#
                 .into(),
@@ -1146,10 +1126,7 @@ fn local_translation_asterisk_single() {
     let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
-        PatternWithParams::new(
-            format!("{}", r#"SELECT "t3"."a", "t3"."b" FROM "t3""#,),
-            vec![]
-        )
+        PatternWithParams::new(r#"SELECT "t3"."a", "t3"."b" FROM "t3""#.to_string(), vec![])
     );
 }
 
@@ -1166,10 +1143,7 @@ fn local_translation_asterisk_several() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#,
-            ),
+            r#"SELECT "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#.to_string(),
             vec![]
         )
     );
@@ -1188,10 +1162,8 @@ fn local_translation_asterisk_named() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT "t3"."a", "t3"."b", "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#,
-            ),
+            r#"SELECT "t3"."a", "t3"."b", "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#
+                .to_string(),
             vec![]
         )
     );
@@ -1210,10 +1182,7 @@ fn local_translation_asterisk_with_additional_columns() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT "t3"."a", "t3"."a", "t3"."b", "t3"."b", "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#,
-            ),
+            r#"SELECT "t3"."a", "t3"."a", "t3"."b", "t3"."b", "t3"."a", "t3"."b", "t3"."a", "t3"."b" FROM "t3""#.to_string(),
             vec![]
         )
     );
@@ -1449,15 +1418,12 @@ fn check_parentheses() {
     let query = r#"SELECT "id" from "test_space" WHERE "sysFrom" = ((1) < (3)) + 2"#;
 
     let mut rt = RouterRuntimeMock::new();
-    let mut query = Query::new(&mut rt, query, vec![]).unwrap();
+    let mut query = Query::new(&rt, query, vec![]).unwrap();
     let plan = query.get_exec_plan().get_ir_plan();
     let top_id = plan.get_top().unwrap();
 
     let expected = PatternWithParams::new(
-        format!(
-            "{}",
-            r#"SELECT "test_space"."id" FROM "test_space" WHERE ("test_space"."sysFrom") = ((?) < (?)) + (?)"#,
-        ),
+        r#"SELECT "test_space"."id" FROM "test_space" WHERE ("test_space"."sysFrom") = ((?) < (?)) + (?)"#.to_string(),
         vec![Value::from(1_u64), Value::from(3_u64), Value::from(2_u64)],
     );
 

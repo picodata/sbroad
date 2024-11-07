@@ -442,7 +442,7 @@ impl AbstractSyntaxTree {
     /// Transform select AST to IR friendly one. At the end of transformation
     /// all `Select` nodes are replaced with their first children (always `Projection`).
     /// - When some node contains `Select` as a child, that child is replaced with
-    /// `Projection` (`Select`'s first child).
+    ///   `Projection` (`Select`'s first child).
     /// - When `Select` is a top node, its `Projection` (first child) becomes a new top.
     pub(super) fn transform_select(&mut self) -> Result<(), SbroadError> {
         let mut selects: HashSet<usize> = HashSet::new();

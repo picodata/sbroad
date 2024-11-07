@@ -54,10 +54,12 @@ impl<T: Scalar> Ord for BoundaryWithFrequency<T> {
 /// totally (suppose for the only column `a` of table `T`) represented with two histograms:
 /// 1. Containing one bucket with boundaries [0, 100].
 /// 2. Containing two buckets with boundaries [0, 20, 100].
+///
 /// In case we have query `select * from T where a < 10` it will get selectivity (see logic of
 /// selectivity estimation on histogram buckets) equal to:
 /// 1. `(10 / 100) / 1 = 0.1`
 /// 2. `(10 / 20) / 2 = 0.25`
+///
 /// In case the second histogram is a real histogram that we've gathered on several storages and the
 /// first one resulted from histograms merge algorithm we see the decrease of accuracy. That's why
 /// we don't want `get_expected_number_of_buckets` calculation to return small amount of buckets and

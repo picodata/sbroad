@@ -34,7 +34,7 @@ fn stats_merge() {
     }
 
     let TableColumnStatsPair(merged_table_stats, merged_sys_from_stats) =
-        merge_stats(&mut gathered_statistics).unwrap();
+        merge_stats(&gathered_statistics).unwrap();
     let merged_column_stats_unwrapped =
         ColumnStatsUnwrapped::from_column_stats(&merged_sys_from_stats);
     let expected_merged_rows_number = (test_space_rows_count as u64) * replicasets_mock_number;

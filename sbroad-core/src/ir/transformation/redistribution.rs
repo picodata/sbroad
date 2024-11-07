@@ -383,6 +383,7 @@ impl Plan {
     ///
     /// # Errors
     /// - Row node is not of a row type
+    ///
     /// There are more than one sub-queries in the row node.
     pub fn get_sub_query_from_row_node(
         &self,
@@ -1390,22 +1391,24 @@ impl Plan {
                 // Otherwise, if they read some sharded table (Segment or Any),
                 // then they always have Motion, which was set before this function
                 // was called in `get_sq_node_strategy_for_unary_op`.
+                //
+                // If some other operator is used (not Eq or In), then the corresponding subquery
+                // already must have a Motion (in case it is reading non-global table),
+                // see `choose_strategy_for_bool_op_inner_sq`.
                 if let Expression::Bool(BoolExpr {
-                    op, left, right, ..
+                    op: Bool::Eq | Bool::In,
+                    left,
+                    right,
+                    ..
                 }) = self.get_expression_node(node_id)?
                 {
-                    // If some other operator is used, then the corresponding subquery
-                    // already must have a Motion (in case it is reading non-global table),
-                    // see `choose_strategy_for_bool_op_inner_sq`.
-                    if let Bool::Eq | Bool::In = op {
-                        for child_id in [left, right] {
-                            if let Some(sq_id) = self.get_additional_sq(rel_id, *child_id)? {
-                                if let Distribution::Segment { .. } | Distribution::Single =
-                                    self.get_rel_distribution(sq_id)?
-                                {
-                                    subqueries.push(sq_id);
-                                    contains_sq = true;
-                                }
+                    for child_id in [left, right] {
+                        if let Some(sq_id) = self.get_additional_sq(rel_id, *child_id)? {
+                            if let Distribution::Segment { .. } | Distribution::Single =
+                                self.get_rel_distribution(sq_id)?
+                            {
+                                subqueries.push(sq_id);
+                                contains_sq = true;
                             }
                         }
                     }
