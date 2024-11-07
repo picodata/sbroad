@@ -1417,7 +1417,7 @@ fn subtree_hash2() {
 fn check_parentheses() {
     let query = r#"SELECT "id" from "test_space" WHERE "sysFrom" = ((1) < (3)) + 2"#;
 
-    let mut rt = RouterRuntimeMock::new();
+    let rt = RouterRuntimeMock::new();
     let mut query = Query::new(&rt, query, vec![]).unwrap();
     let plan = query.get_exec_plan().get_ir_plan();
     let top_id = plan.get_top().unwrap();

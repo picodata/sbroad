@@ -239,6 +239,7 @@ impl StorageRuntime {
     }
 }
 
+#[allow(unused_variables)]
 fn update_box_param<T>(param: &str, val: T)
 where
     T: Display,

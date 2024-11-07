@@ -7,6 +7,7 @@ use tarantool::{
 };
 
 /// Adds necessary error prefix and logs error with sbroad's macroses.
+#[allow(unused_variables)]
 pub fn wrap_proc_result<T, E: Display>(
     target: Option<&str>,
     result: Result<T, E>,
