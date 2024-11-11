@@ -18,7 +18,7 @@ use crate::ir::node::{
 };
 use crate::ir::operator::{OrderByElement, OrderByEntity};
 use crate::ir::transformation::redistribution::MotionOpcode;
-use crate::ir::tree::traversal::{LevelNode, PostOrder, EXPR_CAPACITY};
+use crate::ir::tree::traversal::{LevelNode, PostOrder};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
 use crate::ir::Plan;
@@ -108,35 +108,6 @@ impl Translation {
                 format_smolstr!("(parse node) [{old}] in translation map"),
             )
         })
-    }
-}
-
-struct CloneExprSubtreeMap {
-    // Map of { old_node_id -> new_node_id } for cloning nodes.
-    inner: AHashMap<NodeId, NodeId>,
-}
-
-impl CloneExprSubtreeMap {
-    fn with_capacity(capacity: usize) -> Self {
-        CloneExprSubtreeMap {
-            inner: AHashMap::with_capacity(capacity),
-        }
-    }
-
-    fn insert(&mut self, old_id: NodeId, new_id: NodeId) {
-        self.inner.insert(old_id, new_id);
-    }
-
-    fn replace(&self, id: &mut NodeId) {
-        let new_id = self.get(*id);
-        *id = new_id;
-    }
-
-    fn get(&self, id: NodeId) -> NodeId {
-        *self
-            .inner
-            .get(&id)
-            .unwrap_or_else(|| panic!("Node with id {id:?} not found in the cloning subtree map."))
     }
 }
 

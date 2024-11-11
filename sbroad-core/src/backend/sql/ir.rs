@@ -24,7 +24,6 @@ use crate::ir::value::{LuaValue, Value};
 
 use super::space::{create_table, TableGuard};
 use super::tree::SyntaxData;
-use crate::executor::engine::query_id;
 
 #[derive(Debug, Eq, Deserialize, Serialize, Push, Clone)]
 pub struct PatternWithParams {

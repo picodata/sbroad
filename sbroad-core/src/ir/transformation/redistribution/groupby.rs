@@ -9,8 +9,7 @@ use crate::ir::expression::{ColumnPositionMap, Comparator, FunctionFeature, EXPR
 use crate::ir::node::expression::Expression;
 use crate::ir::node::relational::{MutRelational, Relational};
 use crate::ir::node::{
-    Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, ExprInParentheses,
-    GroupBy, Having, Like, NodeId, Projection, Reference, Row, StableFunction, Trim, UnaryExpr,
+    Alias, ArenaType, GroupBy, Having, NodeId, Projection, Reference, StableFunction,
 };
 use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
