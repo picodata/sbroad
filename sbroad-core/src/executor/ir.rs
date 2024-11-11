@@ -849,7 +849,7 @@ impl ExecutionPlan {
 
         new_plan.stash_constants()?;
         new_plan.options = self.get_ir_plan().options.clone();
-        new_plan.tier = self.get_ir_plan().tier.clone();
+        new_plan.tier.clone_from(&self.get_ir_plan().tier);
 
         let vtables = if new_vtables.is_empty() {
             None

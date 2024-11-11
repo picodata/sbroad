@@ -913,7 +913,7 @@ fn parse_create_table(
     }
     // infer sharding key from primary key
     if shard_key.is_empty() && !is_global {
-        shard_key = pk_keys.clone();
+        shard_key.clone_from(&pk_keys);
     }
 
     let sharding_key = if !shard_key.is_empty() {
@@ -4597,7 +4597,7 @@ impl AbstractSyntaxTree {
             ));
         }
 
-        plan.tier = tiers.next().flatten().map(Clone::clone);
+        plan.tier = tiers.next().flatten().cloned();
 
         // The problem is that we crete Between structures before replacing subqueries.
         worker.fix_betweens(&mut plan)?;

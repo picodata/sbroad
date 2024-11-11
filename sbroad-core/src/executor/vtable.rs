@@ -676,9 +676,7 @@ impl<'t> TupleIterator<'t> {
 
         let row_id = self.row_id;
 
-        let Some(vt_tuple) = self.vtable.get_tuples().get(row_id) else {
-            return None;
-        };
+        let vt_tuple = self.vtable.get_tuples().get(row_id)?;
 
         self.buf.clear();
         for value in vt_tuple {

@@ -1075,7 +1075,7 @@ impl From<LuaValue> for Value {
                     Value::Null
                 } else if v.is_subnormal()
                     || v.is_infinite()
-                    || v.is_finite() && v.fract().abs() >= std::f64::EPSILON
+                    || v.is_finite() && v.fract().abs() >= f64::EPSILON
                 {
                     Value::Double(Double::from(v))
                 } else {
@@ -1162,7 +1162,7 @@ where
             if v.is_subnormal()
                 || v.is_nan()
                 || v.is_infinite()
-                || v.is_finite() && v.fract().abs() >= std::f64::EPSILON
+                || v.is_finite() && v.fract().abs() >= f64::EPSILON
             {
                 return Ok(Value::Double(Double::from(v)));
             }
