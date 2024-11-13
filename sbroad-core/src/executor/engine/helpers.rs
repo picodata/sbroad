@@ -1474,8 +1474,9 @@ where
             )?;
             return Ok(res);
         }
-        Err(_e) => {
-            error!(None, "failed to compile stmt: {_e:?}");
+        #[allow(unused_variables)]
+        Err(e) => {
+            error!(None, &format!("failed to compile stmt: {e:?}"));
         }
     }
 
