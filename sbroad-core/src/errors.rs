@@ -288,6 +288,8 @@ impl fmt::Display for Action {
 pub enum TypeError {
     AmbiguousParameterType(usize, Type, Type),
     CouldNotDetermineParameterType(usize),
+    // (expected, got)
+    TypeMismatch(Type, Type),
 }
 
 impl fmt::Display for TypeError {
@@ -302,6 +304,9 @@ impl fmt::Display for TypeError {
             TypeError::CouldNotDetermineParameterType(param_idx) => {
                 let param_num = param_idx + 1;
                 format_smolstr!("could not determine data type of parameter ${param_num}")
+            }
+            TypeError::TypeMismatch(t1, t2) => {
+                format_smolstr!("expected {t1} type, but got {t2}")
             }
         };
 

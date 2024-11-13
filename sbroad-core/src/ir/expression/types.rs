@@ -1,7 +1,7 @@
 use smol_str::{format_smolstr, ToSmolStr};
 
 use crate::{
-    errors::{Entity, SbroadError},
+    errors::{Entity, SbroadError, TypeError},
     ir::{relation::Type, Plan},
 };
 
@@ -144,16 +144,31 @@ impl Expression<'_> {
                 children,
                 ..
             }) => {
-                // min/max functions have a scalar type, which means that their actual type can be
-                // inferred from the arguments.
-                if let "max" | "min" = name.as_str() {
-                    let expr_id = children
-                        .first()
-                        .expect("min/max functions must have an argument");
-                    let expr = plan.get_expression_node(*expr_id)?;
-                    expr.calculate_type(plan)
-                } else {
-                    Ok(*func_type)
+                match name.as_str() {
+                    "max" | "min" => {
+                        // min/max functions have a scalar type, which means that their actual type can be
+                        // inferred from the arguments.
+                        let expr_id = children
+                            .first()
+                            .expect("min/max functions must have an argument");
+                        let expr = plan.get_expression_node(*expr_id)?;
+                        expr.calculate_type(plan)
+                    }
+                    "coalesce" => {
+                        let first_id = children.first().expect("coalesce must have children");
+                        let child = plan.get_expression_node(*first_id)?;
+                        let ty = child.calculate_type(plan)?;
+                        // ensure all the types are the same
+                        for child_id in children {
+                            let child = plan.get_expression_node(*child_id)?;
+                            let child_ty = child.calculate_type(plan)?;
+                            if child_ty != ty {
+                                return Err(TypeError::TypeMismatch(ty, child_ty).into());
+                            }
+                        }
+                        Ok(ty)
+                    }
+                    _ => Ok(*func_type),
                 }
             }
             Expression::CountAsterisk(_) => Ok(Type::Integer),

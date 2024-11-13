@@ -4288,6 +4288,8 @@ fn front_sql_whitespaces_are_not_ignored() {
 }
 
 #[cfg(test)]
+mod coalesce;
+#[cfg(test)]
 mod cte;
 #[cfg(test)]
 mod ddl;
