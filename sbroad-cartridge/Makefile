@@ -33,8 +33,12 @@ run_integration_file:
 	cd $(TEST_APP) && rm -rf tmp/tarantool_configuration.log && TARANTOOL_LOG_LEVEL=5 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/integration/$(TEST_FILE_PREFIX)_test.lua && cd ..
 
 # Run specific test pattern from specfic group, args are GROUP and PATTERN
-run_integration_pattern:
+run_integration_group_pattern:
 	cd $(TEST_APP) && rm -rf tmp/tarantool_configuration.log && TARANTOOL_LOG_LEVEL=5 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v $(GROUP) -p $(PATTERN) && cd ..
+
+# Run specific test pattern, arg is PATTERN
+run_integration_pattern:
+	cd $(TEST_APP) && rm -rf tmp/tarantool_configuration.log && TARANTOOL_LOG_LEVEL=5 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -p $(PATTERN) && cd ..
 
 install_debug:
 	mkdir -p $(LUADIR)/$(PROJECT_NAME)
@@ -57,7 +61,11 @@ test_integration:
 test_file:
 	$(MAKE) build_integration && $(MAKE) run_integration_file
 
-# Template: make test_pattern GROUP= PATTERN=
+# Template: make test_group_pattern GROUP= PATTERN=
+test_group_pattern:
+	$(MAKE) build_integration && $(MAKE) run_integration_group_pattern
+
+# Template: make test_pattern PATTERN=
 test_pattern:
 	$(MAKE) build_integration && $(MAKE) run_integration_pattern
 
