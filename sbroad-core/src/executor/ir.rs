@@ -650,9 +650,7 @@ impl ExecutionPlan {
                         }
                     }
 
-                    if !matches!(rel, RelOwned::Delete(Delete { output: None, .. })) {
-                        // DELETE without WHERE doesn't have an output.
-
+                    if rel.has_output() {
                         let output = rel.mut_output();
                         *rel.mut_output() = subtree_map.get_id(*output);
                         relational_output_id = Some(*rel.mut_output());
@@ -727,28 +725,7 @@ impl ExecutionPlan {
                                 }
                             }
 
-                            let arena_type = match rel {
-                                RelOwned::Union(_)
-                                | RelOwned::UnionAll(_)
-                                | RelOwned::Except(_)
-                                | RelOwned::Values(_)
-                                | RelOwned::Intersect(_)
-                                | RelOwned::Limit(_)
-                                | RelOwned::SelectWithoutScan(_) => ArenaType::Arena32,
-                                RelOwned::ScanCte(_)
-                                | RelOwned::Selection(_)
-                                | RelOwned::Having(_)
-                                | RelOwned::ValuesRow(_)
-                                | RelOwned::OrderBy(_)
-                                | RelOwned::ScanRelation(_)
-                                | RelOwned::Join(_)
-                                | RelOwned::Delete(_)
-                                | RelOwned::ScanSubQuery(_)
-                                | RelOwned::GroupBy(_)
-                                | RelOwned::Projection(_) => ArenaType::Arena64,
-                                RelOwned::Insert(_) => ArenaType::Arena96,
-                                RelOwned::Update(_) | RelOwned::Motion(_) => ArenaType::Arena136,
-                            };
+                            let arena_type = rel.arena_type();
                             let next_id = new_plan.nodes.next_id(arena_type);
 
                             rel_renamed_output_lists.insert(next_id, rel_output_list);

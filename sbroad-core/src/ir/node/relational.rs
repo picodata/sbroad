@@ -7,9 +7,9 @@ use crate::{
 };
 
 use super::{
-    Delete, Except, GroupBy, Having, Insert, Intersect, Join, Limit, Motion, NodeAligned, NodeId,
-    OrderBy, Projection, ScanCte, ScanRelation, ScanSubQuery, SelectWithoutScan, Selection, Union,
-    UnionAll, Update, Values, ValuesRow,
+    ArenaType, Delete, Except, GroupBy, Having, Insert, Intersect, Join, Limit, Motion,
+    NodeAligned, NodeId, OrderBy, Projection, ScanCte, ScanRelation, ScanSubQuery,
+    SelectWithoutScan, Selection, Union, UnionAll, Update, Values, ValuesRow,
 };
 
 #[allow(clippy::module_name_repetitions)]
@@ -67,6 +67,35 @@ impl From<RelOwned> for NodeAligned {
 }
 
 impl RelOwned {
+    pub fn has_output(&self) -> bool {
+        !matches!(self, RelOwned::Delete(Delete { output: None, .. }))
+    }
+
+    pub fn arena_type(&self) -> ArenaType {
+        match self {
+            RelOwned::Union(_)
+            | RelOwned::UnionAll(_)
+            | RelOwned::Except(_)
+            | RelOwned::Values(_)
+            | RelOwned::Intersect(_)
+            | RelOwned::Limit(_)
+            | RelOwned::SelectWithoutScan(_) => ArenaType::Arena32,
+            RelOwned::ScanCte(_)
+            | RelOwned::Selection(_)
+            | RelOwned::Having(_)
+            | RelOwned::ValuesRow(_)
+            | RelOwned::OrderBy(_)
+            | RelOwned::ScanRelation(_)
+            | RelOwned::Join(_)
+            | RelOwned::Delete(_)
+            | RelOwned::ScanSubQuery(_)
+            | RelOwned::GroupBy(_)
+            | RelOwned::Projection(_) => ArenaType::Arena64,
+            RelOwned::Insert(_) => ArenaType::Arena96,
+            RelOwned::Update(_) | RelOwned::Motion(_) => ArenaType::Arena136,
+        }
+    }
+
     /// Sets new children to relational node.
     ///
     /// # Panics
@@ -578,6 +607,10 @@ impl MutRelational<'_> {
 
 #[allow(dead_code)]
 impl Relational<'_> {
+    pub fn has_output(&self) -> bool {
+        !matches!(self, Relational::Delete(Delete { output: None, .. }))
+    }
+
     /// Gets an immutable id of the output tuple node of the plan's arena.
     #[must_use]
     pub fn output(&self) -> NodeId {

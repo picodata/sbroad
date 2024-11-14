@@ -277,8 +277,8 @@ where
     #[allow(clippy::too_many_lines)]
     pub fn bucket_discovery(&mut self, top_id: NodeId) -> Result<Buckets, SbroadError> {
         let top_node = self.exec_plan.get_ir_plan().get_relation_node(top_id)?;
-        if let Relational::Delete(Delete { output: None, .. }) = top_node {
-            // DELETE without WHERE clause should be executed on all buckets
+        if top_node.is_dml() && !top_node.has_output() {
+            // DML without output (e.g. DELETE without WHERE clause) should be executed on all buckets.
             return Ok(Buckets::All);
         }
 

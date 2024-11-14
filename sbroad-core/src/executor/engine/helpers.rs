@@ -194,7 +194,7 @@ pub fn build_optional_binary(mut exec_plan: ExecutionPlan) -> Result<Binary, Sbr
             let plan = exec_plan.get_ir_plan();
             let sp_top_id = plan.get_top()?;
             let sp_top = plan.get_relation_node(sp_top_id)?;
-            let sp_top_children = plan.children(sp_top_id);
+            let sp_top_children = sp_top.children();
 
             if matches!(sp_top, Relational::Delete(_)) && sp_top_children.is_empty() {
                 // We have a case of DELETE without WHERE
