@@ -63,8 +63,8 @@ pub mod tree;
 pub mod undo;
 pub mod value;
 
-const DEFAULT_VTABLE_MAX_ROWS: u64 = 5000;
-const DEFAULT_VDBE_MAX_STEPS: u64 = 45000;
+pub const DEFAULT_VTABLE_MAX_ROWS: u64 = 5000;
+pub const DEFAULT_VDBE_MAX_STEPS: u64 = 45000;
 
 /// Plan nodes storage.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
