@@ -17,6 +17,7 @@ Network Trash Folder
 Temporary Items
 .apdisk
 .idea
+.vscode
 *.iml
 out
 gen
